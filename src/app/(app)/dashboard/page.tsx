@@ -104,23 +104,23 @@ export default async function DashboardPage() {
         <KpiCard
           label="Inventory Value" value={inrCompact(d.inventoryValue)} highlight
           sub={`${d.plots} plots · ${d.projects} projects`}
-          icon={<Rupee size={20} />} accent={STATUS_COLOR.booked} href="/plots"
+          icon={<Rupee size={20} />} accent="#428fdf" href="/plots"
         />
         <KpiCard
           label="Sales This Month" value={inrCompact(d.thisMonthValue)} delta={salesDelta}
           spark={d.salesSparkline} sub="Booked value vs last month"
-          icon={<Trending size={20} />} accent={STATUS_COLOR.registered} href="/bookings"
+          icon={<Trending size={20} />} accent="#e4433a" href="/bookings"
         />
         <KpiCard
           label="Collections" value={inrCompact(d.thisMonthCollected)} delta={collDelta}
           spark={d.collectionsSparkline} sub={`Outstanding ${inrCompact(d.outstanding)}`}
-          icon={<CreditCard size={20} />} accent={STATUS_COLOR.available}
+          icon={<CreditCard size={20} />} accent="#428fdf"
           href={can(user.role, "view_finance") ? "/payments" : undefined}
         />
         <KpiCard
           label="Conversion" value={`${d.conversionRate}%`}
           sub={`${d.bookingsConfirmed} confirmed · sell-through ${sellThrough}%`}
-          icon={<Check size={20} />} accent={STATUS_COLOR.blocked} href="/bookings"
+          icon={<Check size={20} />} accent="#e4433a" href="/bookings"
         />
       </div>
 
@@ -128,6 +128,7 @@ export default async function DashboardPage() {
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Panel
           title="Sales Performance"
+          accent="#e4433a"
           className="lg:col-span-2"
           action={<span className="text-xs text-[var(--muted)]">Booked value · last 8 months</span>}
         >
@@ -139,12 +140,12 @@ export default async function DashboardPage() {
           </div>
           <AreaChart
             data={d.salesSeries.map((s) => ({ label: s.label, value: s.value }))}
-            color={STATUS_COLOR.booked}
+            color="#e4433a"
             valueFormat={inrCompact}
           />
         </Panel>
 
-        <Panel title="Inventory by Status">
+        <Panel title="Inventory by Status" accent="#428fdf">
           {d.plots === 0 ? (
             <div className="flex h-44 items-center justify-center text-sm text-[var(--muted)]">No plots yet</div>
           ) : (
@@ -155,14 +156,14 @@ export default async function DashboardPage() {
 
       {/* Collections trend + pipeline */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="Collections Trend" action={<span className="text-xs text-[var(--muted)]">Received · last 8 months</span>}>
+        <Panel title="Collections Trend" accent="#428fdf" action={<span className="text-xs text-[var(--muted)]">Received · last 8 months</span>}>
           <BarChart
             data={d.collectionsSeries.map((s) => ({ label: s.label, value: s.value }))}
-            color={STATUS_COLOR.available}
+            color="#428fdf"
             valueFormat={inrCompact}
           />
         </Panel>
-        <Panel title="Sales Pipeline">
+        <Panel title="Sales Pipeline" accent="#e4433a">
           <Funnel
             steps={[
               { label: "Available", value: d.breakdown.available, color: STATUS_COLOR.available },
@@ -178,6 +179,7 @@ export default async function DashboardPage() {
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel
           title="Top Projects"
+          accent="#428fdf"
           action={<Link href="/projects" className="flex items-center gap-1 text-xs text-[var(--accent)] hover:underline">All <ArrowRight size={13} /></Link>}
         >
           {d.topProjects.length === 0 ? (
@@ -199,7 +201,7 @@ export default async function DashboardPage() {
           )}
         </Panel>
 
-        <Panel title="Recent Activity">
+        <Panel title="Recent Activity" accent="#e4433a">
           {d.recentActivity.length === 0 ? (
             <div className="flex h-40 items-center justify-center text-sm text-[var(--muted)]">No activity yet</div>
           ) : (
@@ -227,7 +229,10 @@ export default async function DashboardPage() {
       {/* Recent bookings */}
       <div className="card mt-4" style={{ padding: 0 }}>
         <div className="flex items-center justify-between px-5 py-4">
-          <h2 className="text-sm font-semibold">Recent Bookings</h2>
+          <h2 className="flex items-center gap-2.5 text-sm font-semibold">
+            <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: "#428fdf" }} />
+            Recent Bookings
+          </h2>
           <Link href="/bookings" className="flex items-center gap-1 text-xs text-[var(--accent)] hover:underline">View all <ArrowRight size={13} /></Link>
         </div>
         <div style={{ borderTop: "1px solid var(--border)" }} />

@@ -1,50 +1,112 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import ThemeToggle from "@/components/ThemeToggle";
+import { Building, Grid, FileText, Check } from "@/components/icons";
 import LoginForm from "./LoginForm";
+
+const FEATURES = [
+  { icon: Building, text: "Projects, plot categories & per-project policy" },
+  { icon: Grid, text: "Live plot inventory across every project" },
+  { icon: FileText, text: "Guided block / book flow with refunds & transfers" },
+  { icon: Check, text: "Role-based access for your whole team" },
+];
 
 export default async function LoginPage() {
   const session = await getSession();
   if (session) redirect("/dashboard");
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
-      {/* Ambient accent glow */}
+    <div className="force-light grid min-h-screen lg:grid-cols-2">
+      {/* ── Left: brand hero ─────────────────────────────────────────────── */}
       <div
-        className="pointer-events-none absolute -top-40 left-1/2 h-[420px] w-[620px] -translate-x-1/2 rounded-full opacity-30 blur-[120px]"
-        style={{ background: "radial-gradient(circle, var(--accent) 0%, transparent 70%)" }}
-      />
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
+        className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex"
+        style={{
+          background:
+            "linear-gradient(150deg, var(--accent) 0%, var(--accent-hover) 55%, color-mix(in srgb, var(--accent-hover) 70%, #000) 100%)",
+          color: "#fff",
+        }}
+      >
+        {/* decorative blobs + grid */}
+        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-black/20 blur-3xl" />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.12]"
+          style={{
+            backgroundImage:
+              "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
+            backgroundSize: "44px 44px",
+          }}
+        />
 
-      <div className="relative w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <div
-            className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-bold shadow-lg"
-            style={{ background: "var(--accent)", color: "var(--accent-contrast)" }}
-          >
+        <div className="relative flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-lg font-bold backdrop-blur">
             VP
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Vision Properties</h1>
-          <p className="mt-1.5 text-sm text-[var(--muted)]">
-            Plot Booking &amp; Inventory Management
-          </p>
-        </div>
-
-        <div className="card" style={{ padding: "28px", boxShadow: "var(--shadow-lg)" }}>
-          <div className="mb-5">
-            <h2 className="text-base font-semibold">Sign in to your account</h2>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Enter your credentials to continue.
-            </p>
+          <div>
+            <div className="text-lg font-semibold leading-tight">Vision Properties</div>
+            <div className="text-xs text-white/70">Plot Management ERP</div>
           </div>
-          <LoginForm />
         </div>
 
-        <p className="mt-6 text-center text-xs text-[var(--muted)]">
+        <div className="relative max-w-md">
+          <h2 className="text-3xl font-semibold leading-tight tracking-tight">
+            Run your entire plot business from one place.
+          </h2>
+          <p className="mt-3 text-sm text-white/80">
+            Bookings, blocking, registrations, payments and your whole team — unified.
+          </p>
+          <ul className="mt-8 space-y-3">
+            {FEATURES.map((f) => (
+              <li key={f.text} className="flex items-center gap-3 text-sm text-white/90">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 backdrop-blur">
+                  <f.icon size={16} />
+                </span>
+                {f.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-white/60">
           © {new Date().getFullYear()} Vision Properties. All rights reserved.
         </p>
+      </div>
+
+      {/* ── Right: sign-in ───────────────────────────────────────────────── */}
+      <div className="relative flex items-center justify-center overflow-hidden p-6 sm:p-10">
+        <div
+          className="pointer-events-none absolute -top-40 left-1/2 h-[420px] w-[620px] -translate-x-1/2 rounded-full opacity-25 blur-[120px]"
+          style={{ background: "radial-gradient(circle, var(--accent) 0%, transparent 70%)" }}
+        />
+
+        <div className="relative w-full max-w-sm">
+          {/* heading (+ mobile brand mark) */}
+          <div className="mb-8 flex flex-col items-center text-center lg:items-start lg:text-left">
+            <div
+              className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-bold shadow-lg lg:hidden"
+              style={{ background: "var(--accent)", color: "var(--accent-contrast)" }}
+            >
+              VP
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
+            <p className="mt-1.5 text-sm text-[var(--muted)]">
+              Sign in to your{" "}
+              <span className="font-medium" style={{ color: "var(--brand-red)" }}>Vision</span>{" "}
+              <span className="font-medium" style={{ color: "var(--accent)" }}>Properties</span>{" "}
+              account.
+            </p>
+          </div>
+
+          <div
+            className="rounded-2xl border bg-[var(--surface)] p-7"
+            style={{ borderColor: "var(--border)", boxShadow: "var(--shadow-lg)" }}
+          >
+            <LoginForm />
+          </div>
+
+          <p className="mt-6 text-center text-xs text-[var(--muted)]">
+            Trouble signing in? Contact your administrator.
+          </p>
+        </div>
       </div>
     </div>
   );

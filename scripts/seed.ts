@@ -45,13 +45,13 @@ async function main() {
 
   // --- Admin (always) -----------------------------------------------------
   await upsertUser(
-    { full_name: "System Admin", email: "admin@visionproperties.in", role: "admin", mobile: "9000000001" },
+    { full_name: "System Admin", email: "admin@visionproperties.co", role: "admin", mobile: "9000000001" },
     hash,
   );
 
   if (!WITH_DEMO) {
     console.log("\n✔ Seed complete (admin only).");
-    console.log(`\nAdmin login:  admin@visionproperties.in  /  ${PASSWORD}`);
+    console.log(`\nAdmin login:  admin@visionproperties.co  /  ${PASSWORD}`);
     console.log("The Admin panel will render real, empty data — create your own projects and plots.");
     return;
   }
@@ -60,17 +60,17 @@ async function main() {
   // DEMO DATA (only with npm run db:seed:demo)
   // ------------------------------------------------------------------------
   const adminId = await upsertUser(
-    { full_name: "System Admin", email: "admin@visionproperties.in", role: "admin", mobile: "9000000001" },
+    { full_name: "System Admin", email: "admin@visionproperties.co", role: "admin", mobile: "9000000001" },
     hash,
   );
   const ids: Record<string, string> = { admin: adminId };
   const demoUsers = [
-    { full_name: "Senthil Kumar", email: "srdirector@visionproperties.in", role: "senior_director", mobile: "9000000002" },
-    { full_name: "Ravi Director", email: "director@visionproperties.in", role: "director", mobile: "9000000003" },
-    { full_name: "Meena Manager", email: "manager@visionproperties.in", role: "business_manager", mobile: "9000000004" },
-    { full_name: "Arun Partner", email: "partner@visionproperties.in", role: "business_partner", mobile: "9000000005" },
-    { full_name: "Finance Desk", email: "finance@visionproperties.in", role: "finance", mobile: "9000000006" },
-    { full_name: "Legal Desk", email: "legal@visionproperties.in", role: "legal", mobile: "9000000007" },
+    { full_name: "Senthil Kumar", email: "srdirector@visionproperties.co", role: "senior_director", mobile: "9000000002" },
+    { full_name: "Ravi Director", email: "director@visionproperties.co", role: "director", mobile: "9000000003" },
+    { full_name: "Meena Manager", email: "manager@visionproperties.co", role: "business_manager", mobile: "9000000004" },
+    { full_name: "Arun Partner", email: "partner@visionproperties.co", role: "business_partner", mobile: "9000000005" },
+    { full_name: "Finance Desk", email: "finance@visionproperties.co", role: "finance", mobile: "9000000006" },
+    { full_name: "Legal Desk", email: "legal@visionproperties.co", role: "legal", mobile: "9000000007" },
   ];
   for (const u of demoUsers) ids[u.role] = await upsertUser(u, hash);
 

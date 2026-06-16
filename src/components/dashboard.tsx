@@ -5,10 +5,10 @@ import { Sparkline } from "@/components/charts";
 export const STATUS_COLOR: Record<string, string> = {
   available: "#10b981",
   blocked: "#f59e0b",
-  booked: "#3b82f6",
+  booked: "#428fdf", // logo blue
   registered: "#8b5cf6",
   sold: "#8b5cf6",
-  cancelled: "#ef4444",
+  cancelled: "#e4433a", // logo red
 };
 
 export function DeltaChip({ pct }: { pct: number }) {
@@ -100,16 +100,24 @@ export function Panel({
   action,
   children,
   className,
+  accent = "var(--accent)",
 }: {
   title: string;
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  accent?: string;
 }) {
   return (
     <div className={`card ${className ?? ""}`}>
       <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="flex items-center gap-2.5 text-sm font-semibold">
+          <span
+            className="h-4 w-1 shrink-0 rounded-full"
+            style={{ background: accent }}
+          />
+          {title}
+        </h2>
         {action}
       </div>
       {children}

@@ -23,7 +23,7 @@ function smoothPath(pts: { x: number; y: number }[]): string {
 // ---------------------------------------------------------------------------
 export function AreaChart({
   data,
-  color = "#3b82f6",
+  color = "#428fdf",
   height = 200,
   valueFormat = (n) => String(n),
 }: {
@@ -148,7 +148,7 @@ export function BarChart({
 // ---------------------------------------------------------------------------
 export function Sparkline({
   data,
-  color = "#3b82f6",
+  color = "#428fdf",
   width = 96,
   height = 30,
 }: {

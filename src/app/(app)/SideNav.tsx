@@ -66,7 +66,8 @@ export default function SideNav({ items }: { items: NavItem[] }) {
         {!collapsed && (
           <div className="overflow-hidden">
             <p className="whitespace-nowrap text-[15px] font-semibold leading-tight tracking-tight">
-              Vision Properties
+              <span style={{ color: "var(--brand-red)" }}>Vision</span>{" "}
+              <span style={{ color: "var(--accent)" }}>Properties</span>
             </p>
             <p className="whitespace-nowrap text-[11px] text-[var(--muted)]">
               Plot Management
