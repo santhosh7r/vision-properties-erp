@@ -57,12 +57,13 @@ export default function SideNav({ items }: { items: NavItem[] }) {
     >
       {/* Brand */}
       <div className="flex h-16 items-center gap-2.5 px-4">
-        <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold shadow-md"
-          style={{ background: "var(--accent)", color: "var(--accent-contrast)" }}
-        >
-          VP
-        </div>
+        <img
+          src="/logo-mark.png"
+          alt="Vision Properties"
+          width={40}
+          height={40}
+          className="h-10 w-10 shrink-0 object-contain"
+        />
         {!collapsed && (
           <div className="overflow-hidden">
             <p className="whitespace-nowrap text-[15px] font-semibold leading-tight tracking-tight">

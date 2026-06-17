@@ -4,6 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Vision Properties",
   description: "Plot Booking & Inventory Management Platform",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/logo-mark.png",
+  },
 };
 
 // Set the theme before first paint to avoid a flash. Defaults to dark

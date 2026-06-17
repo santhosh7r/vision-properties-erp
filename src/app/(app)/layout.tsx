@@ -32,8 +32,16 @@ export default async function AppLayout({
             backdropFilter: "saturate(140%) blur(8px)",
           }}
         >
-          <div className="md:hidden">
-            <p className="text-sm font-semibold">Vision Properties</p>
+          <div className="flex items-center gap-2 md:hidden">
+            <img
+              src="/logo-mark.png"
+              alt="Vision Properties"
+              className="h-8 w-8 shrink-0 object-contain"
+            />
+            <p className="text-sm font-semibold">
+              <span style={{ color: "var(--brand-red)" }}>Vision</span>{" "}
+              <span style={{ color: "var(--accent)" }}>Properties</span>
+            </p>
           </div>
           <div className="flex flex-1 items-center justify-end gap-3">
             <ThemeToggle />

@@ -20,8 +20,7 @@ export default async function LoginPage() {
       <div
         className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex"
         style={{
-          background:
-            "linear-gradient(150deg, var(--accent) 0%, var(--accent-hover) 55%, color-mix(in srgb, var(--accent-hover) 70%, #000) 100%)",
+          background: "#428fdf",
           color: "#fff",
         }}
       >
@@ -37,13 +36,20 @@ export default async function LoginPage() {
           }}
         />
 
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-lg font-bold backdrop-blur">
-            VP
+        <div className="relative flex items-center gap-4">
+          <div
+            className="flex items-center justify-center rounded-2xl px-5 py-4 shadow-lg"
+            style={{ background: "#000000" }}
+          >
+            <img
+              src="/logo-full.png"
+              alt="Vision Properties"
+              className="h-20 w-auto object-contain"
+            />
           </div>
-          <div>
+          <div className="border-l border-black/20 pl-4" style={{ color: "#000000" }}>
             <div className="text-lg font-semibold leading-tight">Vision Properties</div>
-            <div className="text-xs text-white/70">Plot Management ERP</div>
+            <div className="text-sm opacity-80">Plot Management ERP System</div>
           </div>
         </div>
 
@@ -81,12 +87,11 @@ export default async function LoginPage() {
         <div className="relative w-full max-w-sm">
           {/* heading (+ mobile brand mark) */}
           <div className="mb-8 flex flex-col items-center text-center lg:items-start lg:text-left">
-            <div
-              className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-bold shadow-lg lg:hidden"
-              style={{ background: "var(--accent)", color: "var(--accent-contrast)" }}
-            >
-              VP
-            </div>
+            <img
+              src="/logo-full.png"
+              alt="Vision Properties"
+              className="mb-5 h-16 w-auto lg:hidden"
+            />
             <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
             <p className="mt-1.5 text-sm text-[var(--muted)]">
               Sign in to your{" "}
