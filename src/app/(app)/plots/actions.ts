@@ -31,22 +31,21 @@ export async function createPlot(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_plots");
   const project_id = String(formData.get("project_id") || "");
   const plot_category_id = String(formData.get("plot_category_id") || "") || null;
-  const block = String(formData.get("block") || "").trim();
   const plot_no = String(formData.get("plot_no") || "").trim();
   const sqft = Number(formData.get("sqft") || 0);
   const price_per_sqft = Number(formData.get("price_per_sqft") || 0);
   const description = String(formData.get("description") || "").trim() || null;
 
-  if (!project_id || !block || !plot_no || sqft <= 0) return;
+  if (!project_id || !plot_no || sqft <= 0) return;
 
   const { data, error } = await getSupabase()
     .from("plots")
-    .insert({ project_id, plot_category_id, block, plot_no, sqft, price_per_sqft, description, status: "available" })
+    .insert({ project_id, plot_category_id, plot_no, sqft, price_per_sqft, description, status: "available" })
     .select("id")
     .single();
 
   if (!error && data) {
-    await logAudit(actor, "plot", data.id, "create", `${block}-${plot_no}`);
+    await logAudit(actor, "plot", data.id, "create", plot_no);
   }
   revalidatePath(`/projects/${project_id}`);
   revalidatePath("/plots");

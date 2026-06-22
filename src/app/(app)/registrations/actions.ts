@@ -28,7 +28,6 @@ export async function createRegistration(formData: FormData): Promise<void> {
       booking_id,
       plot_id,
       project_id,
-      block: s(formData.get("block")) || null,
       plot_sqft: Number(formData.get("plot_sqft") || 0) || null,
       register_date,
       register_number,

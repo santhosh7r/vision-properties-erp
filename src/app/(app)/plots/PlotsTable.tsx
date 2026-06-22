@@ -8,7 +8,6 @@ import { inr } from "@/lib/format";
 export interface PlotRow {
   id: string;
   project: string;
-  block: string;
   plot_no: string;
   sqft: number;
   value: number;
@@ -18,7 +17,6 @@ export interface PlotRow {
 export default function PlotsTable({ rows }: { rows: PlotRow[] }) {
   const columns: Column<PlotRow>[] = [
     { id: "project", header: "Project", sort: (r) => r.project.toLowerCase(), cell: (r) => <span className="font-medium text-[var(--text)]">{r.project}</span> },
-    { id: "block", header: "Block", sort: (r) => r.block, hideBelow: "sm", cell: (r) => r.block },
     { id: "plot_no", header: "Plot No", sort: (r) => r.plot_no, cell: (r) => <span className="font-medium">{r.plot_no}</span> },
     { id: "sqft", header: "Sq.ft", align: "right", sort: (r) => r.sqft, hideBelow: "sm", cell: (r) => <span className="tabular-nums">{r.sqft}</span> },
     { id: "value", header: "Plot Value", align: "right", sort: (r) => r.value, cell: (r) => <span className="tabular-nums">{inr(r.value)}</span> },
@@ -33,8 +31,8 @@ export default function PlotsTable({ rows }: { rows: PlotRow[] }) {
       rows={rows}
       columns={columns}
       getRowHref={(r) => `/plots/${r.id}`}
-      search={(r) => `${r.project} ${r.block} ${r.plot_no}`}
-      searchPlaceholder="Search project, block, plot no…"
+      search={(r) => `${r.project} ${r.plot_no}`}
+      searchPlaceholder="Search project, plot no…"
       filters={[{
         id: "status",
         label: "Status",

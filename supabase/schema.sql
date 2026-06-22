@@ -78,12 +78,73 @@ create table if not exists users (
   password_hash text        not null,
   mobile        text,
   role          user_role   not null,
+  partner_code  text,                    -- sales ID: SD#/D#/BM#/BP# (auto-assigned; NULL for admin/finance/legal)
   manager_id    uuid        references users(id) on delete set null,
   is_active     boolean     not null default true,
   created_at    timestamptz not null default now()
 );
 create index if not exists idx_users_role       on users(role);
 create index if not exists idx_users_manager     on users(manager_id);
+create unique index if not exists uniq_users_partner_code on users(partner_code) where partner_code is not null;
+
+-- Human-readable sales ID per role (NULL for non-sales roles), auto-assigned on
+-- insert by a trigger so every insert path produces a consistent, unique code.
+-- Code = VP + role code + 2 random digits (VPSD##/VPD##/VPBM##/VPBP##), retried
+-- on collision and widened automatically if a role's space gets crowded.
+create or replace function sales_code_prefix(r user_role)
+returns text language sql immutable as $$
+  select case r
+    when 'senior_director'  then 'VPSD'
+    when 'director'         then 'VPD'
+    when 'business_manager' then 'VPBM'
+    when 'business_partner' then 'VPBP'
+    else null
+  end;
+$$;
+
+create or replace function next_partner_code(pfx text)
+returns text language plpgsql as $$
+declare
+  candidate text;
+  digits    int := 2;
+  attempts  int := 0;
+begin
+  loop
+    candidate := pfx || lpad((floor(random() * power(10, digits)))::bigint::text, digits, '0');
+    exit when not exists (select 1 from users where partner_code = candidate);
+    attempts := attempts + 1;
+    if attempts >= 20 then
+      digits := digits + 1;
+      attempts := 0;
+    end if;
+  end loop;
+  return candidate;
+end;
+$$;
+
+create or replace function assign_partner_code()
+returns trigger language plpgsql as $$
+declare
+  pfx text;
+begin
+  pfx := sales_code_prefix(new.role);
+  if pfx is null then
+    new.partner_code := null;
+    return new;
+  end if;
+  if new.partner_code is not null and new.partner_code <> '' then
+    return new;
+  end if;
+  perform pg_advisory_xact_lock(hashtext('partner_code:' || pfx));
+  new.partner_code := next_partner_code(pfx);
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_assign_partner_code on users;
+create trigger trg_assign_partner_code
+  before insert on users
+  for each row execute function assign_partner_code();
 
 -- ---------------------------------------------------------------------------
 -- PROJECT CATEGORIES  (board: "group of same projects will be categorised")
@@ -202,8 +263,13 @@ create table if not exists bookings (
   nominee_relationship     text,
   -- Partner Details --------------------------------------------------------------
   partner_id               uuid references users(id) on delete set null,
+  partner_code             text,                                       -- snapshot of the partner's sales ID
   partner_name             text,
+  senior_director_id       uuid references users(id) on delete set null,
+  senior_director_code     text,                                       -- snapshot of the senior director's sales ID
+  senior_director_name     text,
   director_id              uuid references users(id) on delete set null,
+  director_code            text,                                       -- snapshot of the director's sales ID
   director_name            text,
   -- Payment Details --------------------------------------------------------------
   tentative_registration_date date,

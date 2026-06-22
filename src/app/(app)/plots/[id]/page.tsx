@@ -46,7 +46,7 @@ export default async function PlotDetailPage({
   return (
     <>
       <PageHeader
-        title={`Plot ${plot.block}-${plot.plot_no}`}
+        title={`Plot ${plot.plot_no}`}
         subtitle={`${project.name} · ${project.city}`}
         action={
           <Link href={`/projects/${project.id}`} className="btn-ghost">
@@ -61,7 +61,6 @@ export default async function PlotDetailPage({
             <span className="text-sm font-semibold">Plot Details</span>
             <PlotStatusBadge status={plot.status} />
           </div>
-          <Row label="Block">{plot.block}</Row>
           <Row label="Plot No">{plot.plot_no}</Row>
           <Row label="Sq.ft">{plot.sqft}</Row>
           <Row label="Price / Sq.ft">{inr(plot.price_per_sqft)}</Row>

@@ -17,20 +17,22 @@ export default async function CustomerDetailPage({
 }) {
   const { id } = await params;
   const { dup } = await searchParams;
-  await requireCapability("manage_customers");
+  const user = await requireCapability("manage_customers");
   const sb = getSupabase();
 
   const { data: c } = await sb.from("customers").select("*").eq("id", id).maybeSingle();
   if (!c) notFound();
   const customer = c as Customer;
+  // A sales user may only view a customer they created. Admin sees all.
+  if (user.role !== "admin" && customer.created_by !== user.id) notFound();
 
   const { data: bk } = await sb
     .from("bookings")
-    .select("*, plots(block, plot_no), projects(name)")
+    .select("*, plots(plot_no), projects(name)")
     .eq("customer_id", id)
     .order("created_at", { ascending: false });
   const bookings = (bk ?? []) as (Booking & {
-    plots: Pick<Plot, "block" | "plot_no">;
+    plots: Pick<Plot, "plot_no">;
     projects: Pick<Project, "name">;
   })[];
 
@@ -84,7 +86,7 @@ export default async function CustomerDetailPage({
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-3">
                   <div>
                     <div className="font-medium">
-                      {b.projects?.name} · Plot {b.plots?.block}-{b.plots?.plot_no}
+                      {b.projects?.name} · Plot {b.plots?.plot_no}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <Badge tone={b.book_mode === "blocking" ? "amber" : "blue"}>{b.book_mode}</Badge>
@@ -100,7 +102,6 @@ export default async function CustomerDetailPage({
 
                 {/* full captured detail */}
                 <Section title="Plot & Value">
-                  <D label="Block">{b.block}</D>
                   <D label="Plot Sq.ft">{b.plot_sqft ?? "—"}</D>
                   <D label="Total Plot Value">{inr(b.total_plot_value)}</D>
                   {b.book_mode === "blocking" && <D label="Blocking Amount">{inr(b.blocking_amount)}</D>}

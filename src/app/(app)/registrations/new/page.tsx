@@ -37,7 +37,7 @@ export default async function NewRegistrationPage({
     <>
       <PageHeader
         title="Register Plot"
-        subtitle={`${b.projects.name} · Plot ${b.plots.block}-${b.plots.plot_no}`}
+        subtitle={`${b.projects.name} · Plot ${b.plots.plot_no}`}
         action={<Link href={`/bookings/${b.id}`} className="btn-ghost">Cancel</Link>}
       />
 
@@ -45,33 +45,31 @@ export default async function NewRegistrationPage({
         <input type="hidden" name="booking_id" value={b.id} />
         <input type="hidden" name="plot_id" value={b.plot_id} />
         <input type="hidden" name="project_id" value={b.project_id} />
-        <input type="hidden" name="block" value={b.plots.block} />
         <input type="hidden" name="plot_sqft" value={b.plots.sqft} />
 
         <div className="card">
           <h2 className="mb-4 text-sm font-semibold">Registration Details</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <Readonly label="1. Project Name" value={b.projects.name} />
-            <Readonly label="2. Block" value={b.plots.block} />
-            <Readonly label="3. Plot No — Sq.ft" value={`${b.plots.plot_no} — ${b.plots.sqft}`} />
+            <Readonly label="2. Plot No — Sq.ft" value={`${b.plots.plot_no} — ${b.plots.sqft}`} />
             <div>
-              <label className="label">4. Register Date *</label>
+              <label className="label">3. Register Date *</label>
               <input name="register_date" type="date" className="input" defaultValue={today} required />
             </div>
             <div>
-              <label className="label">5. Register Number *</label>
+              <label className="label">4. Register Number *</label>
               <input name="register_number" className="input" required />
             </div>
             <div>
-              <label className="label">6. Name of Registrant *</label>
+              <label className="label">5. Name of Registrant *</label>
               <input name="name_of_registrant" className="input" defaultValue={b.customers.name} required />
             </div>
             <div>
-              <label className="label">7. Mobile</label>
+              <label className="label">6. Mobile</label>
               <input name="mobile" className="input" defaultValue={b.customers.mobile} />
             </div>
             <div className="sm:col-span-2">
-              <label className="label">8. Remarks</label>
+              <label className="label">7. Remarks</label>
               <textarea name="remarks" className="textarea" rows={2} />
             </div>
           </div>

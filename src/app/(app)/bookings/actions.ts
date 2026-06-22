@@ -18,6 +18,69 @@ function nullable(v: FormDataEntryValue | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// LOOK UP a sales person by their Partner ID (SD#/D#/BM#/BP#). Returns the
+// partner's name plus the director above them in the chain (their nearest
+// `director` ancestor, falling back to a senior_director). Used by the booking
+// form so entering a Partner ID auto-fills Partner Name + Director ID/Name.
+// ---------------------------------------------------------------------------
+interface SalesRef {
+  id: string;
+  code: string | null;
+  name: string;
+}
+export interface SalesLookup {
+  ok: boolean;
+  error?: string;
+  partner?: SalesRef;
+  seniorDirector?: SalesRef | null;
+  director?: SalesRef | null;
+}
+
+export async function lookupSalesPerson(rawCode: string): Promise<SalesLookup> {
+  const code = String(rawCode || "").trim();
+  if (!code) return { ok: false, error: "Enter a Partner ID." };
+
+  const sb = getSupabase();
+  const { data: person } = await sb
+    .from("users")
+    .select("id, full_name, role, manager_id, partner_code, is_active")
+    .ilike("partner_code", code)
+    .maybeSingle();
+  if (!person) return { ok: false, error: `No sales partner found for "${code}".` };
+  if (!person.is_active) return { ok: false, error: `${person.partner_code} is inactive.` };
+
+  // Walk up the manager chain to find the governing director.
+  const { data: all } = await sb
+    .from("users")
+    .select("id, full_name, role, manager_id, partner_code");
+  type Node = { id: string; full_name: string; role: string; manager_id: string | null; partner_code: string | null };
+  const byId = new Map<string, Node>((all ?? []).map((u) => [u.id, u as Node]));
+
+  const findAncestor = (start: Node, role: string): Node | null => {
+    let cur: Node | undefined | null = start;
+    let guard = 0;
+    while (cur && guard++ < 1000) {
+      if (cur.role === role) return cur;
+      cur = cur.manager_id ? byId.get(cur.manager_id) : null;
+    }
+    return null;
+  };
+
+  const start = person as unknown as Node;
+  const director = findAncestor(start, "director");
+  const seniorDirector = findAncestor(start, "senior_director");
+  const ref = (n: Node | null) =>
+    n ? { id: n.id, code: n.partner_code, name: n.full_name } : null;
+
+  return {
+    ok: true,
+    partner: { id: person.id, code: person.partner_code, name: person.full_name },
+    seniorDirector: ref(seniorDirector),
+    director: ref(director),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // CREATE — block or book a plot (board: the big blocking/booking form)
 // ---------------------------------------------------------------------------
 export async function createBooking(formData: FormData): Promise<void> {
@@ -39,6 +102,31 @@ export async function createBooking(formData: FormData): Promise<void> {
     redirect(`/plots/${plot_id}?err=unavailable`);
   }
   const project = plot.projects;
+
+  // --- Amounts & lock gate (computed BEFORE touching customer/booking) -------
+  // Required amounts come from the PROJECT config only — they are set at project
+  // creation and are NOT editable on the booking form (the form is read-only for
+  // these). The form is the source of truth ONLY for how much is paid now.
+  const value = totalPlotValue(plot.sqft, plot.price_per_sqft);
+  // §2: advance = max(advance_percent % of value, advance_min_amount).
+  const advance_required = computeAdvanceRequired(
+    value,
+    project.advance_percent,
+    project.advance_min_amount,
+  );
+  const blocking_amount = Number(project.blocking_amount);
+  const amountPaidNow = Number(formData.get("amount_paid_now") || 0);
+  const paymentMode = nullable(formData.get("payment_mode"));
+
+  // Board logic: a plot only leaves 'available' when the qualifying amount is
+  // actually paid IN FULL — blocking needs the full blocking amount, booking
+  // needs the full advance. If underpaid, no hold is created and the plot stays
+  // available for anyone else to block. (We gate here, before creating a
+  // customer, so a rejected attempt leaves no orphan records.)
+  const requiredToLock = mode === "blocking" ? blocking_amount : advance_required;
+  if (amountPaidNow < requiredToLock) {
+    redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=underpaid`);
+  }
 
   // Resolve customer: existing id, or create new (with duplicate guard).
   let customer_id = s(formData.get("customer_id"));
@@ -79,16 +167,6 @@ export async function createBooking(formData: FormData): Promise<void> {
     }
   }
 
-  const value = totalPlotValue(plot.sqft, plot.price_per_sqft);
-  // §2: advance = max(advance_percent % of value, advance_min_amount). Editable
-  // override via the form still wins if provided.
-  const overrideAdvance = Number(formData.get("advance_required") || 0);
-  const advance_required =
-    overrideAdvance > 0
-      ? overrideAdvance
-      : computeAdvanceRequired(value, project.advance_percent, project.advance_min_amount);
-  const blocking_amount = Number(formData.get("blocking_amount") || project.blocking_amount);
-
   // Window deadline (board: blocking -> N hours; booking -> N days).
   const now = Date.now();
   const expires_at =
@@ -96,24 +174,25 @@ export async function createBooking(formData: FormData): Promise<void> {
       ? new Date(now + project.blocking_window_hours * 3_600_000).toISOString()
       : new Date(now + project.booking_window_days * 86_400_000).toISOString();
 
-  const amountPaidNow = Number(formData.get("amount_paid_now") || 0);
-  const paymentMode = nullable(formData.get("payment_mode"));
-
   const { data: booking, error: bookErr } = await sb
     .from("bookings")
     .insert({
       plot_id,
       customer_id,
       project_id: project.id,
-      block: plot.block,
       plot_sqft: plot.sqft,
       total_plot_value: value,
       nominee_name: nullable(formData.get("nominee_name")),
       nominee_mobile: nullable(formData.get("nominee_mobile")),
       nominee_relationship: nullable(formData.get("nominee_relationship")),
       partner_id: nullable(formData.get("partner_id")),
+      partner_code: nullable(formData.get("partner_code")),
       partner_name: nullable(formData.get("partner_name")),
+      senior_director_id: nullable(formData.get("senior_director_id")),
+      senior_director_code: nullable(formData.get("senior_director_code")),
+      senior_director_name: nullable(formData.get("senior_director_name")),
       director_id: nullable(formData.get("director_id")),
+      director_code: nullable(formData.get("director_code")),
       director_name: nullable(formData.get("director_name")),
       tentative_registration_date: nullable(formData.get("tentative_registration_date")),
       mode_of_payment: nullable(formData.get("mode_of_payment")),
@@ -156,14 +235,14 @@ export async function createBooking(formData: FormData): Promise<void> {
     await recomputePayment(booking.id);
   }
 
-  await logAudit(actor, "booking", booking.id, mode === "blocking" ? "block" : "book", `plot ${plot.block}-${plot.plot_no}`);
+  await logAudit(actor, "booking", booking.id, mode === "blocking" ? "block" : "book", `plot ${plot.plot_no}`);
   await notify(
     booking.id,
     "sms",
     null,
     mode === "blocking"
-      ? `Plot ${plot.block}-${plot.plot_no} blocked. Book within ${project.blocking_window_hours} hours to confirm.`
-      : `Booking received for plot ${plot.block}-${plot.plot_no}. Advance ${advance_required}. Project: ${project.name}.`,
+      ? `Plot ${plot.plot_no} blocked. Book within ${project.blocking_window_hours} hours to confirm.`
+      : `Booking received for plot ${plot.plot_no}. Advance ${advance_required}. Project: ${project.name}.`,
   );
 
   redirect(`/bookings/${booking.id}`);
@@ -220,6 +299,46 @@ export async function recordPayment(formData: FormData): Promise<void> {
   await notify(booking_id, "sms", null, `Payment of ₹${amount} received and recorded.`);
   revalidatePath(`/bookings/${booking_id}`);
   revalidatePath("/payments");
+}
+
+// ---------------------------------------------------------------------------
+// EDIT DETAILS — update the captured (non-financial) fields of a booking.
+// Plot, customer, amounts and status are managed through their own flows; this
+// only edits the descriptive details (nominee, partner/director, dates, remarks).
+// ---------------------------------------------------------------------------
+export async function updateBooking(formData: FormData): Promise<void> {
+  const actor = await requireCapability("create_booking");
+  const sb = getSupabase();
+  const id = s(formData.get("id"));
+  if (!id) return;
+
+  await sb
+    .from("bookings")
+    .update({
+      nominee_name: nullable(formData.get("nominee_name")),
+      nominee_mobile: nullable(formData.get("nominee_mobile")),
+      nominee_relationship: nullable(formData.get("nominee_relationship")),
+      partner_id: nullable(formData.get("partner_id")),
+      partner_code: nullable(formData.get("partner_code")),
+      partner_name: nullable(formData.get("partner_name")),
+      senior_director_id: nullable(formData.get("senior_director_id")),
+      senior_director_code: nullable(formData.get("senior_director_code")),
+      senior_director_name: nullable(formData.get("senior_director_name")),
+      director_id: nullable(formData.get("director_id")),
+      director_code: nullable(formData.get("director_code")),
+      director_name: nullable(formData.get("director_name")),
+      tentative_registration_date: nullable(formData.get("tentative_registration_date")),
+      mode_of_payment: nullable(formData.get("mode_of_payment")),
+      loan_token_by: (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null,
+      booked_date: nullable(formData.get("booked_date")),
+      remarks: nullable(formData.get("remarks")),
+    })
+    .eq("id", id);
+
+  await logAudit(actor, "booking", id, "edit", "details updated");
+  revalidatePath(`/bookings/${id}`);
+  revalidatePath("/bookings");
+  redirect(`/bookings/${id}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +505,7 @@ export async function transferBooking(formData: FormData): Promise<void> {
   // New plot must be available and in the same project.
   const { data: toPlot } = await sb
     .from("plots")
-    .select("id, project_id, block, plot_no, sqft, price_per_sqft, status")
+    .select("id, project_id, plot_no, sqft, price_per_sqft, status")
     .eq("id", to_plot_id)
     .maybeSingle();
   if (!toPlot || toPlot.status !== "available" || toPlot.project_id !== booking.project_id) {
@@ -414,7 +533,6 @@ export async function transferBooking(formData: FormData): Promise<void> {
     .from("bookings")
     .update({
       plot_id: to_plot_id,
-      block: toPlot.block,
       plot_sqft: toPlot.sqft,
       total_plot_value: to_value,
       advance_required,
@@ -435,12 +553,12 @@ export async function transferBooking(formData: FormData): Promise<void> {
   });
 
   await recomputePayment(id);
-  await logAudit(actor, "booking", id, "transfer", `${kind} → plot ${toPlot.block}-${toPlot.plot_no}${charge ? ` (charge ₹${charge})` : ""}`);
+  await logAudit(actor, "booking", id, "transfer", `${kind} → plot ${toPlot.plot_no}${charge ? ` (charge ₹${charge})` : ""}`);
   await notify(
     id,
     "sms",
     null,
-    `Plot changed to ${toPlot.block}-${toPlot.plot_no} (${kind}).${charge ? ` Transfer charge ₹${charge} applies.` : ""}`,
+    `Plot changed to ${toPlot.plot_no} (${kind}).${charge ? ` Transfer charge ₹${charge} applies.` : ""}`,
   );
   revalidatePath(`/bookings/${id}`);
 }

@@ -225,6 +225,15 @@
   .btn-success:active {
     transform: translateY(0.5px);
   }
+  .btn:disabled,
+  .btn-primary:disabled,
+  .btn-ghost:disabled,
+  .btn-danger:disabled,
+  .btn-success:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
   .btn-primary {
     background: var(--accent);
     color: var(--accent-contrast);

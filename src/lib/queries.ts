@@ -95,8 +95,32 @@ function keyOf(iso: string): string {
   return `${d.getFullYear()}-${d.getMonth()}`;
 }
 
-export async function getDashboard(): Promise<DashboardData> {
+// `scopeUserId` confines every figure to a single salesperson's own data
+// (their bookings, their customers, their available inventory). Admin calls
+// this with no argument to see the whole company.
+export async function getDashboard(scopeUserId?: string): Promise<DashboardData> {
   const sb = getSupabase();
+  const scoped = Boolean(scopeUserId);
+
+  let plotsQ = sb.from("plots").select("status, sqft, price_per_sqft");
+  if (scoped) plotsQ = plotsQ.eq("status", "available");
+
+  let bookingsQ = sb.from("bookings").select("created_at, total_plot_value, advance_paid, status, project_id");
+  if (scoped) bookingsQ = bookingsQ.eq("created_by", scopeUserId!);
+
+  let recentQ = sb
+    .from("bookings")
+    .select("id, status, book_mode, payment_status, total_plot_value, created_at, customers(name), projects(name), plots(plot_no)")
+    .order("created_at", { ascending: false })
+    .limit(6);
+  if (scoped) recentQ = recentQ.eq("created_by", scopeUserId!);
+
+  let activityQ = sb
+    .from("audit_log")
+    .select("id, actor_name, action, entity, details, created_at")
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (scoped) activityQ = activityQ.eq("actor_id", scopeUserId!);
 
   const [
     projects,
@@ -110,17 +134,13 @@ export async function getDashboard(): Promise<DashboardData> {
     projectNamesRes,
   ] = await Promise.all([
     count("projects"),
-    count("customers"),
+    count("customers", scoped ? (q) => q.eq("created_by", scopeUserId!) : undefined),
     count("users"),
-    sb.from("plots").select("status, sqft, price_per_sqft"),
-    sb.from("bookings").select("created_at, total_plot_value, advance_paid, status, project_id"),
-    sb.from("payments").select("paid_at, amount, status"),
-    sb
-      .from("bookings")
-      .select("id, status, book_mode, payment_status, total_plot_value, created_at, customers(name), projects(name), plots(block, plot_no)")
-      .order("created_at", { ascending: false })
-      .limit(6),
-    sb.from("audit_log").select("id, actor_name, action, entity, details, created_at").order("created_at", { ascending: false }).limit(8),
+    plotsQ,
+    bookingsQ,
+    sb.from("payments").select("paid_at, amount, status, bookings(created_by)"),
+    recentQ,
+    activityQ,
     sb.from("projects").select("id, name"),
   ]);
 
@@ -173,8 +193,13 @@ export async function getDashboard(): Promise<DashboardData> {
   const activeBookings = bookings.filter((b) => b.status !== "cancelled").length;
   const conversionRate = activeBookings > 0 ? Math.round((confirmed / activeBookings) * 100) : 0;
 
-  // Collections series from payments
-  const payments = (paymentsRes.data ?? []) as { paid_at: string; amount: number; status: string }[];
+  // Collections series from payments (scoped to the user's own bookings).
+  const payments = ((paymentsRes.data ?? []) as unknown as {
+    paid_at: string;
+    amount: number;
+    status: string;
+    bookings: { created_by: string | null } | null;
+  }[]).filter((p) => !scoped || p.bookings?.created_by === scopeUserId);
   const collBuckets = buildBuckets(8);
   const collIndex = new Map(collBuckets.map((b, i) => [b.key, i]));
   let thisMonthCollected = 0, lastMonthCollected = 0;
@@ -204,7 +229,7 @@ export async function getDashboard(): Promise<DashboardData> {
     created_at: b.created_at,
     customer: b.customers?.name ?? null,
     project: b.projects?.name ?? null,
-    plot: b.plots ? `${b.plots.block}-${b.plots.plot_no}` : null,
+    plot: b.plots ? b.plots.plot_no : null,
   }));
 
   return {

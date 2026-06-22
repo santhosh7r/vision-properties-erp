@@ -78,6 +78,9 @@ async function main() {
   await sb.from("users").update({ manager_id: ids["senior_director"] }).eq("id", ids["director"]);
   await sb.from("users").update({ manager_id: ids["director"] }).eq("id", ids["business_manager"]);
   await sb.from("users").update({ manager_id: ids["business_manager"] }).eq("id", ids["business_partner"]);
+  // Finance & Legal are operators that connect directly to the company (Admin).
+  await sb.from("users").update({ manager_id: ids["admin"] }).eq("id", ids["finance"]);
+  await sb.from("users").update({ manager_id: ids["admin"] }).eq("id", ids["legal"]);
 
   const { data: existing } = await sb.from("projects").select("id").eq("name", "Vision Signature").maybeSingle();
   if (existing) {

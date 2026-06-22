@@ -35,6 +35,7 @@ export const NAV: NavItem[] = [
   { href: "/bookings", label: "Bookings & Blocking", icon: "fileText", roles: [...SALES, "finance"], group: "Sales" },
   { href: "/payments", label: "Payments", icon: "creditCard", roles: ["admin", "finance"], group: "Operations" },
   { href: "/registrations", label: "Registrations", icon: "scroll", roles: ["admin", "legal", "senior_director", "director", "business_manager"], group: "Operations" },
+  { href: "/business-operators", label: "Business Operators", icon: "briefcase", roles: ["admin", "senior_director", "director", "business_manager"], group: "Sales" },
   { href: "/users", label: "Users & Hierarchy", icon: "users", roles: ["admin"], group: "Administration" },
   { href: "/settings", label: "Settings", icon: "cog", roles: ["admin"], group: "Administration" },
 ];

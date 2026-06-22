@@ -4,12 +4,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import CustomerFields from "@/components/CustomerFields";
 import { NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
+import { computeAdvanceRequired } from "@/lib/sop";
 import { createBooking } from "../actions";
+import PartnerDetailsFields from "../PartnerDetailsFields";
 
-interface MiniUser {
-  id: string;
-  full_name: string;
-}
 interface MiniCustomer {
   id: string;
   name: string;
@@ -17,34 +15,46 @@ interface MiniCustomer {
 }
 interface Props {
   mode: "blocking" | "booking";
-  plot: { id: string; block: string; plot_no: string; sqft: number; price_per_sqft: number };
+  plot: { id: string; plot_no: string; sqft: number; price_per_sqft: number };
   project: {
     name: string;
     advance_percent: number;
+    advance_min_amount: number;
     blocking_amount: number;
     blocking_window_hours: number;
     booking_window_days: number;
   };
   customers: MiniCustomer[];
-  partners: MiniUser[];
-  directors: MiniUser[];
 }
 
 const inr = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-export default function BookingForm({ mode, plot, project, customers, partners, directors }: Props) {
+export default function BookingForm({ mode, plot, project, customers }: Props) {
   const value = useMemo(() => Math.round(plot.sqft * plot.price_per_sqft), [plot]);
-  const defaultAdvance = Math.round((value * project.advance_percent) / 100);
+  // Mirror the server gate exactly: advance = max(percent of value, min amount).
+  const defaultAdvance = useMemo(
+    () => computeAdvanceRequired(value, project.advance_percent, project.advance_min_amount),
+    [value, project.advance_percent, project.advance_min_amount],
+  );
 
   const [useExisting, setUseExisting] = useState(customers.length > 0);
   const [customerId, setCustomerId] = useState("");
-  const [advance, setAdvance] = useState(defaultAdvance);
-  const [blockAmt, setBlockAmt] = useState(project.blocking_amount);
-  const [partnerName, setPartnerName] = useState("");
-  const [directorName, setDirectorName] = useState("");
+  // Required amounts are configured on the PROJECT and are NOT editable here —
+  // the blocking amount and the advance % are set at project creation. This
+  // form only captures how much the customer is paying right now.
+  const advance = defaultAdvance;
+  const blockAmt = project.blocking_amount;
 
   const paidNowDefault = mode === "blocking" ? project.blocking_amount : defaultAdvance;
+  const [paidNow, setPaidNow] = useState(paidNowDefault);
+
+  // A plot only locks (blocked/booked) when the qualifying amount is paid IN
+  // FULL — blocking needs the full blocking amount, booking needs the full
+  // advance. Anything less is rejected and the plot stays available for others.
+  const requiredToLock = mode === "blocking" ? blockAmt : advance;
+  const underpaid = paidNow < requiredToLock;
+  const shortfall = Math.max(0, requiredToLock - paidNow);
 
   return (
     <form action={createBooking} className="max-w-4xl space-y-6">
@@ -57,7 +67,7 @@ export default function BookingForm({ mode, plot, project, customers, partners, 
           <div>
             <p className="text-sm font-semibold capitalize">{mode} — {project.name}</p>
             <p className="text-xs text-[var(--muted)]">
-              Plot {plot.block}-{plot.plot_no} · {plot.sqft} sq.ft · {inr(plot.price_per_sqft)}/sq.ft
+              Plot {plot.plot_no} · {plot.sqft} sq.ft · {inr(plot.price_per_sqft)}/sq.ft
             </p>
           </div>
           <div className="text-right">
@@ -125,10 +135,9 @@ export default function BookingForm({ mode, plot, project, customers, partners, 
       {/* Project / Plot Details (snapshot) */}
       <div className="card">
         <h2 className="mb-4 text-sm font-semibold">Project Details</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Readonly label="12. Project Name" value={project.name} />
-          <Readonly label="13. Block" value={plot.block} />
-          <Readonly label="14. Plot No — Sq.ft" value={`${plot.plot_no} — ${plot.sqft}`} />
+          <Readonly label="13. Plot No — Sq.ft" value={`${plot.plot_no} — ${plot.sqft}`} />
         </div>
       </div>
 
@@ -158,43 +167,12 @@ export default function BookingForm({ mode, plot, project, customers, partners, 
 
       {/* Partner Details */}
       <div className="card">
-        <h2 className="mb-4 text-sm font-semibold">Partner Details</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">18-19. Business Partner</label>
-            <select
-              name="partner_id"
-              className="select"
-              defaultValue=""
-              onChange={(e) => setPartnerName(e.target.selectedOptions[0]?.dataset.name ?? "")}
-            >
-              <option value="">Select partner</option>
-              {partners.map((p) => (
-                <option key={p.id} value={p.id} data-name={p.full_name}>
-                  {p.full_name}
-                </option>
-              ))}
-            </select>
-            <input type="hidden" name="partner_name" value={partnerName} />
-          </div>
-          <div>
-            <label className="label">20-21. Director</label>
-            <select
-              name="director_id"
-              className="select"
-              defaultValue=""
-              onChange={(e) => setDirectorName(e.target.selectedOptions[0]?.dataset.name ?? "")}
-            >
-              <option value="">Select director</option>
-              {directors.map((d) => (
-                <option key={d.id} value={d.id} data-name={d.full_name}>
-                  {d.full_name}
-                </option>
-              ))}
-            </select>
-            <input type="hidden" name="director_name" value={directorName} />
-          </div>
-        </div>
+        <h2 className="mb-1 text-sm font-semibold">Partner Details</h2>
+        <p className="mb-4 text-xs text-[var(--muted)]">
+          Enter the Partner ID (e.g. <span className="font-mono">VPBP47</span>) — the partner name and
+          their director are fetched automatically.
+        </p>
+        <PartnerDetailsFields />
       </div>
 
       {/* Payment Details */}
@@ -236,29 +214,35 @@ export default function BookingForm({ mode, plot, project, customers, partners, 
           {mode === "blocking" ? (
             <div>
               <label className="label">Blocking Amount (₹)</label>
-              <input
-                name="blocking_amount"
-                type="number"
-                className="input"
-                value={blockAmt}
-                onChange={(e) => setBlockAmt(Number(e.target.value))}
-              />
+              <div className="input flex items-center justify-between bg-[var(--surface-2)] text-[var(--muted)]">
+                <span className="tabular-nums text-[var(--text)]">{inr(blockAmt)}</span>
+                <span className="text-[10px] uppercase tracking-wide">Set on project</span>
+              </div>
             </div>
           ) : (
             <div>
-              <label className="label">Advance Required (₹) — {project.advance_percent}%</label>
-              <input
-                name="advance_required"
-                type="number"
-                className="input"
-                value={advance}
-                onChange={(e) => setAdvance(Number(e.target.value))}
-              />
+              <label className="label">
+                Advance Required (₹) —{" "}
+                {advance > Math.round((value * project.advance_percent) / 100)
+                  ? `min ${inr(project.advance_min_amount)}`
+                  : `${project.advance_percent}%`}
+              </label>
+              <div className="input flex items-center justify-between bg-[var(--surface-2)] text-[var(--muted)]">
+                <span className="tabular-nums text-[var(--text)]">{inr(advance)}</span>
+                <span className="text-[10px] uppercase tracking-wide">Set on project</span>
+              </div>
             </div>
           )}
           <div>
             <label className="label">Amount Paid Now (₹)</label>
-            <input name="amount_paid_now" type="number" className="input" defaultValue={paidNowDefault} min={0} />
+            <input
+              name="amount_paid_now"
+              type="number"
+              className="input"
+              value={paidNow}
+              onChange={(e) => setPaidNow(Number(e.target.value))}
+              min={0}
+            />
           </div>
           <div>
             <label className="label">Payment Mode</label>
@@ -270,11 +254,41 @@ export default function BookingForm({ mode, plot, project, customers, partners, 
             </select>
           </div>
         </div>
+
+        {/* Lock status — paid-in-full vs shortfall */}
+        <div
+          className={`mt-4 rounded-lg border px-3 py-3 text-xs ${
+            underpaid
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+          }`}
+        >
+          <div className="flex flex-wrap justify-between gap-2">
+            <span>
+              Required to {mode === "blocking" ? "block" : "book"}: <b>{inr(requiredToLock)}</b>
+              <span className="mx-2 opacity-50">·</span>
+              Paying now: <b>{inr(paidNow)}</b>
+            </span>
+            <span className="font-semibold">
+              {underpaid
+                ? `Short by ${inr(shortfall)} — plot stays AVAILABLE`
+                : `Full ${mode === "blocking" ? "blocking amount" : "advance"} paid — plot will be ${
+                    mode === "blocking" ? "BLOCKED" : "BOOKED"
+                  }`}
+            </span>
+          </div>
+          {underpaid && (
+            <p className="mt-1 opacity-80">
+              The plot only locks once the full {mode === "blocking" ? "blocking amount" : "advance"} is
+              paid. Until then it remains available for others to block.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="flex justify-end gap-3">
         <Link href={`/plots/${plot.id}`} className="btn-ghost">Cancel</Link>
-        <button type="submit" className="btn-primary">
+        <button type="submit" className="btn-primary" disabled={underpaid}>
           {mode === "blocking" ? "Block Plot" : "Book Plot"}
         </button>
       </div>

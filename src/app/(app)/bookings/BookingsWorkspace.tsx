@@ -5,14 +5,11 @@ import BookingsTable, { type BookingRow } from "./BookingsTable";
 import StartBookingFlow, { type FlowProject } from "./StartBookingFlow";
 import { Plus } from "@/components/icons";
 
-interface MiniUser { id: string; full_name: string }
 interface MiniCustomer { id: string; name: string; mobile: string }
 
 export interface FlowData {
   projects: FlowProject[];
   customers: MiniCustomer[];
-  partners: MiniUser[];
-  directors: MiniUser[];
 }
 
 // One page: the bookings list with a prominent "Block / Book Plot" button that
@@ -22,19 +19,28 @@ export default function BookingsWorkspace({
   canConfirm,
   canCancel,
   canCreate,
+  showSalesperson = false,
   flow,
 }: {
   rows: BookingRow[];
   canConfirm: boolean;
   canCancel: boolean;
   canCreate: boolean;
+  showSalesperson?: boolean;
   flow: FlowData | null;
 }) {
   const [creating, setCreating] = useState(false);
 
   // No create permission → just the list.
   if (!canCreate || !flow) {
-    return <BookingsTable rows={rows} canConfirm={canConfirm} canCancel={canCancel} />;
+    return (
+      <BookingsTable
+        rows={rows}
+        canConfirm={canConfirm}
+        canCancel={canCancel}
+        showSalesperson={showSalesperson}
+      />
+    );
   }
 
   if (creating) {
@@ -55,8 +61,6 @@ export default function BookingsWorkspace({
           <StartBookingFlow
             projects={flow.projects}
             customers={flow.customers}
-            partners={flow.partners}
-            directors={flow.directors}
           />
         )}
       </div>
@@ -71,7 +75,12 @@ export default function BookingsWorkspace({
           <Plus size={16} /> Block / Book Plot
         </button>
       </div>
-      <BookingsTable rows={rows} canConfirm={canConfirm} canCancel={canCancel} />
+      <BookingsTable
+        rows={rows}
+        canConfirm={canConfirm}
+        canCancel={canCancel}
+        showSalesperson={showSalesperson}
+      />
     </div>
   );
 }

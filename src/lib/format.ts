@@ -58,6 +58,49 @@ export function totalPlotValue(sqft: number, pricePerSqft: number): number {
   return Math.round((sqft || 0) * (pricePerSqft || 0));
 }
 
+// Indian-style amount in words, e.g. 125000 -> "One Lakh Twenty Five Thousand
+// Rupees Only". Used on the printable booking receipt.
+export function amountInWords(value: number | null | undefined): string {
+  let n = Math.floor(Number(value || 0));
+  if (!Number.isFinite(n) || n <= 0) return "Zero Rupees Only";
+
+  const ones = [
+    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+    "Seventeen", "Eighteen", "Nineteen",
+  ];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const two = (x: number): string =>
+    x < 20 ? ones[x] : `${tens[Math.floor(x / 10)]}${x % 10 ? ` ${ones[x % 10]}` : ""}`;
+  const three = (x: number): string => {
+    const h = Math.floor(x / 100);
+    const r = x % 100;
+    return `${h ? `${ones[h]} Hundred${r ? " " : ""}` : ""}${r ? two(r) : ""}`;
+  };
+
+  const parts: string[] = [];
+  const crore = Math.floor(n / 10000000); n %= 10000000;
+  const lakh = Math.floor(n / 100000); n %= 100000;
+  const thousand = Math.floor(n / 1000); n %= 1000;
+  if (crore) parts.push(`${two(crore)} Crore`);
+  if (lakh) parts.push(`${two(lakh)} Lakh`);
+  if (thousand) parts.push(`${two(thousand)} Thousand`);
+  if (n) parts.push(three(n));
+  return `${parts.join(" ").trim()} Rupees Only`;
+}
+
+// Whole years between a date-of-birth and today.
+export function ageFrom(dob: string | null | undefined): string {
+  if (!dob) return "";
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+  return age >= 0 && age < 150 ? String(age) : "";
+}
+
 // Compact INR for KPI tiles: ₹1.2Cr, ₹45.0L, ₹80.0K.
 export function inrCompact(value: number | null | undefined): string {
   const n = Number(value || 0);

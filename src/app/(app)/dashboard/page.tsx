@@ -59,7 +59,8 @@ export default async function DashboardPage() {
   }
 
   await sweepExpiredBookings();
-  const d = await getDashboard();
+  // Admin sees company-wide figures; sales users see only their own.
+  const d = await getDashboard(user.role === "admin" ? undefined : user.id);
 
   const sold = d.breakdown.booked + d.breakdown.registered + d.breakdown.sold;
   const sellThrough = d.plots > 0 ? Math.round((sold / d.plots) * 100) : 0;

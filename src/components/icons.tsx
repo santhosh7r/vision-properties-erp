@@ -159,6 +159,23 @@ export const Sparkle = (p: P) => (
   </Base>
 );
 
+export const Sitemap = (p: P) => (
+  <Base {...p}>
+    <rect x="8.5" y="2.5" width="7" height="5" rx="1.5" />
+    <rect x="3" y="16.5" width="6" height="5" rx="1.5" />
+    <rect x="15" y="16.5" width="6" height="5" rx="1.5" />
+    <path d="M12 7.5v5M6 12.5h12M6 12.5v4M18 12.5v4" />
+  </Base>
+);
+
+export const Briefcase = (p: P) => (
+  <Base {...p}>
+    <rect x="2.5" y="7" width="19" height="13" rx="2" />
+    <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7" />
+    <path d="M2.5 12.5h19" />
+  </Base>
+);
+
 // Map used by data-driven UI (nav, etc.)
 export const Icons = {
   dashboard: Dashboard,
@@ -171,6 +188,8 @@ export const Icons = {
   scroll: Scroll,
   layers: Layers,
   cog: Cog,
+  sitemap: Sitemap,
+  briefcase: Briefcase,
 } as const;
 
 export type IconName = keyof typeof Icons;

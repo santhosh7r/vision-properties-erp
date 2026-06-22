@@ -13,6 +13,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { computeRefund } from "@/lib/sop";
+import PrintReceiptButton from "./PrintReceiptButton";
 import type { Booking, Customer, Payment, Plot, Project, PlotTransfer } from "@/lib/types";
 import {
   confirmBooking,
@@ -95,13 +96,12 @@ export default async function BookingDetailPage({
     b.status !== "cancelled"
       ? await sb
           .from("plots")
-          .select("id, block, plot_no, sqft, price_per_sqft")
+          .select("id, plot_no, sqft, price_per_sqft")
           .eq("project_id", b.project_id)
           .eq("status", "available")
-          .order("block")
           .order("plot_no")
       : { data: [] };
-  const availablePlots = (availData ?? []) as Pick<Plot, "id" | "block" | "plot_no" | "sqft" | "price_per_sqft">[];
+  const availablePlots = (availData ?? []) as Pick<Plot, "id" | "plot_no" | "sqft" | "price_per_sqft">[];
 
   const { data: transferData } = await sb
     .from("plot_transfers")
@@ -113,9 +113,14 @@ export default async function BookingDetailPage({
   return (
     <>
       <PageHeader
-        title={`${b.book_mode === "blocking" ? "Blocking" : "Booking"} — ${b.plots.block}-${b.plots.plot_no}`}
+        title={`${b.book_mode === "blocking" ? "Blocking" : "Booking"} — ${b.plots.plot_no}`}
         subtitle={`${b.projects.name} · ${b.customers.name} (${b.customers.mobile})`}
-        action={<Link href="/bookings" className="btn-ghost">← Bookings</Link>}
+        action={
+          <div className="flex gap-2">
+            <PrintReceiptButton id={b.id} />
+            <Link href="/bookings" className="btn-ghost">← Bookings</Link>
+          </div>
+        }
       />
 
       {/* Status strip */}
@@ -136,7 +141,6 @@ export default async function BookingDetailPage({
           <Section title="Project Details">
             <Grid>
               <F label="Project">{b.projects.name}</F>
-              <F label="Block">{b.block}</F>
               <F label="Plot No — Sq.ft">{b.plots.plot_no} — {b.plot_sqft}</F>
               <F label="Total Plot Value">{inr(b.total_plot_value)}</F>
             </Grid>
@@ -166,8 +170,12 @@ export default async function BookingDetailPage({
 
           <Section title="Partner Details">
             <Grid>
-              <F label="Partner">{b.partner_name ?? "—"}</F>
-              <F label="Director">{b.director_name ?? "—"}</F>
+              <F label="Partner ID">{b.partner_code ?? "—"}</F>
+              <F label="Partner Name">{b.partner_name ?? "—"}</F>
+              <F label="Senior Director ID">{b.senior_director_code ?? "—"}</F>
+              <F label="Senior Director Name">{b.senior_director_name ?? "—"}</F>
+              <F label="Director ID">{b.director_code ?? "—"}</F>
+              <F label="Director Name">{b.director_name ?? "—"}</F>
             </Grid>
           </Section>
 
@@ -366,7 +374,7 @@ export default async function BookingDetailPage({
                       <option value="" disabled>Select available plot</option>
                       {availablePlots.map((pl) => (
                         <option key={pl.id} value={pl.id}>
-                          {pl.block}-{pl.plot_no} · {inr(pl.sqft * pl.price_per_sqft)}
+                          {pl.plot_no} · {inr(pl.sqft * pl.price_per_sqft)}
                         </option>
                       ))}
                     </select>

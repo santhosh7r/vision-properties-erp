@@ -9,12 +9,16 @@ import CustomersTable, { type CustomerRow } from "./CustomersTable";
 export const dynamic = "force-dynamic";
 
 export default async function CustomersPage() {
-  await requireCapability("manage_customers");
+  const user = await requireCapability("manage_customers");
   const sb = getSupabase();
-  const { data } = await sb
+  // Admin sees every customer; a sales user sees only the customers they created.
+  const isAdmin = user.role === "admin";
+  let query = sb
     .from("customers")
     .select("*, bookings(count)")
     .order("created_at", { ascending: false });
+  if (!isAdmin) query = query.eq("created_by", user.id);
+  const { data } = await query;
   const raw = (data ?? []) as (Customer & { bookings: { count: number }[] })[];
 
   const rows: CustomerRow[] = raw.map((c) => ({

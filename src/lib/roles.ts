@@ -46,12 +46,44 @@ export function isSalesRole(role: Role): boolean {
   return SALES_HIERARCHY.includes(role);
 }
 
-// The role a manager of `role` should normally have (one level up).
+// Human-readable sales ID prefix per role (matches the DB trigger in
+// supabase/schema.sql). Codes are PREFIX + 2 random digits, e.g. VPSD47.
+// Non-sales roles have no code.
+//   senior_director -> VPSD, director -> VPD, business_manager -> VPBM, business_partner -> VPBP
+export const SALES_CODE_PREFIX: Partial<Record<Role, string>> = {
+  senior_director: "VPSD",
+  director: "VPD",
+  business_manager: "VPBM",
+  business_partner: "VPBP",
+};
+
+// The role a manager of `role` must have (one level up). Finance & Legal are
+// operators that connect DIRECTLY to the company, so their manager is the Admin.
+// Admin itself sits at the very top and has no manager (null).
 export function managerRoleOf(role: Role): Role | null {
+  if (role === "finance" || role === "legal") return "admin";
   const idx = SALES_HIERARCHY.indexOf(role);
   if (idx > 0) return SALES_HIERARCHY[idx - 1];
-  if (idx === 0) return "admin";
-  return null;
+  if (idx === 0) return "admin"; // senior_director -> admin
+  return null; // admin
+}
+
+// Role that may be created DIRECTLY beneath `parentRole` — strictly the next
+// rung down (one level only). A member always sits directly under a parent whose
+// role is exactly one above their own, so the chain is never skipped:
+//   admin            -> [senior_director]   (company creates Senior Directors)
+//   senior_director  -> [director]
+//   director         -> [business_manager]
+//   business_manager -> [business_partner]
+//   business_partner -> []                  (leaf — creates no one)
+// A creator higher up (e.g. an SD wanting a Partner) reaches DOWN their network
+// and adds under the appropriate parent node — they don't place it under
+// themselves. That reach is enforced separately (actorControls), not here.
+export function creatableRolesUnder(parentRole: Role): Role[] {
+  if (parentRole === "admin") return [SALES_HIERARCHY[0]];
+  const idx = SALES_HIERARCHY.indexOf(parentRole);
+  if (idx === -1 || idx >= SALES_HIERARCHY.length - 1) return [];
+  return [SALES_HIERARCHY[idx + 1]];
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +91,7 @@ export function managerRoleOf(role: Role): Role | null {
 // ---------------------------------------------------------------------------
 export type Capability =
   | "manage_users"
+  | "manage_team"
   | "manage_projects"
   | "manage_plots"
   | "manage_customers"
@@ -77,6 +110,7 @@ export type Capability =
 const CAPABILITIES: Record<Role, Capability[]> = {
   admin: [
     "manage_users",
+    "manage_team",
     "manage_projects",
     "manage_plots",
     "manage_customers",
@@ -93,6 +127,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "view_reports",
   ],
   senior_director: [
+    "manage_team",
     "manage_customers",
     "create_booking",
     "approve_booking",
@@ -102,6 +137,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "view_reports",
   ],
   director: [
+    "manage_team",
     "manage_customers",
     "create_booking",
     "approve_booking",
@@ -111,6 +147,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "view_reports",
   ],
   business_manager: [
+    "manage_team",
     "manage_customers",
     "create_booking",
     "approve_booking",

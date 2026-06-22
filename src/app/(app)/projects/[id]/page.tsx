@@ -47,12 +47,15 @@ export default async function ProjectDetailPage({
     .order("name");
   const groups = (catData ?? []) as PlotCategory[];
 
-  const { data: plotData } = await sb
+  // Sales users (no manage_plots) only ever see available plots.
+  const canAddPlots = can(user.role, "manage_plots");
+  let plotQuery = sb
     .from("plots")
     .select("*")
     .eq("project_id", id)
-    .order("block")
     .order("plot_no");
+  if (!canAddPlots) plotQuery = plotQuery.eq("status", "available");
+  const { data: plotData } = await plotQuery;
   const plots = (plotData ?? []) as Plot[];
 
   // Bucket plots by category for the grouped display (uncategorised last).
@@ -66,7 +69,6 @@ export default async function ProjectDetailPage({
   ].filter((b) => b.items.length > 0);
 
   const editable = can(user.role, "manage_projects");
-  const canAddPlots = can(user.role, "manage_plots");
 
   const approval = APPROVAL_TYPES.find((a) => a.value === p.approval_type)?.label;
   const ptype = PROJECT_TYPES.find((a) => a.value === p.project_type)?.label;
@@ -176,10 +178,6 @@ export default async function ProjectDetailPage({
                   </select>
                 </div>
                 <div>
-                  <label className="label">Block *</label>
-                  <input name="block" className="input" required />
-                </div>
-                <div>
                   <label className="label">Plot No *</label>
                   <input name="plot_no" className="input" required />
                 </div>
@@ -217,7 +215,6 @@ export default async function ProjectDetailPage({
                   <table className="w-full">
                     <thead className="border-b">
                       <tr>
-                        <th className="th">Block</th>
                         <th className="th">Plot No</th>
                         <th className="th">Sq.ft</th>
                         <th className="th">₹/Sq.ft</th>
@@ -230,7 +227,6 @@ export default async function ProjectDetailPage({
                     <tbody>
                       {bucket.items.map((pl) => (
                         <tr key={pl.id} className="border-b last:border-0">
-                          <td className="td">{pl.block}</td>
                           <td className="td font-medium">{pl.plot_no}</td>
                           <td className="td">{pl.sqft}</td>
                           <td className="td">{inr(pl.price_per_sqft)}</td>

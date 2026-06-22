@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui";
-import type { Customer, Plot, Project, User } from "@/lib/types";
+import type { Customer, Plot, Project } from "@/lib/types";
 import BookingForm from "./BookingForm";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function NewBookingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plot?: string; mode?: string }>;
+  searchParams: Promise<{ plot?: string; mode?: string; err?: string }>;
 }) {
   await requireCapability("create_booking");
   const sp = await searchParams;
@@ -32,24 +32,29 @@ export default async function NewBookingPage({
     redirect(`/plots/${plotId}`);
   }
 
-  const [{ data: custData }, { data: partnerData }, { data: directorData }] = await Promise.all([
-    sb.from("customers").select("id, name, mobile").order("name"),
-    sb.from("users").select("id, full_name").eq("role", "business_partner").eq("is_active", true).order("full_name"),
-    sb.from("users").select("id, full_name").in("role", ["director", "senior_director"]).eq("is_active", true).order("full_name"),
-  ]);
+  const { data: custData } = await sb
+    .from("customers")
+    .select("id, name, mobile")
+    .order("name");
 
   return (
     <>
       <PageHeader
         title={mode === "blocking" ? "Block Plot" : "Book Plot"}
-        subtitle={`${plot.projects.name} · Plot ${plot.block}-${plot.plot_no}`}
+        subtitle={`${plot.projects.name} · Plot ${plot.plot_no}`}
         action={<Link href={`/plots/${plotId}`} className="btn-ghost">Cancel</Link>}
       />
+      {sp.err === "underpaid" && (
+        <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+          The plot was <b>not {mode === "blocking" ? "blocked" : "booked"}</b>: the full{" "}
+          {mode === "blocking" ? "blocking amount" : "advance"} must be paid to lock it. It is still
+          available — enter the full amount below to {mode === "blocking" ? "block" : "book"}.
+        </div>
+      )}
       <BookingForm
         mode={mode}
         plot={{
           id: plot.id,
-          block: plot.block,
           plot_no: plot.plot_no,
           sqft: plot.sqft,
           price_per_sqft: plot.price_per_sqft,
@@ -57,13 +62,12 @@ export default async function NewBookingPage({
         project={{
           name: plot.projects.name,
           advance_percent: plot.projects.advance_percent,
+          advance_min_amount: plot.projects.advance_min_amount,
           blocking_amount: plot.projects.blocking_amount,
           blocking_window_hours: plot.projects.blocking_window_hours,
           booking_window_days: plot.projects.booking_window_days,
         }}
         customers={(custData ?? []) as Pick<Customer, "id" | "name" | "mobile">[]}
-        partners={(partnerData ?? []) as Pick<User, "id" | "full_name">[]}
-        directors={(directorData ?? []) as Pick<User, "id" | "full_name">[]}
       />
     </>
   );

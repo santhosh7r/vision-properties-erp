@@ -14,16 +14,16 @@ export default async function RegistrationsPage() {
 
   const { data: regData } = await sb
     .from("registrations")
-    .select("*, plots(block, plot_no), projects(name)")
+    .select("*, plots(plot_no), projects(name)")
     .order("register_date", { ascending: false });
   const raw = (regData ?? []) as (Registration & {
-    plots: Pick<Plot, "block" | "plot_no">;
+    plots: Pick<Plot, "plot_no">;
     projects: Pick<Project, "name">;
   })[];
   const rows: RegistrationRow[] = raw.map((r) => ({
     id: r.id,
     project: r.projects?.name ?? "—",
-    plot: r.plots ? `${r.plots.block}-${r.plots.plot_no}` : "—",
+    plot: r.plots ? r.plots.plot_no : "—",
     register_number: r.register_number,
     register_date: r.register_date,
     registrant: r.name_of_registrant,
@@ -32,10 +32,10 @@ export default async function RegistrationsPage() {
 
   const { data: pendingReg } = await sb
     .from("bookings")
-    .select("id, plots(block, plot_no), customers(name), projects(name)")
+    .select("id, plots(plot_no), customers(name), projects(name)")
     .eq("status", "confirmed");
   const awaiting = ((pendingReg ?? []) as unknown as (Pick<Booking, "id"> & {
-    plots: Pick<Plot, "block" | "plot_no">;
+    plots: Pick<Plot, "plot_no">;
     customers: Pick<Customer, "name">;
     projects: Pick<Project, "name">;
   })[]).filter(Boolean);
@@ -55,7 +55,7 @@ export default async function RegistrationsPage() {
           <div className="flex flex-wrap gap-2">
             {awaiting.map((b) => (
               <Link key={b.id} href={`/registrations/new?booking=${b.id}`} className="btn-ghost" style={{ fontSize: 12, padding: "6px 12px" }}>
-                {b.projects?.name} · {b.plots?.block}-{b.plots?.plot_no} · {b.customers?.name}
+                {b.projects?.name} · {b.plots?.plot_no} · {b.customers?.name}
               </Link>
             ))}
           </div>

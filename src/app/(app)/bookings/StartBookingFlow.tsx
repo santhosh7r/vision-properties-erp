@@ -6,7 +6,6 @@ import BookingForm from "./new/BookingForm";
 
 export interface FlowPlot {
   id: string;
-  block: string;
   plot_no: string;
   sqft: number;
   price_per_sqft: number;
@@ -17,25 +16,21 @@ export interface FlowProject {
   name: string;
   city: string;
   advance_percent: number;
+  advance_min_amount: number;
   blocking_amount: number;
   blocking_window_hours: number;
   booking_window_days: number;
   groups: { id: string; name: string }[];
   plots: FlowPlot[];
 }
-interface MiniUser { id: string; full_name: string }
 interface MiniCustomer { id: string; name: string; mobile: string }
 
 export default function StartBookingFlow({
   projects,
   customers,
-  partners,
-  directors,
 }: {
   projects: FlowProject[];
   customers: MiniCustomer[];
-  partners: MiniUser[];
-  directors: MiniUser[];
 }) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ plot: FlowPlot; mode: "blocking" | "booking" } | null>(null);
@@ -59,7 +54,7 @@ export default function StartBookingFlow({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold">
             {selected.mode === "blocking" ? "New Blocking" : "New Booking"} — {project.name} · Plot{" "}
-            {selected.plot.block}-{selected.plot.plot_no}
+            {selected.plot.plot_no}
           </h2>
           <button type="button" onClick={() => setSelected(null)} className="btn-ghost">
             ← Back to plots
@@ -69,7 +64,6 @@ export default function StartBookingFlow({
           mode={selected.mode}
           plot={{
             id: selected.plot.id,
-            block: selected.plot.block,
             plot_no: selected.plot.plot_no,
             sqft: selected.plot.sqft,
             price_per_sqft: selected.plot.price_per_sqft,
@@ -77,13 +71,12 @@ export default function StartBookingFlow({
           project={{
             name: project.name,
             advance_percent: project.advance_percent,
+            advance_min_amount: project.advance_min_amount,
             blocking_amount: project.blocking_amount,
             blocking_window_hours: project.blocking_window_hours,
             booking_window_days: project.booking_window_days,
           }}
           customers={customers}
-          partners={partners}
-          directors={directors}
         />
       </div>
     );
@@ -100,11 +93,7 @@ export default function StartBookingFlow({
           : plotCat === UNCAT
             ? !pl.plot_category_id
             : pl.plot_category_id === plotCat;
-      const inSearch =
-        q === "" ||
-        `${pl.block}-${pl.plot_no}`.toLowerCase().includes(q) ||
-        pl.block.toLowerCase().includes(q) ||
-        pl.plot_no.toLowerCase().includes(q);
+      const inSearch = q === "" || pl.plot_no.toLowerCase().includes(q);
       return inCat && inSearch;
     });
 
@@ -139,7 +128,7 @@ export default function StartBookingFlow({
           <input
             className="input"
             style={{ maxWidth: 320 }}
-            placeholder="Search plots (block / plot no)…"
+            placeholder="Search plots (plot no)…"
             value={plotSearch}
             onChange={(e) => setPlotSearch(e.target.value)}
           />
@@ -164,7 +153,7 @@ export default function StartBookingFlow({
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {bucket.items.map((pl) => (
                   <div key={pl.id} className="rounded-xl border p-4" style={{ borderColor: "var(--border)" }}>
-                    <div className="font-medium">{pl.block}-{pl.plot_no}</div>
+                    <div className="font-medium">{pl.plot_no}</div>
                     <div className="mt-0.5 text-xs text-[var(--muted)]">
                       {pl.sqft} sq.ft · {inr(pl.sqft * pl.price_per_sqft)}
                     </div>

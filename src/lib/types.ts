@@ -24,6 +24,7 @@ export interface User {
   email: string;
   mobile: string | null;
   role: Role;
+  partner_code: string | null;
   manager_id: string | null;
   is_active: boolean;
   created_at: string;
@@ -86,7 +87,7 @@ export interface Plot {
   id: string;
   project_id: string;
   plot_category_id: string | null;
-  block: string;
+  block: string | null;
   plot_no: string;
   sqft: number;
   price_per_sqft: number;
@@ -125,8 +126,13 @@ export interface Booking {
   nominee_mobile: string | null;
   nominee_relationship: string | null;
   partner_id: string | null;
+  partner_code: string | null;
   partner_name: string | null;
+  senior_director_id: string | null;
+  senior_director_code: string | null;
+  senior_director_name: string | null;
   director_id: string | null;
+  director_code: string | null;
   director_name: string | null;
   tentative_registration_date: string | null;
   mode_of_payment: string | null;
