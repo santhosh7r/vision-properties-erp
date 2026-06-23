@@ -19,6 +19,8 @@ export default function BookingsWorkspace({
   canConfirm,
   canCancel,
   canCreate,
+  canBlock = false,
+  canBook = false,
   showSalesperson = false,
   flow,
 }: {
@@ -26,6 +28,8 @@ export default function BookingsWorkspace({
   canConfirm: boolean;
   canCancel: boolean;
   canCreate: boolean;
+  canBlock?: boolean;
+  canBook?: boolean;
   showSalesperson?: boolean;
   flow: FlowData | null;
 }) {
@@ -61,6 +65,8 @@ export default function BookingsWorkspace({
           <StartBookingFlow
             projects={flow.projects}
             customers={flow.customers}
+            canBlock={canBlock}
+            canBook={canBook}
           />
         )}
       </div>
@@ -72,7 +78,7 @@ export default function BookingsWorkspace({
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-[var(--muted)]">{rows.length} blocking / booking records</p>
         <button type="button" onClick={() => setCreating(true)} className="btn-primary">
-          <Plus size={16} /> Block / Book Plot
+          <Plus size={16} /> {canBook ? "Block / Book Plot" : "Block Plot"}
         </button>
       </div>
       <BookingsTable

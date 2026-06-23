@@ -84,12 +84,13 @@ export async function lookupSalesPerson(rawCode: string): Promise<SalesLookup> {
 // CREATE — block or book a plot (board: the big blocking/booking form)
 // ---------------------------------------------------------------------------
 export async function createBooking(formData: FormData): Promise<void> {
-  const actor = await requireCapability("create_booking");
-  const sb = getSupabase();
-
   const plot_id = s(formData.get("plot_id"));
   const mode = s(formData.get("book_mode")) as BookMode;
   if (!plot_id || (mode !== "blocking" && mode !== "booking")) return;
+
+  // Sales roles may BLOCK; only Admin may BOOK. Gate on the matching capability.
+  const actor = await requireCapability(mode === "booking" ? "create_booking" : "create_blocking");
+  const sb = getSupabase();
 
   // Load plot + project for pricing/config; verify availability.
   const { data: plot } = await sb
@@ -307,7 +308,9 @@ export async function recordPayment(formData: FormData): Promise<void> {
 // only edits the descriptive details (nominee, partner/director, dates, remarks).
 // ---------------------------------------------------------------------------
 export async function updateBooking(formData: FormData): Promise<void> {
-  const actor = await requireCapability("create_booking");
+  // Editing applies to both blockings and bookings — gate on create_blocking
+  // (held by all sales roles and Admin).
+  const actor = await requireCapability("create_blocking");
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;

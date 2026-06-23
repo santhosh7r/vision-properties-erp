@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { can, ROLE_LABELS } from "@/lib/roles";
+import type { SessionUser } from "@/lib/session";
+import { can, isSalesRole, ROLE_LABELS } from "@/lib/roles";
 import { supabaseConfigured } from "@/lib/supabase";
-import { getDashboard } from "@/lib/queries";
+import { getDashboard, getSalesDashboard } from "@/lib/queries";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { inr, inrCompact, timeAgo } from "@/lib/format";
 import { EmptyState, BookingStatusBadge, PaymentBadge, Badge } from "@/components/ui";
@@ -59,7 +60,14 @@ export default async function DashboardPage() {
   }
 
   await sweepExpiredBookings();
-  // Admin sees company-wide figures; sales users see only their own.
+
+  // Sales roles get a focused, personal view — their own sales, their network's
+  // sales and available inventory. No company-wide financials.
+  if (isSalesRole(user.role)) {
+    return <SalesDashboard user={user} />;
+  }
+
+  // Admin (and Finance/Legal) see company-wide figures.
   const d = await getDashboard(user.role === "admin" ? undefined : user.id);
 
   const sold = d.breakdown.booked + d.breakdown.registered + d.breakdown.sold;
@@ -282,5 +290,128 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
       <p className="text-xs text-[var(--muted)]">{label}</p>
       <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sales dashboard — a salesperson's OWN view. Deliberately omits all
+// company-wide figures (inventory value, company collections, pipeline). Shows
+// only: what they sold, what their network sold, and available inventory.
+// ---------------------------------------------------------------------------
+async function SalesDashboard({ user }: { user: SessionUser }) {
+  const sd = await getSalesDashboard(user.id);
+  const salesDelta = pctChange(sd.thisMonthValue, sd.lastMonthValue);
+  const today = new Date().toLocaleDateString("en-IN", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+
+  return (
+    <>
+      {/* Header */}
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-[var(--muted)]">{today}</p>
+          <h1 className="mt-1.5 text-[26px] font-semibold tracking-tight">
+            {greeting()}, {user.full_name.split(" ")[0]}
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {can(user.role, "manage_customers") && (
+            <Link href="/customers/new" className="btn-ghost"><Plus size={16} /> Customer</Link>
+          )}
+          <Link href="/bookings" className="btn-primary"><Plus size={16} /> Block Plot</Link>
+        </div>
+      </div>
+
+      {/* KPI row — personal + network only */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="My Sales" value={inrCompact(sd.mine.value)} delta={salesDelta}
+          spark={sd.salesSparkline} sub={`${sd.mine.count} blocking / booking`}
+          icon={<Trending size={20} />} accent="#e4433a" href="/bookings" highlight
+        />
+        <KpiCard
+          label="My Network Sales" value={inrCompact(sd.network.value)}
+          sub={`${sd.network.count} deals · ${sd.teamSize} member${sd.teamSize === 1 ? "" : "s"}`}
+          icon={<UserCircle size={20} />} accent="#428fdf" href="/business-operators"
+        />
+        <KpiCard
+          label="Available Plots" value={String(sd.availablePlots)}
+          sub="Ready to block / book"
+          icon={<Grid size={20} />} accent="#428fdf" href="/plots"
+        />
+        <KpiCard
+          label="My Team" value={String(sd.teamSize)}
+          sub="People in your network"
+          icon={<Building size={20} />} accent="#e4433a" href="/business-operators"
+        />
+      </div>
+
+      {/* My sales performance */}
+      <div className="mt-4">
+        <Panel
+          title="My Sales Performance" accent="#e4433a"
+          action={<span className="text-xs text-[var(--muted)]">Booked value · last 8 months</span>}
+        >
+          <div className="mb-5 flex flex-wrap gap-8">
+            <Metric label="This Month" value={inrCompact(sd.thisMonthValue)} />
+            <Metric label="Last Month" value={inrCompact(sd.lastMonthValue)} />
+            <Metric label="My Total" value={inrCompact(sd.mine.value)} />
+            <Metric label="Network Total" value={inrCompact(sd.network.value)} />
+          </div>
+          <AreaChart
+            data={sd.salesSeries.map((s) => ({ label: s.label, value: s.value }))}
+            color="#e4433a"
+            valueFormat={inrCompact}
+          />
+        </Panel>
+      </div>
+
+      {/* Recent bookings (their own + network) */}
+      <div className="card mt-4" style={{ padding: 0 }}>
+        <div className="flex items-center justify-between px-5 py-4">
+          <h2 className="flex items-center gap-2.5 text-sm font-semibold">
+            <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: "#428fdf" }} />
+            Recent Bookings & Blockings
+          </h2>
+          <Link href="/bookings" className="flex items-center gap-1 text-xs text-[var(--accent)] hover:underline">View all <ArrowRight size={13} /></Link>
+        </div>
+        <div style={{ borderTop: "1px solid var(--border)" }} />
+        {sd.recentBookings.length === 0 ? (
+          <div className="px-5 py-8"><EmptyState message="No bookings yet." hint="Block a plot to see it here." /></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  <th className="th">Project</th>
+                  <th className="th">Plot</th>
+                  <th className="th">Customer</th>
+                  <th className="th">Value</th>
+                  <th className="th">Mode</th>
+                  <th className="th">Status</th>
+                  <th className="th">Payment</th>
+                  <th className="th">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sd.recentBookings.map((b) => (
+                  <tr key={b.id}>
+                    <td className="td"><Link href={`/bookings/${b.id}`} className="font-medium hover:text-[var(--accent)]">{b.project ?? "—"}</Link></td>
+                    <td className="td">{b.plot ?? "—"}</td>
+                    <td className="td">{b.customer ?? "—"}</td>
+                    <td className="td tabular-nums">{inr(b.total_plot_value)}</td>
+                    <td className="td"><Badge tone={b.book_mode === "blocking" ? "amber" : "blue"}>{b.book_mode}</Badge></td>
+                    <td className="td"><BookingStatusBadge status={b.status} /></td>
+                    <td className="td"><PaymentBadge status={b.payment_status} /></td>
+                    <td className="td whitespace-nowrap text-[var(--muted)]">{timeAgo(b.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

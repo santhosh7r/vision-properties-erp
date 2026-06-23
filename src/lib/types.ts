@@ -187,3 +187,19 @@ export interface Registration {
   created_by: string | null;
   created_at: string;
 }
+
+export type CabRequestStatus = "pending" | "approved" | "declined";
+
+export interface CabRequest {
+  id: string;
+  customer_id: string;
+  requested_by: string | null;
+  cab_date: string;          // the date the cab is requested for
+  pickup: string | null;
+  notes: string | null;
+  status: CabRequestStatus;
+  decline_reason: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+}

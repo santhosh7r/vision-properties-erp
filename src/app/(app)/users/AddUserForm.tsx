@@ -6,6 +6,7 @@ import {
   SALES_HIERARCHY,
   BUSINESS_OPERATORS,
   managerRoleOf,
+  canManageRole,
   type Role,
 } from "@/lib/roles";
 import { createUser } from "./actions";
@@ -45,8 +46,10 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
   const validManagers = useMemo(() => {
     if (!need) return [];
     if (adminParent) return admins;
-    return managers.filter((m) => m.role === need);
-  }, [need, adminParent, admins, managers]);
+    // Director / Manager / Partner may report to Admin OR any sales role above
+    // them — a higher role can place someone several rungs below directly.
+    return managers.filter((m) => canManageRole(m.role, role as Role));
+  }, [need, adminParent, admins, managers, role]);
 
   // When the role changes: reset search, and auto-pick the company Admin for the
   // operator/SD roles that always report to Admin.
@@ -69,7 +72,9 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
   }, [needsPicker, query, validManagers]);
 
   const selected = managerId ? managers.find((m) => m.id === managerId) ?? null : null;
-  const canSubmit = !needsPicker || !!managerId;
+  // The manager is optional for sales sub-roles: when left blank the new user
+  // reports to the creating Admin (handled server-side).
+  const canSubmit = true;
 
   const label = (m: ManagerOption) => `${m.code ? `${m.code} · ` : ""}${m.full_name}`;
 
@@ -125,7 +130,7 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
       </div>
 
       <div>
-        <label className="label">Reports To (Manager){needsPicker ? " *" : ""}</label>
+        <label className="label">Reports To (Manager)</label>
 
         {/* No role yet */}
         {!role && (
@@ -166,7 +171,7 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
               <>
                 <input
                   className="input"
-                  placeholder={`Search ${ROLE_LABELS[need!]} by name or ID…`}
+                  placeholder="Search a manager by name or ID… (optional)"
                   value={query}
                   autoComplete="off"
                   onChange={(e) => {
@@ -187,7 +192,7 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
                     <div className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-lg border bg-[var(--surface)] shadow-lg">
                       {filtered.length === 0 ? (
                         <div className="px-3 py-2 text-xs text-[var(--muted)]">
-                          No {ROLE_LABELS[need!]} found.
+                          No manager found.
                         </div>
                       ) : (
                         filtered.map((m) => (
@@ -224,11 +229,8 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
             : adminParent
               ? "Reports directly to the company (Admin)."
               : needsPicker
-                ? `Search and choose the ${ROLE_LABELS[need!]} this ${ROLE_LABELS[role as Role]} reports to.`
+                ? `Optionally pick the manager this ${ROLE_LABELS[role as Role]} reports to — any Admin or higher sales role. Leave blank to report to you.`
                 : "Admins sit at the top of the org — no manager."}
-          {needsPicker && validManagers.length === 0 && (
-            <span className="text-amber-500"> No {ROLE_LABELS[need!]} exists yet — create one first.</span>
-          )}
         </p>
       </div>
 

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { ROLES, managerRoleOf, type Role } from "@/lib/roles";
+import { ROLES, managerRoleOf, canManageRole, type Role } from "@/lib/roles";
 
 export async function createUser(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_users");
@@ -20,11 +20,11 @@ export async function createUser(formData: FormData): Promise<void> {
 
   if (!full_name || !email || !password || !ROLES.includes(role)) return;
 
-  // Placement rule: a member sits directly under a parent whose role is exactly
-  // one level above theirs (managerRoleOf). Director/Manager/Partner REQUIRE a
-  // specific parent; Senior Director, Finance and Legal attach to the company
-  // (Admin) — auto-linked here when none is supplied. Enforced server-side so
-  // the rule holds no matter which client posts the form.
+  // Placement rule: Senior Director, Finance and Legal connect DIRECTLY to the
+  // company (Admin) — auto-linked here when none is supplied. Director / Manager /
+  // Partner may sit under Admin OR any sales role above them (canManageRole), so a
+  // higher role can create someone several rungs below directly. When no manager
+  // is chosen they report to the creating Admin. Admin itself has no manager.
   const need = managerRoleOf(role); // admin for SD/finance/legal, role-1 for sales, null for admin
   let finalManagerId = manager_id;
   if (need === "admin") {
@@ -43,10 +43,14 @@ export async function createUser(formData: FormData): Promise<void> {
       finalManagerId = company?.id ?? null;
     }
   } else if (need) {
-    // Director / Manager / Partner must have a parent of exactly the right role.
-    if (!manager_id) return;
-    const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
-    if (!parent || (parent.role as Role) !== need) return;
+    // Director / Manager / Partner: validate the chosen parent can manage this
+    // role; default to the creating Admin when no parent is supplied.
+    if (manager_id) {
+      const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
+      if (!parent || !canManageRole(parent.role as Role, role)) return;
+    } else {
+      finalManagerId = actor.id;
+    }
   }
 
   const password_hash = await bcrypt.hash(password, 10);

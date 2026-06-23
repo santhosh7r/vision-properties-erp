@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can } from "@/lib/roles";
 import { PageHeader } from "@/components/ui";
@@ -9,7 +9,8 @@ import RegistrationsTable, { type RegistrationRow } from "./RegistrationsTable";
 export const dynamic = "force-dynamic";
 
 export default async function RegistrationsPage() {
-  const user = await requireUser();
+  // Registrations are handled by Admin + Legal only — sales roles can't register.
+  const user = await requireCapability("manage_registration");
   const sb = getSupabase();
 
   const { data: regData } = await sb

@@ -124,7 +124,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
         {/* Title */}
         <div style={{ textAlign: "center", margin: "4px 0 14px" }}>
           <span style={{ background: NAVY, color: "#fff", fontWeight: 700, fontSize: 14, padding: "5px 18px", borderRadius: 4, letterSpacing: 0.5 }}>
-            PLOT BOOKING RECEIPT
+            {b.book_mode === "blocking" ? "PLOT BLOCKING RECEIPT" : "PLOT BOOKING RECEIPT"}
           </span>
         </div>
 

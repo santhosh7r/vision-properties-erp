@@ -28,9 +28,13 @@ interface MiniCustomer { id: string; name: string; mobile: string }
 export default function StartBookingFlow({
   projects,
   customers,
+  canBlock = true,
+  canBook = false,
 }: {
   projects: FlowProject[];
   customers: MiniCustomer[];
+  canBlock?: boolean;
+  canBook?: boolean;
 }) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ plot: FlowPlot; mode: "blocking" | "booking" } | null>(null);
@@ -158,22 +162,26 @@ export default function StartBookingFlow({
                       {pl.sqft} sq.ft · {inr(pl.sqft * pl.price_per_sqft)}
                     </div>
                     <div className="mt-3 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelected({ plot: pl, mode: "blocking" })}
-                        className="btn-ghost flex-1"
-                        style={{ fontSize: 12, padding: "6px 10px" }}
-                      >
-                        Block
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelected({ plot: pl, mode: "booking" })}
-                        className="btn-primary flex-1"
-                        style={{ fontSize: 12, padding: "6px 10px" }}
-                      >
-                        Book
-                      </button>
+                      {canBlock && (
+                        <button
+                          type="button"
+                          onClick={() => setSelected({ plot: pl, mode: "blocking" })}
+                          className={`flex-1 ${canBook ? "btn-ghost" : "btn-primary"}`}
+                          style={{ fontSize: 12, padding: "6px 10px" }}
+                        >
+                          Block
+                        </button>
+                      )}
+                      {canBook && (
+                        <button
+                          type="button"
+                          onClick={() => setSelected({ plot: pl, mode: "booking" })}
+                          className="btn-primary flex-1"
+                          style={{ fontSize: 12, padding: "6px 10px" }}
+                        >
+                          Book
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

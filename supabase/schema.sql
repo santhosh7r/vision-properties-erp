@@ -391,3 +391,29 @@ create table if not exists audit_log (
 );
 create index if not exists idx_audit_entity on audit_log(entity, entity_id);
 create index if not exists idx_audit_created on audit_log(created_at desc);
+
+-- ---------------------------------------------------------------------------
+-- CAB REQUESTS  (sales request a cab for their own client; admin approves)
+-- ---------------------------------------------------------------------------
+do $$ begin
+  create type cab_request_status as enum ('pending', 'approved', 'declined');
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists cab_requests (
+  id             uuid primary key default gen_random_uuid(),
+  customer_id    uuid not null references customers(id) on delete cascade,
+  requested_by   uuid references users(id) on delete set null,
+  cab_date       date not null,
+  pickup         text,
+  notes          text,
+  status         cab_request_status not null default 'pending',
+  decline_reason text,
+  decided_by     uuid references users(id) on delete set null,
+  decided_at     timestamptz,
+  created_at     timestamptz not null default now()
+);
+create index if not exists idx_cab_requests_requested_by on cab_requests(requested_by);
+create index if not exists idx_cab_requests_status       on cab_requests(status);
+create index if not exists idx_cab_requests_customer     on cab_requests(customer_id);

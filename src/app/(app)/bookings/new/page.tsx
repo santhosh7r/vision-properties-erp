@@ -13,10 +13,11 @@ export default async function NewBookingPage({
 }: {
   searchParams: Promise<{ plot?: string; mode?: string; err?: string }>;
 }) {
-  await requireCapability("create_booking");
   const sp = await searchParams;
   const plotId = sp.plot;
   const mode = sp.mode === "blocking" ? "blocking" : "booking";
+  // Sales roles may BLOCK; only Admin may BOOK.
+  await requireCapability(mode === "booking" ? "create_booking" : "create_blocking");
   if (!plotId) redirect("/plots");
 
   const sb = getSupabase();

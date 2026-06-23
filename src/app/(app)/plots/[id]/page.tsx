@@ -40,7 +40,10 @@ export default async function PlotDetailPage({
     .maybeSingle();
   const booking = bk as (Booking & { customers: Pick<Customer, "name" | "mobile"> }) | null;
 
+  // Sales roles may BLOCK; only Admin may BOOK.
+  const canBlock = can(user.role, "create_blocking");
   const canBook = can(user.role, "create_booking");
+  const canCreate = canBlock || canBook;
   const isAvailable = plot.status === "available";
 
   return (
@@ -79,16 +82,23 @@ export default async function PlotDetailPage({
             <div className="card">
               <h2 className="text-sm font-semibold">Actions</h2>
               <p className="mt-1 text-sm text-[var(--muted)]">
-                This plot is available. Block it with the initial amount, or book it directly with the advance.
+                This plot is available. Block it with the initial amount{canBook ? ", or book it directly with the advance" : ""}.
               </p>
-              {canBook ? (
+              {canCreate ? (
                 <div className="mt-4 flex flex-wrap gap-3">
-                  <Link href={`/bookings/new?plot=${plot.id}&mode=blocking`} className="btn-ghost">
-                    Block Plot ({inr(project.blocking_amount)})
-                  </Link>
-                  <Link href={`/bookings/new?plot=${plot.id}&mode=booking`} className="btn-primary">
-                    Book Plot ({project.advance_percent}% advance)
-                  </Link>
+                  {canBlock && (
+                    <Link
+                      href={`/bookings/new?plot=${plot.id}&mode=blocking`}
+                      className={canBook ? "btn-ghost" : "btn-primary"}
+                    >
+                      Block Plot ({inr(project.blocking_amount)})
+                    </Link>
+                  )}
+                  {canBook && (
+                    <Link href={`/bookings/new?plot=${plot.id}&mode=booking`} className="btn-primary">
+                      Book Plot ({project.advance_percent}% advance)
+                    </Link>
+                  )}
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-[var(--muted)]">

@@ -190,6 +190,7 @@ export const Icons = {
   cog: Cog,
   sitemap: Sitemap,
   briefcase: Briefcase,
+  clock: Clock,
 } as const;
 
 export type IconName = keyof typeof Icons;

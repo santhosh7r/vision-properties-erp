@@ -68,22 +68,40 @@ export function managerRoleOf(role: Role): Role | null {
   return null; // admin
 }
 
-// Role that may be created DIRECTLY beneath `parentRole` — strictly the next
-// rung down (one level only). A member always sits directly under a parent whose
-// role is exactly one above their own, so the chain is never skipped:
-//   admin            -> [senior_director]   (company creates Senior Directors)
-//   senior_director  -> [director]
-//   director         -> [business_manager]
+// Sales roles strictly BELOW `role` in the hierarchy (top -> bottom order).
+//   admin            -> [senior_director, director, business_manager, business_partner]
+//   senior_director  -> [director, business_manager, business_partner]
+//   director         -> [business_manager, business_partner]
 //   business_manager -> [business_partner]
-//   business_partner -> []                  (leaf — creates no one)
-// A creator higher up (e.g. an SD wanting a Partner) reaches DOWN their network
-// and adds under the appropriate parent node — they don't place it under
-// themselves. That reach is enforced separately (actorControls), not here.
+//   business_partner -> []   (leaf)
+export function rolesBelow(role: Role): Role[] {
+  if (role === "admin") return [...SALES_HIERARCHY];
+  const idx = SALES_HIERARCHY.indexOf(role);
+  if (idx === -1) return [];
+  return SALES_HIERARCHY.slice(idx + 1);
+}
+
+// Roles that may be created beneath `parentRole`. Anyone can add ANY role below
+// their own level directly under themselves (or anyone in their downline) — an SD
+// can create a Partner straight away without first creating the in-between rungs.
+// The new member simply reports to whoever created them.
 export function creatableRolesUnder(parentRole: Role): Role[] {
-  if (parentRole === "admin") return [SALES_HIERARCHY[0]];
-  const idx = SALES_HIERARCHY.indexOf(parentRole);
-  if (idx === -1 || idx >= SALES_HIERARCHY.length - 1) return [];
-  return [SALES_HIERARCHY[idx + 1]];
+  return rolesBelow(parentRole);
+}
+
+// May a user whose role is `managerRole` be the manager (direct parent) of a
+// user whose role is `childRole`? Used to validate placement server-side.
+//   - Senior Director, Finance, Legal connect DIRECTLY to the company (Admin).
+//   - Admin sits at the top and has no manager.
+//   - Other sales roles may sit under Admin or ANY sales role above them.
+export function canManageRole(managerRole: Role, childRole: Role): boolean {
+  if (childRole === "admin") return false;
+  if (childRole === "senior_director" || childRole === "finance" || childRole === "legal") {
+    return managerRole === "admin";
+  }
+  // director / business_manager / business_partner
+  if (managerRole === "admin") return true;
+  return rolesBelow(managerRole).includes(childRole);
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +113,7 @@ export type Capability =
   | "manage_projects"
   | "manage_plots"
   | "manage_customers"
+  | "create_blocking"
   | "create_booking"
   | "approve_booking"
   | "confirm_booking"
@@ -103,6 +122,8 @@ export type Capability =
   | "manage_registration"
   | "approve_refund"
   | "manage_transfer"
+  | "request_cab"
+  | "approve_cab"
   | "view_finance"
   | "view_legal"
   | "view_reports";
@@ -114,6 +135,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "manage_projects",
     "manage_plots",
     "manage_customers",
+    "create_blocking",
     "create_booking",
     "approve_booking",
     "confirm_booking",
@@ -122,6 +144,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "manage_registration",
     "approve_refund",
     "manage_transfer",
+    "approve_cab",
     "view_finance",
     "view_legal",
     "view_reports",
@@ -129,34 +152,37 @@ const CAPABILITIES: Record<Role, Capability[]> = {
   senior_director: [
     "manage_team",
     "manage_customers",
-    "create_booking",
+    "create_blocking",
     "approve_booking",
     "confirm_booking",
     "cancel_booking",
     "manage_transfer",
+    "request_cab",
     "view_reports",
   ],
   director: [
     "manage_team",
     "manage_customers",
-    "create_booking",
+    "create_blocking",
     "approve_booking",
     "confirm_booking",
     "cancel_booking",
     "manage_transfer",
+    "request_cab",
     "view_reports",
   ],
   business_manager: [
     "manage_team",
     "manage_customers",
-    "create_booking",
+    "create_blocking",
     "approve_booking",
     "confirm_booking",
     "cancel_booking",
     "manage_transfer",
+    "request_cab",
     "view_reports",
   ],
-  business_partner: ["manage_customers", "create_booking"],
+  business_partner: ["manage_customers", "create_blocking", "request_cab"],
   finance: ["record_payment", "view_finance", "view_reports"],
   legal: ["manage_registration", "view_legal", "view_reports"],
 };

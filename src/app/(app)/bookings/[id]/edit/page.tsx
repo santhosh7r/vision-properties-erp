@@ -15,7 +15,9 @@ export default async function EditBookingPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireCapability("create_booking");
+  // Editing applies to both blockings and bookings — any creator (sales or admin)
+  // may edit; create_blocking is held by all of them.
+  await requireCapability("create_blocking");
   const { id } = await params;
   const sb = getSupabase();
 

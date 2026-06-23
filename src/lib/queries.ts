@@ -1,5 +1,6 @@
 import "server-only";
 import { getSupabase } from "./supabase";
+import { getDownlineIds } from "./hierarchy";
 
 async function count(table: string, filter?: (q: any) => any): Promise<number> {
   let q = getSupabase().from(table).select("id", { count: "exact", head: true });
@@ -77,6 +78,109 @@ export interface DashboardData {
   topProjects: TopProject[];
   recentBookings: RecentBooking[];
   recentActivity: ActivityRow[];
+}
+
+// ---------------------------------------------------------------------------
+// SALES dashboard — a salesperson's OWN view. No company-wide figures: just what
+// they sold, what their downline network sold, and how many plots are available
+// to sell. A record is attributed to the partner stamped on it (the salesperson),
+// falling back to whoever created it.
+// ---------------------------------------------------------------------------
+export interface SalesDashboardData {
+  mine: { count: number; value: number };
+  network: { count: number; value: number };
+  teamSize: number;
+  availablePlots: number;
+  thisMonthValue: number;
+  lastMonthValue: number;
+  salesSeries: SeriesPoint[];
+  salesSparkline: number[];
+  recentBookings: RecentBooking[];
+}
+
+export async function getSalesDashboard(userId: string): Promise<SalesDashboardData> {
+  const sb = getSupabase();
+  const ids = await getDownlineIds(sb, userId); // includes self
+  const list = ids.join(",");
+  const orFilter = `created_by.in.(${list}),partner_id.in.(${list})`;
+
+  const [bookingsRes, availRes, recentRes] = await Promise.all([
+    sb
+      .from("bookings")
+      .select("created_at, total_plot_value, status, created_by, partner_id")
+      .or(orFilter),
+    sb.from("plots").select("id", { count: "exact", head: true }).eq("status", "available"),
+    sb
+      .from("bookings")
+      .select("id, status, book_mode, payment_status, total_plot_value, created_at, customers(name), projects(name), plots(plot_no)")
+      .or(orFilter)
+      .order("created_at", { ascending: false })
+      .limit(6),
+  ]);
+
+  const rows = (bookingsRes.data ?? []) as {
+    created_at: string;
+    total_plot_value: number;
+    status: string;
+    created_by: string | null;
+    partner_id: string | null;
+  }[];
+
+  const mine = { count: 0, value: 0 };
+  const network = { count: 0, value: 0 };
+  const salesBuckets = buildBuckets(8);
+  const salesIndex = new Map(salesBuckets.map((b, i) => [b.key, i]));
+  const nowKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
+  const lastD = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+  const lastKey = `${lastD.getFullYear()}-${lastD.getMonth()}`;
+  let thisMonthValue = 0;
+  let lastMonthValue = 0;
+
+  for (const b of rows) {
+    if (b.status === "cancelled") continue;
+    const v = Number(b.total_plot_value || 0);
+    // Attribute to the salesperson on the record (partner), else the creator.
+    const owner = b.partner_id ?? b.created_by;
+    if (owner === userId) {
+      mine.count++;
+      mine.value += v;
+      const k = keyOf(b.created_at);
+      const idx = salesIndex.get(k);
+      if (idx !== undefined) {
+        salesBuckets[idx].value += v;
+        salesBuckets[idx].count += 1;
+      }
+      if (k === nowKey) thisMonthValue += v;
+      if (k === lastKey) lastMonthValue += v;
+    } else {
+      network.count++;
+      network.value += v;
+    }
+  }
+
+  const recentBookings: RecentBooking[] = ((recentRes.data ?? []) as any[]).map((b) => ({
+    id: b.id,
+    status: b.status,
+    book_mode: b.book_mode,
+    payment_status: b.payment_status,
+    total_plot_value: b.total_plot_value,
+    created_at: b.created_at,
+    customer: b.customers?.name ?? null,
+    project: b.projects?.name ?? null,
+    plot: b.plots ? b.plots.plot_no : null,
+  }));
+
+  return {
+    mine,
+    network,
+    teamSize: ids.length - 1, // exclude self
+    availablePlots: availRes.count ?? 0,
+    thisMonthValue,
+    lastMonthValue,
+    salesSeries: salesBuckets,
+    salesSparkline: salesBuckets.map((b) => b.value),
+    recentBookings,
+  };
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
