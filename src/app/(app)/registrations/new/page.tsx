@@ -4,6 +4,7 @@ import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
+import { SubmitButton } from "@/components/SubmitButton";
 import { createRegistration } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -77,7 +78,7 @@ export default async function NewRegistrationPage({
 
         <div className="flex justify-end gap-3">
           <Link href={`/bookings/${b.id}`} className="btn-ghost">Cancel</Link>
-          <button type="submit" className="btn-primary">Complete Registration</button>
+          <SubmitButton className="btn-primary" pendingLabel="Registering…">Complete Registration</SubmitButton>
         </div>
       </form>
     </>

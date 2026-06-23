@@ -7,6 +7,7 @@ import { NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
 import { updateBooking } from "../../actions";
 import PartnerDetailsFields from "../../PartnerDetailsFields";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -133,7 +134,7 @@ export default async function EditBookingPage({
 
         <div className="flex justify-end gap-3">
           <Link href={`/bookings/${id}`} className="btn-ghost">Cancel</Link>
-          <button type="submit" className="btn-primary">Save Changes</button>
+          <SubmitButton className="btn-primary" pendingLabel="Saving…">Save Changes</SubmitButton>
         </div>
       </form>
     </>

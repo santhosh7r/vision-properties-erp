@@ -339,9 +339,9 @@ function TreeNode({
             <form action={toggleMemberActive}>
               <input type="hidden" name="id" value={node.id} />
               <input type="hidden" name="next" value={String(!node.active)} />
-              <button type="submit" className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }}>
+              <SubmitButton className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} pendingLabel="…">
                 {node.active ? "Deactivate" : "Activate"}
-              </button>
+              </SubmitButton>
             </form>
           )}
         </div>

@@ -10,6 +10,7 @@ import type { Plot, PlotCategory, Project } from "@/lib/types";
 import { updateProjectStatus } from "../actions";
 import { createPlot, createPlotCategory, updatePlotCategory } from "../../plots/actions";
 import DeleteProjectButton from "./DeleteProjectButton";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -135,7 +136,7 @@ export default async function ProjectDetailPage({
                   <option value="closed">Closed</option>
                 </select>
               </div>
-              <button className="btn-ghost" type="submit">Save</button>
+              <SubmitButton className="btn-ghost" pendingLabel="Saving…">Save</SubmitButton>
             </form>
           )}
         </div>
@@ -158,7 +159,7 @@ export default async function ProjectDetailPage({
                   <label className="label">New category name</label>
                   <input name="name" className="input" placeholder="e.g. Phase 1, Premium, Corner" required />
                 </div>
-                <button className="btn-ghost" type="submit">Add Category</button>
+                <SubmitButton className="btn-ghost" pendingLabel="Adding…">Add Category</SubmitButton>
               </form>
             </div>
           )}
@@ -190,7 +191,7 @@ export default async function ProjectDetailPage({
                   <input name="price_per_sqft" type="number" min={0} step="0.01" className="input" defaultValue={0} />
                 </div>
                 <div className="flex items-end">
-                  <button className="btn-primary w-full" type="submit">Add</button>
+                  <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add</SubmitButton>
                 </div>
                 <div className="sm:col-span-5">
                   <input name="description" className="input" placeholder="Description (optional)" />
@@ -248,9 +249,9 @@ export default async function ProjectDetailPage({
                                     <option key={g.id} value={g.id}>{g.name}</option>
                                   ))}
                                 </select>
-                                <button type="submit" className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }}>
+                                <SubmitButton className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} pendingLabel="…">
                                   Move
-                                </button>
+                                </SubmitButton>
                               </form>
                             </td>
                           )}

@@ -2,6 +2,7 @@
 
 import { useFormStatus } from "react-dom";
 import { Trash } from "@/components/icons";
+import { Spinner } from "@/components/Spinner";
 import { deleteProject } from "../actions";
 
 function DeleteButton({ name, compact }: { name: string; compact?: boolean }) {
@@ -24,7 +25,7 @@ function DeleteButton({ name, compact }: { name: string; compact?: boolean }) {
         }
       }}
     >
-      <Trash size={16} />
+      {pending ? <Spinner size={16} /> : <Trash size={16} />}
     </button>
   );
 }

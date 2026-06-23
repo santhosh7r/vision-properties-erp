@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { computeRefund } from "@/lib/sop";
 import PrintReceiptButton from "./PrintReceiptButton";
+import { SubmitButton } from "@/components/SubmitButton";
 import type { Booking, Customer, Payment, Plot, Project, PlotTransfer } from "@/lib/types";
 import {
   confirmBooking,
@@ -264,14 +265,14 @@ export default async function BookingDetailPage({
               {b.status === "pending" && canConfirm && (
                 <form action={confirmBooking}>
                   <input type="hidden" name="id" value={b.id} />
-                  <button className="btn-success w-full" type="submit">Confirm Booking</button>
+                  <SubmitButton className="btn-success w-full" pendingLabel="Confirming…">Confirm Booking</SubmitButton>
                 </form>
               )}
 
               {b.book_mode === "blocking" && b.status === "pending" && canConvert && (
                 <form action={convertToBooking}>
                   <input type="hidden" name="id" value={b.id} />
-                  <button className="btn-primary w-full" type="submit">Convert to Booking</button>
+                  <SubmitButton className="btn-primary w-full" pendingLabel="Converting…">Convert to Booking</SubmitButton>
                 </form>
               )}
 
@@ -286,7 +287,7 @@ export default async function BookingDetailPage({
                         : `After ${b.projects.cancel_full_refund_days}-day window → refund ${inr(refundPreview.refund)} (₹ charge ${inr(refundPreview.charge)}).`}
                     </p>
                   )}
-                  <button className="btn-danger w-full" type="submit">Cancel Booking</button>
+                  <SubmitButton className="btn-danger w-full" pendingLabel="Cancelling…">Cancel Booking</SubmitButton>
                 </form>
               )}
 
@@ -319,13 +320,13 @@ export default async function BookingDetailPage({
               {b.refund_status === "pending_approval" && canApproveRefund && (
                 <form action={approveRefund}>
                   <input type="hidden" name="id" value={b.id} />
-                  <button className="btn-success w-full" type="submit">Approve Refund (COO)</button>
+                  <SubmitButton className="btn-success w-full" pendingLabel="Approving…">Approve Refund (COO)</SubmitButton>
                 </form>
               )}
               {b.refund_status === "approved" && canPay && (
                 <form action={markRefundPaid}>
                   <input type="hidden" name="id" value={b.id} />
-                  <button className="btn-primary w-full" type="submit">Mark Refund Paid</button>
+                  <SubmitButton className="btn-primary w-full" pendingLabel="Saving…">Mark Refund Paid</SubmitButton>
                 </form>
               )}
             </div>
@@ -352,7 +353,7 @@ export default async function BookingDetailPage({
                   <label className="label">Mode</label>
                   <input name="mode" className="input" placeholder="Cash / UPI / Bank" />
                 </div>
-                <button className="btn-primary w-full" type="submit">Add Payment</button>
+                <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add Payment</SubmitButton>
                 <p className="text-xs text-[var(--muted)]">
                   Payment stays Pending until the full plot value is received.
                 </p>
@@ -380,7 +381,7 @@ export default async function BookingDetailPage({
                     </select>
                   </div>
                   <input name="remarks" className="input" placeholder="Remarks (optional)" />
-                  <button className="btn-primary w-full" type="submit">Transfer Plot</button>
+                  <SubmitButton className="btn-primary w-full" pendingLabel="Transferring…">Transfer Plot</SubmitButton>
                   <p className="text-xs text-[var(--muted)]">
                     Upgrade to higher value = no charge. Downgrade = ₹{b.projects.transfer_charge} charge.
                   </p>

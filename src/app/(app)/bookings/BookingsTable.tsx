@@ -4,6 +4,7 @@ import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge, BookingStatusBadge, PaymentBadge } from "@/components/ui";
 import { fmtDate, timeLeft, inr } from "@/lib/format";
+import { SubmitButton } from "@/components/SubmitButton";
 import { confirmBooking, cancelBooking } from "./actions";
 
 export interface BookingRow {
@@ -92,13 +93,13 @@ export default function BookingsTable({
         {r.status === "pending" && canConfirm && (
           <form action={confirmBooking}>
             <input type="hidden" name="id" value={r.id} />
-            <button className="btn-success" style={{ padding: "5px 10px", fontSize: 12 }} type="submit">Confirm</button>
+            <SubmitButton className="btn-success" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">Confirm</SubmitButton>
           </form>
         )}
         {r.status !== "cancelled" && canCancel && (
           <form action={cancelBooking}>
             <input type="hidden" name="id" value={r.id} />
-            <button className="btn-danger" style={{ padding: "5px 10px", fontSize: 12 }} type="submit">Cancel</button>
+            <SubmitButton className="btn-danger" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">Cancel</SubmitButton>
           </form>
         )}
       </div>

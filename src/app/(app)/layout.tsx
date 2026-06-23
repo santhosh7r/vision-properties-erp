@@ -3,6 +3,7 @@ import { navFor } from "@/lib/nav";
 import { ROLE_LABELS } from "@/lib/roles";
 import { logout } from "@/app/login/actions";
 import ThemeToggle from "@/components/ThemeToggle";
+import { SubmitButton } from "@/components/SubmitButton";
 import SideNav from "./SideNav";
 
 export default async function AppLayout({
@@ -58,9 +59,9 @@ export default async function AppLayout({
               </div>
             </div>
             <form action={logout}>
-              <button className="btn-ghost" type="submit">
+              <SubmitButton className="btn-ghost" pendingLabel="Signing out…">
                 Sign out
-              </button>
+              </SubmitButton>
             </form>
           </div>
         </header>

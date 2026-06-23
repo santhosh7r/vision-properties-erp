@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireCapability } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 import CustomerFields from "@/components/CustomerFields";
+import { SubmitButton } from "@/components/SubmitButton";
 import { createCustomer } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function NewCustomerPage() {
         </div>
         <div className="flex justify-end gap-3">
           <Link href="/customers" className="btn-ghost">Cancel</Link>
-          <button type="submit" className="btn-primary">Save Customer</button>
+          <SubmitButton className="btn-primary" pendingLabel="Saving…">Save Customer</SubmitButton>
         </div>
       </form>
     </>

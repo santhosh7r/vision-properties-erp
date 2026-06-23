@@ -240,9 +240,9 @@ export default function RequestsWorkspace({
                           {canApprove && r.status !== "approved" && (
                             <form action={approveCabRequest}>
                               <input type="hidden" name="id" value={r.id} />
-                              <button type="submit" className="btn-success" style={{ padding: "5px 10px", fontSize: 12 }}>
+                              <SubmitButton className="btn-success" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">
                                 Approve
-                              </button>
+                              </SubmitButton>
                             </form>
                           )}
                           {canApprove && r.status !== "declined" && (
@@ -277,9 +277,9 @@ export default function RequestsWorkspace({
                           >
                             <input type="hidden" name="id" value={r.id} />
                             <input name="reason" className="input" style={{ height: 30, fontSize: 12 }} placeholder="Reason (optional)" />
-                            <button type="submit" className="btn-danger" style={{ padding: "5px 10px", fontSize: 12 }}>
+                            <SubmitButton className="btn-danger" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">
                               Confirm Decline
-                            </button>
+                            </SubmitButton>
                           </form>
                         )}
 
@@ -292,9 +292,9 @@ export default function RequestsWorkspace({
                           >
                             <input type="hidden" name="id" value={r.id} />
                             <input type="date" name="cab_date" defaultValue={r.cab_date} className="input" style={{ height: 30, fontSize: 12 }} required />
-                            <button type="submit" className="btn-primary" style={{ padding: "5px 10px", fontSize: 12 }}>
+                            <SubmitButton className="btn-primary" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">
                               Save Date
-                            </button>
+                            </SubmitButton>
                           </form>
                         )}
                       </div>

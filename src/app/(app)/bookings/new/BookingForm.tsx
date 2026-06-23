@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import CustomerFields from "@/components/CustomerFields";
+import { SubmitButton } from "@/components/SubmitButton";
 import { NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
 import { computeAdvanceRequired } from "@/lib/sop";
 import { createBooking } from "../actions";
@@ -288,9 +289,9 @@ export default function BookingForm({ mode, plot, project, customers }: Props) {
 
       <div className="flex justify-end gap-3">
         <Link href={`/plots/${plot.id}`} className="btn-ghost">Cancel</Link>
-        <button type="submit" className="btn-primary" disabled={underpaid}>
+        <SubmitButton className="btn-primary" disabled={underpaid} pendingLabel={mode === "blocking" ? "Blocking…" : "Booking…"}>
           {mode === "blocking" ? "Block Plot" : "Book Plot"}
-        </button>
+        </SubmitButton>
       </div>
     </form>
   );

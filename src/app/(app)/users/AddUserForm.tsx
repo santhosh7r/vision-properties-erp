@@ -10,6 +10,7 @@ import {
   type Role,
 } from "@/lib/roles";
 import { createUser } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export interface ManagerOption {
   id: string;
@@ -234,9 +235,9 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
         </p>
       </div>
 
-      <button className="btn-primary w-full" type="submit" disabled={!canSubmit}>
+      <SubmitButton className="btn-primary w-full" disabled={!canSubmit} pendingLabel="Creating…">
         Create User
-      </button>
+      </SubmitButton>
     </form>
   );
 }

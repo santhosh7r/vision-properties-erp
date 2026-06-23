@@ -3,6 +3,7 @@
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge } from "@/components/ui";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
+import { SubmitButton } from "@/components/SubmitButton";
 import { toggleUserActive } from "./actions";
 
 export interface UserRow {
@@ -28,9 +29,9 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
       <form action={toggleUserActive} onClick={(e) => e.stopPropagation()}>
         <input type="hidden" name="id" value={r.id} />
         <input type="hidden" name="next" value={String(!r.is_active)} />
-        <button className="btn-ghost" style={{ padding: "5px 12px", fontSize: 12 }} type="submit">
+        <SubmitButton className="btn-ghost" style={{ padding: "5px 12px", fontSize: 12 }} pendingLabel="…">
           {r.is_active ? "Deactivate" : "Activate"}
-        </button>
+        </SubmitButton>
       </form>
     ) },
   ];
