@@ -164,13 +164,19 @@ create table if not exists projects (
   name           text          not null,                       -- 1. Project Name*
   district       text          not null,                       -- 2. District*
   city           text          not null,                       -- 3. City*
-  remarks        text,                                         -- 4. Remarks
-  area           text          not null,                       -- 5. Area*
-  land_type      text          not null,                       -- 6. Land Type*
+  remarks        text,                                         -- 4. Remarks (legacy/optional)
+  area           text          not null,                       -- 5. Extent / Area*
+  land_type      text,                                         -- 6. Land Type (legacy/optional)
   approval_type  approval_type not null,                       -- 7. Approval Type*
   project_type   project_type  not null,                       -- 8. Project Type* (affordable/luxury)
   category_id    uuid          references project_categories(id) on delete set null,
   status         project_status not null default 'draft',
+  -- Office Details (Admin panel · New Project Form) -------------------------------
+  branch                      text,                            -- branch / office
+  guideline_value             numeric(14,2) not null default 0, -- ₹ per sq.ft guideline value
+  director_gold_coupon        numeric(12,2) not null default 0, -- ₹ per sq.ft
+  director_digital_coupon     numeric(12,2) not null default 0, -- ₹ per sq.ft
+  senior_director_gold_coupon numeric(12,2) not null default 0, -- ₹ per sq.ft
   -- Reservation / booking configuration (editable per project, per the board) ----
   blocking_amount        numeric(14,2) not null default 10000, -- §1 initial block amount (e.g. 10k)
   blocking_window_hours  integer       not null default 48,    -- §1 block -> must book within N hours
@@ -393,7 +399,8 @@ create index if not exists idx_audit_entity on audit_log(entity, entity_id);
 create index if not exists idx_audit_created on audit_log(created_at desc);
 
 -- ---------------------------------------------------------------------------
--- CAB REQUESTS  (sales request a cab for their own client; admin approves)
+-- CAB REQUESTS  (legacy — superseded by service_requests in migration 0009.
+-- Kept for historical data; the app no longer writes here.)
 -- ---------------------------------------------------------------------------
 do $$ begin
   create type cab_request_status as enum ('pending', 'approved', 'declined');
@@ -417,3 +424,56 @@ create table if not exists cab_requests (
 create index if not exists idx_cab_requests_requested_by on cab_requests(requested_by);
 create index if not exists idx_cab_requests_status       on cab_requests(status);
 create index if not exists idx_cab_requests_customer     on cab_requests(customer_id);
+
+-- ---------------------------------------------------------------------------
+-- SERVICE REQUESTS  (unified request workflow — see migration 0009)
+-- Five types, each with its own approval chain advanced one `stage` at a time:
+--   site_visit    senior -> presales(admin)
+--   legal_query   legal
+--   draft         senior -> legal
+--   registration  legal
+--   cancellation  senior -> accounts(finance)
+-- The chain itself lives in the app (src/lib/requests.ts).
+-- ---------------------------------------------------------------------------
+do $$ begin
+  create type service_request_type as enum (
+    'site_visit', 'legal_query', 'draft', 'registration', 'cancellation'
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type service_request_status as enum ('pending', 'approved', 'declined');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type request_stage as enum ('senior', 'presales', 'legal', 'accounts', 'done');
+exception when duplicate_object then null; end $$;
+
+create table if not exists service_requests (
+  id              uuid primary key default gen_random_uuid(),
+  type            service_request_type   not null,
+  status          service_request_status not null default 'pending',
+  stage           request_stage          not null default 'senior',
+  customer_id     uuid references customers(id) on delete set null,
+  booking_id      uuid references bookings(id)  on delete set null,
+  project_id      uuid references projects(id)  on delete set null,
+  subject         text,
+  details         text,
+  response        text,
+  visit_date      date,
+  pickup          text,
+  requested_by    uuid references users(id) on delete set null,
+  senior_decided_by uuid references users(id) on delete set null,
+  senior_decided_at timestamptz,
+  final_decided_by  uuid references users(id) on delete set null,
+  final_decided_at  timestamptz,
+  decline_reason  text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists idx_service_requests_type        on service_requests(type);
+create index if not exists idx_service_requests_status      on service_requests(status);
+create index if not exists idx_service_requests_stage       on service_requests(stage);
+create index if not exists idx_service_requests_requested_by on service_requests(requested_by);
+create index if not exists idx_service_requests_customer    on service_requests(customer_id);
+create index if not exists idx_service_requests_booking     on service_requests(booking_id);

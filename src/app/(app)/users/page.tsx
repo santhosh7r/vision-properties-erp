@@ -34,6 +34,7 @@ export default async function UsersPage() {
     role: u.role as Role,
     code: u.partner_code,
     manager: u.manager_id ? byId.get(u.manager_id)?.full_name ?? "" : "",
+    manager_id: u.manager_id,
     is_active: u.is_active,
   }));
 
@@ -51,7 +52,7 @@ export default async function UsersPage() {
         </div>
 
         <div className="lg:col-span-2">
-          <UsersTable rows={rows} />
+          <UsersTable rows={rows} managers={managers} />
         </div>
       </div>
     </>

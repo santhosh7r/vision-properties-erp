@@ -1,22 +1,34 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/auth";
+import { getSupabase } from "@/lib/supabase";
 import { APPROVAL_TYPES, PROJECT_TYPES } from "@/lib/options";
 import { PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
-import PolicyFields from "../PolicyFields";
-import { createProject } from "../actions";
+import PolicyFields from "../../projects/PolicyFields";
+import { createProject } from "../../projects/actions";
+import LocationFields from "./LocationFields";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewProjectPage() {
+// Admin Inventory · Add Project. Same form as the shared New Project page, but
+// scoped to the admin card-based Inventory workspace.
+export default async function AddProjectPage() {
   await requireCapability("manage_projects");
+
+  // Existing district/city values across projects feed the editable dropdowns.
+  const { data: locRows } = await getSupabase().from("projects").select("district, city");
+  const uniqSorted = (vals: (string | null)[]) =>
+    [...new Set(vals.map((v) => (v ?? "").trim()).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+  const districtOptions = uniqSorted((locRows ?? []).map((r) => r.district));
+  const cityOptions = uniqSorted((locRows ?? []).map((r) => r.city));
 
   return (
     <>
       <PageHeader
-        title="New Project"
+        title="Add Project"
         subtitle="Set up a new development and configure its booking rules."
-        action={<Link href="/projects" className="btn-ghost">Cancel</Link>}
       />
 
       <form action={createProject} className="max-w-3xl space-y-6">
@@ -27,14 +39,7 @@ export default async function NewProjectPage() {
               <label className="label">Name *</label>
               <input name="name" className="input" required />
             </div>
-            <div>
-              <label className="label">District *</label>
-              <input name="district" className="input" required />
-            </div>
-            <div>
-              <label className="label">City *</label>
-              <input name="city" className="input" required />
-            </div>
+            <LocationFields districtOptions={districtOptions} cityOptions={cityOptions} />
             <div>
               <label className="label">Extent *</label>
               <input name="area" className="input" placeholder="e.g. 12 acres" required />
@@ -64,7 +69,7 @@ export default async function NewProjectPage() {
         <input type="hidden" name="status" value="active" />
 
         <div className="flex justify-end gap-3">
-          <Link href="/projects" className="btn-ghost">Cancel</Link>
+          <Link href="/inventory/manage" className="btn-ghost">Cancel</Link>
           <SubmitButton pendingLabel="Creating…">Create Project</SubmitButton>
         </div>
       </form>

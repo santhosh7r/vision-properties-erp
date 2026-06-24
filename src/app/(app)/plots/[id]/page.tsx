@@ -6,6 +6,8 @@ import { can } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { inr, fmtDate, fmtDateTime, timeLeft } from "@/lib/format";
 import { PageHeader, PlotStatusBadge, BookingStatusBadge, PaymentBadge } from "@/components/ui";
+import { SubmitButton } from "@/components/SubmitButton";
+import { releasePlot } from "../actions";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +46,7 @@ export default async function PlotDetailPage({
   const canBlock = can(user.role, "create_blocking");
   const canBook = can(user.role, "create_booking");
   const canCreate = canBlock || canBook;
+  const canRelease = can(user.role, "manage_plots");
   const isAvailable = plot.status === "available";
 
   return (
@@ -137,13 +140,29 @@ export default async function PlotDetailPage({
                 <Link href={`/bookings/${booking.id}`} className="btn-primary">
                   Open Booking
                 </Link>
+                {canRelease && (
+                  <form action={releasePlot} className="ml-2 inline">
+                    <input type="hidden" name="plot_id" value={plot.id} />
+                    <SubmitButton className="btn-ghost text-[var(--brand-red)]" pendingLabel="Releasing…">
+                      Release Plot
+                    </SubmitButton>
+                  </form>
+                )}
               </div>
             </div>
           ) : (
-            <div className="card">
+            <div className="card space-y-3">
               <p className="text-sm text-[var(--muted)]">
                 This plot is {plot.status} with no active booking record.
               </p>
+              {canRelease && !isAvailable && (
+                <form action={releasePlot}>
+                  <input type="hidden" name="plot_id" value={plot.id} />
+                  <SubmitButton className="btn-ghost text-[var(--brand-red)]" pendingLabel="Releasing…">
+                    Release Plot to Company
+                  </SubmitButton>
+                </form>
+              )}
             </div>
           )}
         </div>

@@ -27,6 +27,22 @@ function policyFields(f: FormData) {
   };
 }
 
+// Office Details (Admin panel · New Project Form §2). Branch is free text; the
+// rest are per-sq.ft rupee rates feeding the Tokens/Coupons subsystem.
+function officeFields(f: FormData) {
+  const n = (key: string, fallback: number) => {
+    const v = Number(f.get(key));
+    return Number.isFinite(v) && f.get(key) !== null && String(f.get(key)) !== "" ? v : fallback;
+  };
+  return {
+    branch: String(f.get("branch") || "").trim() || null,
+    guideline_value: n("guideline_value", 0),
+    director_gold_coupon: n("director_gold_coupon", 0),
+    director_digital_coupon: n("director_digital_coupon", 0),
+    senior_director_gold_coupon: n("senior_director_gold_coupon", 0),
+  };
+}
+
 export async function createProject(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_projects");
 
@@ -36,9 +52,10 @@ export async function createProject(formData: FormData): Promise<void> {
     city: String(formData.get("city") || "").trim(),
     remarks: String(formData.get("remarks") || "").trim() || null,
     area: String(formData.get("area") || "").trim(),
-    land_type: String(formData.get("land_type") || "").trim(),
+    land_type: String(formData.get("land_type") || "").trim() || null,
     approval_type: String(formData.get("approval_type") || "") as ApprovalType,
     project_type: String(formData.get("project_type") || "") as ProjectType,
+    ...officeFields(formData),
     ...policyFields(formData),
     status: (String(formData.get("status") || "active") as ProjectStatus),
     created_by: actor.id,
@@ -68,9 +85,10 @@ export async function updateProject(formData: FormData): Promise<void> {
     city: String(formData.get("city") || "").trim(),
     remarks: String(formData.get("remarks") || "").trim() || null,
     area: String(formData.get("area") || "").trim(),
-    land_type: String(formData.get("land_type") || "").trim(),
+    land_type: String(formData.get("land_type") || "").trim() || null,
     approval_type: String(formData.get("approval_type") || "") as ApprovalType,
     project_type: String(formData.get("project_type") || "") as ProjectType,
+    ...officeFields(formData),
     ...policyFields(formData),
     status: String(formData.get("status") || "active") as ProjectStatus,
   };

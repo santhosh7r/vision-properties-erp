@@ -5,6 +5,46 @@ import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
+// Plot Release (Admin panel · Sales · Post-Sales) — free a plot back to the
+// company. Releases any active (pending/confirmed) booking WITHOUT a refund flow
+// (distinct from a cancellation) and returns the plot to 'available' for the
+// next customer. Admin-only.
+export async function releasePlot(formData: FormData): Promise<void> {
+  const actor = await requireCapability("manage_plots");
+  const sb = getSupabase();
+  const plot_id = String(formData.get("plot_id") || "");
+  if (!plot_id) return;
+
+  const nowIso = new Date().toISOString();
+
+  const { data: booking } = await sb
+    .from("bookings")
+    .select("id")
+    .eq("plot_id", plot_id)
+    .in("status", ["pending", "confirmed"])
+    .order("created_at", { ascending: false })
+    .maybeSingle();
+
+  if (booking) {
+    await sb
+      .from("bookings")
+      .update({
+        status: "cancelled",
+        released_at: nowIso,
+        cancellation_reason: "Released by admin",
+        refund_status: "none",
+      })
+      .eq("id", booking.id);
+    await logAudit(actor, "booking", booking.id, "release", "plot released to company");
+  }
+
+  await sb.from("plots").update({ status: "available" }).eq("id", plot_id);
+  await logAudit(actor, "plot", plot_id, "release");
+  revalidatePath(`/plots/${plot_id}`);
+  revalidatePath("/plots");
+  revalidatePath("/dashboard");
+}
+
 // Create a plot group/category within a project (e.g. Phase 1, Premium).
 export async function createPlotCategory(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_plots");

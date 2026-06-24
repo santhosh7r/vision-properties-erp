@@ -2,8 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
-import { requireCapability } from "@/lib/auth";
+import { requireUser, requireCapability } from "@/lib/auth";
+import { getDownlineIds } from "@/lib/hierarchy";
 import { logAudit } from "@/lib/audit";
+import {
+  REQUEST_CHAIN,
+  initialStage,
+  nextStage,
+  canActOnStage,
+  requestTypeMeta,
+  type ServiceRequestType,
+  type RequestStage,
+} from "@/lib/requests";
 
 function s(v: FormDataEntryValue | null): string {
   return String(v || "").trim();
@@ -13,125 +23,203 @@ function nullable(v: FormDataEntryValue | null): string | null {
   return t === "" ? null : t;
 }
 
+const VALID_TYPES = Object.keys(REQUEST_CHAIN) as ServiceRequestType[];
+
 // ---------------------------------------------------------------------------
-// CREATE — a salesperson requests a cab for one of THEIR OWN clients.
+// CREATE — a salesperson raises a request of a given type.
 // ---------------------------------------------------------------------------
-export async function createCabRequest(formData: FormData): Promise<void> {
-  const actor = await requireCapability("request_cab");
+export async function createServiceRequest(formData: FormData): Promise<void> {
+  const actor = await requireCapability("create_request");
   const sb = getSupabase();
 
-  const customer_id = s(formData.get("customer_id"));
-  const cab_date = s(formData.get("cab_date"));
-  if (!customer_id || !cab_date) return;
+  const type = s(formData.get("type")) as ServiceRequestType;
+  if (!VALID_TYPES.includes(type)) return;
+  const meta = requestTypeMeta(type);
 
-  // The client must belong to the requester (admins may raise for anyone). A
-  // client is theirs if they created it OR it's on a booking made with their id.
-  const { data: cust } = await sb
-    .from("customers")
-    .select("id, created_by")
-    .eq("id", customer_id)
-    .maybeSingle();
-  if (!cust) return;
-  if (actor.role !== "admin" && cust.created_by !== actor.id) {
-    const { data: ownBk } = await sb
+  const customer_id = nullable(formData.get("customer_id"));
+  const booking_id = nullable(formData.get("booking_id"));
+
+  if (meta.needsCustomer && !customer_id) return;
+  if (meta.needsBooking && !booking_id) return;
+
+  // Ownership guard (admins may raise for anyone). A customer is "theirs" if they
+  // created it or booked with their own id; a booking is theirs if it was created
+  // by / assigned to anyone in their downline.
+  if (actor.role !== "admin") {
+    if (customer_id) {
+      const { data: cust } = await sb
+        .from("customers")
+        .select("id, created_by")
+        .eq("id", customer_id)
+        .maybeSingle();
+      if (!cust) return;
+      if (cust.created_by !== actor.id) {
+        const { data: ownBk } = await sb
+          .from("bookings")
+          .select("id")
+          .eq("customer_id", customer_id)
+          .or(`created_by.eq.${actor.id},partner_id.eq.${actor.id}`)
+          .limit(1)
+          .maybeSingle();
+        if (!ownBk) return;
+      }
+    }
+    if (booking_id) {
+      const ids = await getDownlineIds(sb, actor.id);
+      const { data: bk } = await sb
+        .from("bookings")
+        .select("id, created_by, partner_id")
+        .eq("id", booking_id)
+        .maybeSingle();
+      if (!bk) return;
+      const owns =
+        (bk.created_by && ids.includes(bk.created_by)) ||
+        (bk.partner_id && ids.includes(bk.partner_id));
+      if (!owns) return;
+    }
+  }
+
+  // Resolve the project from the booking (best effort) for reporting.
+  let project_id: string | null = null;
+  if (booking_id) {
+    const { data: bk } = await sb
       .from("bookings")
-      .select("id")
-      .eq("customer_id", customer_id)
-      .or(`created_by.eq.${actor.id},partner_id.eq.${actor.id}`)
-      .limit(1)
+      .select("project_id")
+      .eq("id", booking_id)
       .maybeSingle();
-    if (!ownBk) return;
+    project_id = bk?.project_id ?? null;
   }
 
   const { data, error } = await sb
-    .from("cab_requests")
+    .from("service_requests")
     .insert({
-      customer_id,
-      cab_date,
-      pickup: nullable(formData.get("pickup")),
-      notes: nullable(formData.get("notes")),
-      requested_by: actor.id,
+      type,
       status: "pending",
+      stage: initialStage(type),
+      customer_id,
+      booking_id,
+      project_id,
+      subject: nullable(formData.get("subject")),
+      details: nullable(formData.get("details")),
+      visit_date: nullable(formData.get("visit_date")),
+      pickup: nullable(formData.get("pickup")),
+      requested_by: actor.id,
     })
     .select("id")
     .single();
 
   if (!error && data) {
-    await logAudit(actor, "cab_request", data.id, "create", `cab on ${cab_date}`);
+    await logAudit(actor, "request", data.id, "create", meta.label);
   }
   revalidatePath("/requests");
 }
 
 // ---------------------------------------------------------------------------
-// APPROVE / DECLINE — admin only.
+// ADVANCE — an approver moves the request to the next stage (or completes it).
 // ---------------------------------------------------------------------------
-export async function approveCabRequest(formData: FormData): Promise<void> {
-  const actor = await requireCapability("approve_cab");
+export async function advanceServiceRequest(formData: FormData): Promise<void> {
+  const actor = await requireUser();
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
-
-  await sb
-    .from("cab_requests")
-    .update({
-      status: "approved",
-      decided_by: actor.id,
-      decided_at: new Date().toISOString(),
-      decline_reason: null,
-    })
-    .eq("id", id);
-  await logAudit(actor, "cab_request", id, "approve");
-  revalidatePath("/requests");
-}
-
-export async function declineCabRequest(formData: FormData): Promise<void> {
-  const actor = await requireCapability("approve_cab");
-  const sb = getSupabase();
-  const id = s(formData.get("id"));
-  if (!id) return;
-
-  await sb
-    .from("cab_requests")
-    .update({
-      status: "declined",
-      decided_by: actor.id,
-      decided_at: new Date().toISOString(),
-      decline_reason: nullable(formData.get("reason")),
-    })
-    .eq("id", id);
-  await logAudit(actor, "cab_request", id, "decline");
-  revalidatePath("/requests");
-}
-
-// ---------------------------------------------------------------------------
-// RESCHEDULE — the requester (or admin) changes the date. This re-submits the
-// request as pending, clearing any prior approve/decline decision.
-// ---------------------------------------------------------------------------
-export async function rescheduleCabRequest(formData: FormData): Promise<void> {
-  const actor = await requireCapability("request_cab");
-  const sb = getSupabase();
-  const id = s(formData.get("id"));
-  const cab_date = s(formData.get("cab_date"));
-  if (!id || !cab_date) return;
 
   const { data: req } = await sb
-    .from("cab_requests")
-    .select("requested_by")
+    .from("service_requests")
+    .select("id, type, stage, status, booking_id")
     .eq("id", id)
     .maybeSingle();
-  if (!req) return;
-  if (actor.role !== "admin" && req.requested_by !== actor.id) return;
+  if (!req || req.status !== "pending") return;
+
+  const stage = req.stage as RequestStage;
+  const type = req.type as ServiceRequestType;
+  if (!canActOnStage(actor.role, stage)) return;
+
+  const next = nextStage(type, stage);
+  const nowIso = new Date().toISOString();
+
+  const update: Record<string, unknown> = { stage: next, updated_at: nowIso };
+  if (stage === "senior") {
+    update.senior_decided_by = actor.id;
+    update.senior_decided_at = nowIso;
+  }
+  const response = nullable(formData.get("response"));
+  if (response !== null) update.response = response;
+
+  if (next === "done") {
+    update.status = "approved";
+    update.final_decided_by = actor.id;
+    update.final_decided_at = nowIso;
+  }
+
+  await sb.from("service_requests").update(update).eq("id", id);
+
+  // Side effect: a completed cancellation cancels the booking and frees the plot
+  // for the next customer (refund handled by accounts at this stage).
+  if (next === "done" && type === "cancellation" && req.booking_id) {
+    const { data: bk } = await sb
+      .from("bookings")
+      .select("id, plot_id, advance_paid")
+      .eq("id", req.booking_id)
+      .maybeSingle();
+    if (bk) {
+      await sb
+        .from("bookings")
+        .update({
+          status: "cancelled",
+          released_at: nowIso,
+          refund_status: "paid",
+          refund_amount: bk.advance_paid ?? 0,
+          refund_approved_by: actor.id,
+          refund_approved_at: nowIso,
+          refund_paid_at: nowIso,
+        })
+        .eq("id", bk.id);
+      if (bk.plot_id) {
+        await sb.from("plots").update({ status: "available" }).eq("id", bk.plot_id);
+      }
+    }
+  }
+
+  await logAudit(
+    actor,
+    "request",
+    id,
+    next === "done" ? "approve" : "forward",
+    `${requestTypeMeta(type).label} → ${next === "done" ? "completed" : next}`,
+  );
+  revalidatePath("/requests");
+  revalidatePath("/dashboard");
+}
+
+// ---------------------------------------------------------------------------
+// DECLINE — any approver in the chain can reject the request.
+// ---------------------------------------------------------------------------
+export async function declineServiceRequest(formData: FormData): Promise<void> {
+  const actor = await requireUser();
+  const sb = getSupabase();
+  const id = s(formData.get("id"));
+  if (!id) return;
+
+  const { data: req } = await sb
+    .from("service_requests")
+    .select("id, type, stage, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!req || req.status !== "pending") return;
+  if (!canActOnStage(actor.role, req.stage as RequestStage)) return;
 
   await sb
-    .from("cab_requests")
+    .from("service_requests")
     .update({
-      cab_date,
-      status: "pending",
-      decided_by: null,
-      decided_at: null,
-      decline_reason: null,
+      status: "declined",
+      stage: "done",
+      final_decided_by: actor.id,
+      final_decided_at: new Date().toISOString(),
+      decline_reason: nullable(formData.get("reason")),
+      updated_at: new Date().toISOString(),
     })
     .eq("id", id);
-  await logAudit(actor, "cab_request", id, "reschedule", `cab on ${cab_date}`);
+
+  await logAudit(actor, "request", id, "decline", requestTypeMeta(req.type as ServiceRequestType).label);
   revalidatePath("/requests");
 }

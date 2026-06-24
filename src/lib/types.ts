@@ -1,4 +1,9 @@
 import type { Role } from "./roles";
+import type {
+  ServiceRequestType,
+  ServiceRequestStatus,
+  RequestStage,
+} from "./requests";
 
 // Mirror of the Postgres enums / tables for type-safe data access.
 
@@ -37,10 +42,16 @@ export interface Project {
   city: string;
   remarks: string | null;
   area: string;
-  land_type: string;
+  land_type: string | null;
   approval_type: ApprovalType;
   project_type: ProjectType;
   status: ProjectStatus;
+  // Office Details (Admin panel · New Project Form)
+  branch: string | null;
+  guideline_value: number;
+  director_gold_coupon: number;
+  director_digital_coupon: number;
+  senior_director_gold_coupon: number;
   // §1–§2 blocking & advance
   blocking_amount: number;
   blocking_window_hours: number;
@@ -186,6 +197,29 @@ export interface Registration {
   remarks: string | null;
   created_by: string | null;
   created_at: string;
+}
+
+export interface ServiceRequest {
+  id: string;
+  type: ServiceRequestType;
+  status: ServiceRequestStatus;
+  stage: RequestStage;
+  customer_id: string | null;
+  booking_id: string | null;
+  project_id: string | null;
+  subject: string | null;
+  details: string | null;
+  response: string | null;
+  visit_date: string | null;
+  pickup: string | null;
+  requested_by: string | null;
+  senior_decided_by: string | null;
+  senior_decided_at: string | null;
+  final_decided_by: string | null;
+  final_decided_at: string | null;
+  decline_reason: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export type CabRequestStatus = "pending" | "approved" | "declined";

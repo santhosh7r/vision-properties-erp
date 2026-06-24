@@ -176,6 +176,15 @@ export const Briefcase = (p: P) => (
   </Base>
 );
 
+export const BarChart = (p: P) => (
+  <Base {...p}>
+    <path d="M3 3v18h18" />
+    <rect x="7" y="11" width="3" height="6" rx="0.5" />
+    <rect x="12" y="7" width="3" height="10" rx="0.5" />
+    <rect x="17" y="13" width="3" height="4" rx="0.5" />
+  </Base>
+);
+
 // Map used by data-driven UI (nav, etc.)
 export const Icons = {
   dashboard: Dashboard,
@@ -191,6 +200,9 @@ export const Icons = {
   sitemap: Sitemap,
   briefcase: Briefcase,
   clock: Clock,
+  barChart: BarChart,
+  cube: Cube,
+  plus: Plus,
 } as const;
 
 export type IconName = keyof typeof Icons;

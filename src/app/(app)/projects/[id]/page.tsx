@@ -112,8 +112,17 @@ export default async function ProjectDetailPage({
             </div>
             <Field label="Approval">{approval}</Field>
             <Field label="Project Type">{ptype}</Field>
-            <Field label="Land Type">{p.land_type}</Field>
+            {p.land_type && <Field label="Land Type">{p.land_type}</Field>}
             {p.remarks && <Field label="Remarks">{p.remarks}</Field>}
+          </div>
+
+          <div className="card space-y-3">
+            <span className="text-sm font-semibold">Office Details</span>
+            <Field label="Branch">{p.branch || "—"}</Field>
+            <Field label="Guideline Value">{inr(p.guideline_value)} / sq.ft</Field>
+            <Field label="Director Gold Coupon">{inr(p.director_gold_coupon)} / sq.ft</Field>
+            <Field label="Director Digital Coupon">{inr(p.director_digital_coupon)} / sq.ft</Field>
+            <Field label="Senior Director Gold Coupon">{inr(p.senior_director_gold_coupon)} / sq.ft</Field>
           </div>
 
           <div className="card space-y-3">

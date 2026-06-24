@@ -66,6 +66,50 @@ export async function createUser(formData: FormData): Promise<void> {
   revalidatePath("/users");
 }
 
+// Change Team / Level (Admin panel · Partners) — reassign a user's role and/or
+// the manager they report to. Validates placement the same way createUser does.
+// Note: the human-readable partner_code (set by a trigger on insert) is left
+// unchanged on a level change.
+export async function updateUserPlacement(formData: FormData): Promise<void> {
+  const actor = await requireCapability("manage_users");
+  const sb = getSupabase();
+
+  const id = String(formData.get("id") || "");
+  const role = String(formData.get("role") || "") as Role;
+  const manager_id = String(formData.get("manager_id") || "") || null;
+  if (!id || !ROLES.includes(role) || role === "admin") return;
+  if (manager_id === id) return; // can't report to oneself
+
+  const need = managerRoleOf(role);
+  let finalManagerId = manager_id;
+  if (need === "admin") {
+    if (manager_id) {
+      const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
+      if (!parent || (parent.role as Role) !== "admin") return;
+    } else {
+      const { data: company } = await sb
+        .from("users")
+        .select("id")
+        .eq("role", "admin")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      finalManagerId = company?.id ?? null;
+    }
+  } else if (need) {
+    if (manager_id) {
+      const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
+      if (!parent || !canManageRole(parent.role as Role, role)) return;
+    } else {
+      finalManagerId = actor.id;
+    }
+  }
+
+  await sb.from("users").update({ role, manager_id: finalManagerId }).eq("id", id);
+  await logAudit(actor, "user", id, "placement_change", role);
+  revalidatePath("/users");
+}
+
 export async function toggleUserActive(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_users");
   const id = String(formData.get("id") || "");

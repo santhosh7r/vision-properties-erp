@@ -1,6 +1,7 @@
 import "server-only";
 import { getSupabase } from "./supabase";
 import { getDownlineIds } from "./hierarchy";
+import { isSalesRole, type Role } from "./roles";
 
 async function count(table: string, filter?: (q: any) => any): Promise<number> {
   let q = getSupabase().from(table).select("id", { count: "exact", head: true });
@@ -180,6 +181,171 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
     salesSeries: salesBuckets,
     salesSparkline: salesBuckets.map((b) => b.value),
     recentBookings,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// REPORTS — the five totals on the Senior Director panel (§6). Company-wide for
+// admin / finance / legal; confined to the user's own network otherwise.
+// ---------------------------------------------------------------------------
+export interface ReportsData {
+  scope: "company" | "network";
+  siteVisits: number;
+  bookings: number;
+  blockings: number;
+  registrations: number;
+  cancellations: number;
+  partners: number;
+  customers: number;
+  siteVisitsByStatus: { pending: number; approved: number; declined: number };
+}
+
+export async function getReports(userId: string, role: Role): Promise<ReportsData> {
+  const sb = getSupabase();
+  const companyWide = role === "admin" || role === "finance" || role === "legal";
+  const ids = companyWide ? null : await getDownlineIds(sb, userId);
+  const list = ids ? ids.join(",") : "";
+
+  const inCreated = (q: any) => (ids ? q.in("created_by", ids) : q);
+  const inRequester = (q: any) => (ids ? q.in("requested_by", ids) : q);
+  const inBookingOwner = (q: any) =>
+    ids ? q.or(`created_by.in.(${list}),partner_id.in.(${list})`) : q;
+
+  const [
+    siteVisits,
+    svPending,
+    svApproved,
+    svDeclined,
+    bookings,
+    blockings,
+    registrations,
+    cancellations,
+    partnersRaw,
+    customers,
+  ] = await Promise.all([
+    count("service_requests", (q) => inRequester(q.eq("type", "site_visit"))),
+    count("service_requests", (q) => inRequester(q.eq("type", "site_visit").eq("status", "pending"))),
+    count("service_requests", (q) => inRequester(q.eq("type", "site_visit").eq("status", "approved"))),
+    count("service_requests", (q) => inRequester(q.eq("type", "site_visit").eq("status", "declined"))),
+    count("bookings", (q) => inBookingOwner(q.eq("book_mode", "booking"))),
+    count("bookings", (q) => inBookingOwner(q.eq("book_mode", "blocking"))),
+    count("registrations", (q) => inCreated(q)),
+    count("bookings", (q) => inBookingOwner(q.eq("status", "cancelled"))),
+    count("users", (q) => {
+      let qq = q.not("partner_code", "is", null);
+      if (ids) qq = qq.in("id", ids);
+      return qq;
+    }),
+    count("customers", (q) => inCreated(q)),
+  ]);
+
+  // Exclude the viewer themselves from their own partner count.
+  const partners = companyWide ? partnersRaw : Math.max(0, partnersRaw - (isSalesRole(role) ? 1 : 0));
+
+  return {
+    scope: companyWide ? "company" : "network",
+    siteVisits,
+    bookings,
+    blockings,
+    registrations,
+    cancellations,
+    partners,
+    customers,
+    siteVisitsByStatus: { pending: svPending, approved: svApproved, declined: svDeclined },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SENIOR OVERVIEW — extra dashboard panels for the Senior Director panel:
+// Overall + This-Month counters, partner-growth & registration trends, and the
+// network's recent activity. Scoped to the user's downline network.
+// ---------------------------------------------------------------------------
+export interface SeniorOverview {
+  overall: { siteVisits: number; registrations: number; cancellations: number; partners: number; customers: number };
+  thisMonth: { siteVisits: number; blocking: number; booking: number; registration: number; cancellations: number };
+  partnersGrowth: SeriesPoint[];
+  registrationSeries: SeriesPoint[];
+  recentActivity: ActivityRow[];
+}
+
+export async function getSeniorOverview(userId: string): Promise<SeniorOverview> {
+  const sb = getSupabase();
+  const ids = await getDownlineIds(sb, userId);
+  const list = ids.join(",");
+  const nowKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
+
+  const [bookingsRes, regRes, svRes, usersRes, customersCount, activityRes] = await Promise.all([
+    sb
+      .from("bookings")
+      .select("created_at, book_mode, status")
+      .or(`created_by.in.(${list}),partner_id.in.(${list})`),
+    sb.from("registrations").select("created_at").in("created_by", ids),
+    sb.from("service_requests").select("created_at").eq("type", "site_visit").in("requested_by", ids),
+    sb.from("users").select("id, created_at, partner_code").in("id", ids),
+    sb.from("customers").select("id", { count: "exact", head: true }).in("created_by", ids),
+    sb
+      .from("audit_log")
+      .select("id, actor_name, action, entity, details, created_at")
+      .in("actor_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(8),
+  ]);
+
+  const bookings = (bookingsRes.data ?? []) as { created_at: string; book_mode: string; status: string }[];
+  const regs = (regRes.data ?? []) as { created_at: string }[];
+  const svs = (svRes.data ?? []) as { created_at: string }[];
+  const users = (usersRes.data ?? []) as { id: string; created_at: string; partner_code: string | null }[];
+
+  const thisMonth = { siteVisits: 0, blocking: 0, booking: 0, registration: 0, cancellations: 0 };
+  let cancellationsTotal = 0;
+  for (const b of bookings) {
+    const thisM = keyOf(b.created_at) === nowKey;
+    if (b.status === "cancelled") {
+      cancellationsTotal++;
+      if (thisM) thisMonth.cancellations++;
+      continue;
+    }
+    if (thisM && b.book_mode === "blocking") thisMonth.blocking++;
+    if (thisM && b.book_mode === "booking") thisMonth.booking++;
+  }
+  for (const s of svs) if (keyOf(s.created_at) === nowKey) thisMonth.siteVisits++;
+  for (const r of regs) if (keyOf(r.created_at) === nowKey) thisMonth.registration++;
+
+  // 8-month trend series for partners joined & registrations.
+  const partnersGrowth = buildBuckets(8);
+  const pgIndex = new Map(partnersGrowth.map((b, i) => [b.key, i]));
+  const regSeries = buildBuckets(8);
+  const rsIndex = new Map(regSeries.map((b, i) => [b.key, i]));
+  let partnersTotal = 0;
+  for (const u of users) {
+    if (!u.partner_code || u.id === userId) continue;
+    partnersTotal++;
+    const idx = pgIndex.get(keyOf(u.created_at));
+    if (idx !== undefined) {
+      partnersGrowth[idx].value += 1;
+      partnersGrowth[idx].count += 1;
+    }
+  }
+  for (const r of regs) {
+    const idx = rsIndex.get(keyOf(r.created_at));
+    if (idx !== undefined) {
+      regSeries[idx].value += 1;
+      regSeries[idx].count += 1;
+    }
+  }
+
+  return {
+    overall: {
+      siteVisits: svs.length,
+      registrations: regs.length,
+      cancellations: cancellationsTotal,
+      partners: partnersTotal,
+      customers: customersCount.count ?? 0,
+    },
+    thisMonth,
+    partnersGrowth,
+    registrationSeries: regSeries,
+    recentActivity: (activityRes.data ?? []) as ActivityRow[],
   };
 }
 

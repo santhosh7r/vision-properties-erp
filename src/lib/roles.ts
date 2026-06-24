@@ -124,6 +124,7 @@ export type Capability =
   | "manage_transfer"
   | "request_cab"
   | "approve_cab"
+  | "create_request"
   | "view_finance"
   | "view_legal"
   | "view_reports";
@@ -145,6 +146,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "approve_refund",
     "manage_transfer",
     "approve_cab",
+    "create_request",
     "view_finance",
     "view_legal",
     "view_reports",
@@ -158,6 +160,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "cancel_booking",
     "manage_transfer",
     "request_cab",
+    "create_request",
     "view_reports",
   ],
   director: [
@@ -169,6 +172,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "cancel_booking",
     "manage_transfer",
     "request_cab",
+    "create_request",
     "view_reports",
   ],
   business_manager: [
@@ -180,9 +184,10 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "cancel_booking",
     "manage_transfer",
     "request_cab",
+    "create_request",
     "view_reports",
   ],
-  business_partner: ["manage_customers", "create_blocking", "request_cab"],
+  business_partner: ["manage_customers", "create_blocking", "request_cab", "create_request"],
   finance: ["record_payment", "view_finance", "view_reports"],
   legal: ["manage_registration", "view_legal", "view_reports"],
 };

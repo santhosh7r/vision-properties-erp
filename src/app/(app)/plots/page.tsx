@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can } from "@/lib/roles";
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
 
 export default async function PlotsPage() {
   const user = await requireUser();
+  // Admin uses the card-based Inventory workspace instead of this shared table.
+  if (user.role === "admin") redirect("/inventory/manage");
   await sweepExpiredBookings();
 
   const sb = getSupabase();

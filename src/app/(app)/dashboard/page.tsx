@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import type { SessionUser } from "@/lib/session";
 import { can, isSalesRole, ROLE_LABELS } from "@/lib/roles";
 import { supabaseConfigured } from "@/lib/supabase";
-import { getDashboard, getSalesDashboard } from "@/lib/queries";
+import { getDashboard, getSalesDashboard, getSeniorOverview } from "@/lib/queries";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { inr, inrCompact, timeAgo } from "@/lib/format";
 import { EmptyState, BookingStatusBadge, PaymentBadge, Badge } from "@/components/ui";
@@ -21,6 +21,7 @@ import {
   UserCircle,
   Plus,
   ArrowRight,
+  Clock,
 } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
@@ -299,7 +300,10 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
 // only: what they sold, what their network sold, and available inventory.
 // ---------------------------------------------------------------------------
 async function SalesDashboard({ user }: { user: SessionUser }) {
-  const sd = await getSalesDashboard(user.id);
+  const [sd, ov] = await Promise.all([
+    getSalesDashboard(user.id),
+    getSeniorOverview(user.id),
+  ]);
   const salesDelta = pctChange(sd.thisMonthValue, sd.lastMonthValue);
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -364,6 +368,73 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
             color="#e4433a"
             valueFormat={inrCompact}
           />
+        </Panel>
+      </div>
+
+      {/* This Month — activity counters */}
+      <div className="mt-4">
+        <Panel title="This Month" accent="#428fdf">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+            <Metric label="Site Visits" value={ov.thisMonth.siteVisits} />
+            <Metric label="Blocking" value={ov.thisMonth.blocking} />
+            <Metric label="Booking" value={ov.thisMonth.booking} />
+            <Metric label="Registration" value={ov.thisMonth.registration} />
+            <Metric label="Cancellations" value={ov.thisMonth.cancellations} />
+          </div>
+        </Panel>
+      </div>
+
+      {/* Overall — lifetime network counters */}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiCard label="Site Visits" value={String(ov.overall.siteVisits)} sub="All time" icon={<Clock size={20} />} accent="#428fdf" href="/requests" />
+        <KpiCard label="Registrations" value={String(ov.overall.registrations)} sub="Plots registered" icon={<Scroll size={20} />} accent="#8b5cf6" />
+        <KpiCard label="Cancellations" value={String(ov.overall.cancellations)} sub="Cancelled bookings" icon={<FileText size={20} />} accent="#e4433a" />
+        <KpiCard label="Partners" value={String(ov.overall.partners)} sub="In your network" icon={<UserCircle size={20} />} accent="#10b981" href="/business-operators" />
+        <KpiCard label="Customers" value={String(ov.overall.customers)} sub="Onboarded" icon={<Building size={20} />} accent="#428fdf" href="/customers" />
+      </div>
+
+      {/* Performance charts */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Panel title="Partner Growth Performance" accent="#10b981" action={<span className="text-xs text-[var(--muted)]">New partners · last 8 months</span>}>
+          <BarChart
+            data={ov.partnersGrowth.map((s) => ({ label: s.label, value: s.value }))}
+            color="#10b981"
+            valueFormat={(v) => String(Math.round(v))}
+          />
+        </Panel>
+        <Panel title="Registration Performance" accent="#8b5cf6" action={<span className="text-xs text-[var(--muted)]">Registrations · last 8 months</span>}>
+          <AreaChart
+            data={ov.registrationSeries.map((s) => ({ label: s.label, value: s.value }))}
+            color="#8b5cf6"
+            valueFormat={(v) => String(Math.round(v))}
+          />
+        </Panel>
+      </div>
+
+      {/* Updates — what's flowing through the network */}
+      <div className="mt-4">
+        <Panel title="Updates" accent="#e4433a" action={<span className="text-xs text-[var(--muted)]">Bookings · registrations · partners · availability</span>}>
+          {ov.recentActivity.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-sm text-[var(--muted)]">No recent updates</div>
+          ) : (
+            <ul className="space-y-3.5">
+              {ov.recentActivity.map((a) => (
+                <li key={a.id} className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--surface-3)", color: "var(--muted)" }}>
+                    {ENTITY_ICON[a.entity] ?? <FileText size={13} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-snug">
+                      <span className="font-medium">{a.actor_name ?? "System"}</span>{" "}
+                      <span className="text-[var(--muted)]">{a.action.replace(/_/g, " ")} {a.entity}</span>
+                      {a.details && <span className="text-[var(--text-2)]"> · {a.details}</span>}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-[var(--muted)]">{timeAgo(a.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Panel>
       </div>
 

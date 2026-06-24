@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can } from "@/lib/roles";
@@ -11,6 +12,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
   const user = await requireUser();
+  // Admin uses the dedicated card-based Inventory workspace, not this shared
+  // table. Keep the route working for non-admin roles only.
+  if (user.role === "admin") redirect("/inventory/manage");
   const sb = getSupabase();
   const { data } = await sb
     .from("projects")
