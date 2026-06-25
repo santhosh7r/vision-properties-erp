@@ -50,7 +50,8 @@ export default async function RequestsPage() {
   const user = await requireUser();
   const sb = getSupabase();
   const isAdmin = user.role === "admin";
-  const canCreate = can(user.role, "create_request");
+  // Admin only APPROVES requests on this panel — they never raise new ones.
+  const canCreate = !isAdmin && can(user.role, "create_request");
 
   const SELECT =
     "*, customers(name, mobile), bookings(id, block, projects(name), plots(plot_no)), requester:users!requested_by(full_name)";

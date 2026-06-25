@@ -8,7 +8,13 @@ import type { Customer } from "@/lib/types";
 // page and inline in the booking form.
 // Pincode auto-fills State / District / Country via the free India Post API;
 // the fields stay editable so any value can be corrected.
-export default function CustomerFields({ c }: { c?: Partial<Customer> }) {
+export default function CustomerFields({
+  c,
+  districts = [],
+}: {
+  c?: Partial<Customer>;
+  districts?: string[];
+}) {
   const [pincode, setPincode] = useState(c?.pincode ?? "");
   const [state, setState] = useState(c?.state ?? "");
   const [district, setDistrict] = useState(c?.district ?? "");
@@ -91,7 +97,19 @@ export default function CustomerFields({ c }: { c?: Partial<Customer> }) {
       </div>
       <div>
         <label className="label">9. District</label>
-        <input name="district" className="input" value={district} onChange={(e) => setDistrict(e.target.value)} />
+        <input
+          name="district"
+          className="input"
+          list="customer-districts"
+          autoComplete="off"
+          value={district}
+          onChange={(e) => setDistrict(e.target.value)}
+        />
+        <datalist id="customer-districts">
+          {districts.map((d) => (
+            <option key={d} value={d} />
+          ))}
+        </datalist>
       </div>
       <div>
         <label className="label">10. Country</label>

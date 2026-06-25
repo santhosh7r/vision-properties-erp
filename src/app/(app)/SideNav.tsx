@@ -14,6 +14,7 @@ const GROUP_ORDER: NavItem["group"][] = [
   "Clients",
   "Sales",
   "Business Partners",
+  "Tokens",
   "Operations",
   "Reports",
   "Administration",

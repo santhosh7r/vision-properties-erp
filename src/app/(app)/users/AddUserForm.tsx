@@ -19,6 +19,28 @@ export interface ManagerOption {
   code: string | null;
 }
 
+// Highlighted role tag shown on the RIGHT of a manager option / chip.
+function RoleTag({ role }: { role: Role }) {
+  return (
+    <span
+      className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+    >
+      {ROLE_LABELS[role]}
+    </span>
+  );
+}
+
+// Name (+ partner code) on the left.
+function ManagerName({ m }: { m: ManagerOption }) {
+  return (
+    <span className="truncate">
+      {m.full_name}
+      {m.code && <span className="ml-1.5 font-mono text-xs text-[var(--muted)]">{m.code}</span>}
+    </span>
+  );
+}
+
 // Only render this many matches in the picker at once — keeps the dropdown fast
 // when there are thousands of potential managers. The user narrows with search.
 const MAX_RESULTS = 50;
@@ -30,7 +52,13 @@ const MAX_RESULTS = 50;
 //   Business Manager-> a Director           (searchable, required)
 //   Business Partner-> a Business Manager   (searchable, required)
 //   Admin           -> none (top of the org)
-export default function AddUserForm({ managers }: { managers: ManagerOption[] }) {
+export default function AddUserForm({
+  managers,
+  cities = [],
+}: {
+  managers: ManagerOption[];
+  cities?: string[];
+}) {
   const [role, setRole] = useState<Role | "">("");
   const [managerId, setManagerId] = useState("");
   const [query, setQuery] = useState("");
@@ -77,7 +105,8 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
   // reports to the creating Admin (handled server-side).
   const canSubmit = true;
 
-  const label = (m: ManagerOption) => `${m.code ? `${m.code} · ` : ""}${m.full_name}`;
+  const label = (m: ManagerOption) =>
+    `${m.full_name} · ${ROLE_LABELS[m.role]}${m.code ? ` · ${m.code}` : ""}`;
 
   return (
     <form action={createUser} className="space-y-3">
@@ -98,6 +127,16 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
       <div>
         <label className="label">Mobile</label>
         <input name="mobile" className="input" />
+      </div>
+      <div>
+        <label className="label">City</label>
+        <input name="city" className="input" list="user-cities" placeholder="e.g. Chennai" autoComplete="off" />
+        <datalist id="user-cities">
+          {cities.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <p className="mt-1 text-xs text-[var(--muted)]">Sales panels show this city&apos;s inventory first.</p>
       </div>
 
       <div>
@@ -154,11 +193,14 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
         {role && needsPicker && (
           <div className="relative">
             {selected ? (
-              <div className="input flex items-center justify-between">
-                <span>{label(selected)}</span>
+              <div className="input flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <ManagerName m={selected} />
+                  <RoleTag role={selected.role} />
+                </span>
                 <button
                   type="button"
-                  className="text-xs text-[var(--accent)]"
+                  className="shrink-0 text-xs text-[var(--accent)]"
                   onClick={() => {
                     setManagerId("");
                     setQuery("");
@@ -200,13 +242,14 @@ export default function AddUserForm({ managers }: { managers: ManagerOption[] })
                           <button
                             type="button"
                             key={m.id}
-                            className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--surface-2)]"
+                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--surface-2)]"
                             onClick={() => {
                               setManagerId(m.id);
                               setOpen(false);
                             }}
                           >
-                            {label(m)}
+                            <ManagerName m={m} />
+                            <RoleTag role={m.role} />
                           </button>
                         ))
                       )}

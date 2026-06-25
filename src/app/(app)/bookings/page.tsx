@@ -67,6 +67,8 @@ export default async function BookingsPage() {
   // Admin creates from the dedicated "Add Blocking & Booking" page, so this list
   // has no inline create button. Sales keep the inline flow here.
   const flow = canCreate && !isAdmin ? await loadBookingFlow(sb, user) : null;
+  const { data: me } = await sb.from("users").select("city").eq("id", user.id).maybeSingle();
+  const myCity = (me as { city?: string | null } | null)?.city ?? null;
 
   return (
     <>
@@ -84,6 +86,7 @@ export default async function BookingsPage() {
         showSalesperson={showSalesperson}
         flow={flow}
         hideCreate={isAdmin}
+        myCity={myCity}
       />
     </>
   );

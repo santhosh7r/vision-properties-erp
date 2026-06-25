@@ -30,11 +30,13 @@ export default function StartBookingFlow({
   customers,
   canBlock = true,
   canBook = false,
+  myCity = null,
 }: {
   projects: FlowProject[];
   customers: MiniCustomer[];
   canBlock?: boolean;
   canBook?: boolean;
+  myCity?: string | null;
 }) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ plot: FlowPlot; mode: "blocking" | "booking" } | null>(null);
@@ -205,15 +207,22 @@ export default function StartBookingFlow({
 
   // ── Step 1: pick a project, searchable ──────────────────────────────────────
   const pq = projectSearch.trim().toLowerCase();
+  const mc = (myCity ?? "").trim().toLowerCase();
   const visibleProjects = projects
     .filter((p) => pq === "" || p.name.toLowerCase().includes(pq) || p.city.toLowerCase().includes(pq))
-    .sort((a, b) =>
-      projectSort === "name"
+    .sort((a, b) => {
+      // The salesperson's home city always floats to the top.
+      if (mc) {
+        const am = a.city.toLowerCase() === mc ? 0 : 1;
+        const bm = b.city.toLowerCase() === mc ? 0 : 1;
+        if (am !== bm) return am - bm;
+      }
+      return projectSort === "name"
         ? a.name.localeCompare(b.name)
         : projectSort === "avail_asc"
           ? a.plots.length - b.plots.length
-          : b.plots.length - a.plots.length,
-    );
+          : b.plots.length - a.plots.length;
+    });
 
   return (
     <div className="space-y-4">

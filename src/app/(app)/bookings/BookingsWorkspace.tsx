@@ -25,6 +25,7 @@ export default function BookingsWorkspace({
   flow,
   initialCreating = false,
   hideCreate = false,
+  myCity = null,
 }: {
   rows: BookingRow[];
   canConfirm: boolean;
@@ -36,6 +37,7 @@ export default function BookingsWorkspace({
   flow: FlowData | null;
   initialCreating?: boolean;
   hideCreate?: boolean;
+  myCity?: string | null;
 }) {
   const [creating, setCreating] = useState(initialCreating);
 
@@ -71,6 +73,7 @@ export default function BookingsWorkspace({
             customers={flow.customers}
             canBlock={canBlock}
             canBook={canBook}
+            myCity={myCity}
           />
         )}
       </div>

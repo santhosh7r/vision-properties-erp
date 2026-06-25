@@ -40,6 +40,14 @@ export default async function ProjectsPage() {
     advance_percent: p.advance_percent,
   }));
 
+  // Surface the salesperson's home city FIRST (e.g. a Chennai partner sees
+  // Chennai projects at the top).
+  const { data: me } = await sb.from("users").select("city").eq("id", user.id).maybeSingle();
+  const myCity = ((me as { city?: string | null } | null)?.city ?? "").trim().toLowerCase();
+  if (myCity) {
+    rows.sort((a, b) => (a.city.toLowerCase() === myCity ? 0 : 1) - (b.city.toLowerCase() === myCity ? 0 : 1));
+  }
+
   const editable = can(user.role, "manage_projects");
 
   return (

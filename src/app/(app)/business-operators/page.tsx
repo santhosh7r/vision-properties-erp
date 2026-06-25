@@ -51,7 +51,7 @@ export default async function BusinessOperatorsPage() {
     return (
       <>
         <PageHeader
-          title="Business Operators"
+          title="Issue Token"
           subtitle="Every salesperson and their coupon balances — issue extra coupons / tokens (e.g. a Cab Token to a Director)."
         />
         <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">

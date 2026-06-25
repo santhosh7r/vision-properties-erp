@@ -21,11 +21,22 @@ export default async function PlotsPage() {
   const seesAllPlots = can(user.role, "manage_plots");
   let query = sb
     .from("plots")
-    .select("*, projects(name)")
+    .select("*, projects(name, city)")
     .order("created_at", { ascending: false });
   if (!seesAllPlots) query = query.eq("status", "available");
   const { data } = await query;
-  const raw = (data ?? []) as (Plot & { projects: Pick<Project, "name"> })[];
+  const raw = (data ?? []) as (Plot & { projects: Pick<Project, "name" | "city"> })[];
+
+  // Salesperson's home city first.
+  const { data: me } = await sb.from("users").select("city").eq("id", user.id).maybeSingle();
+  const myCity = ((me as { city?: string | null } | null)?.city ?? "").trim().toLowerCase();
+  if (myCity) {
+    raw.sort(
+      (a, b) =>
+        ((a.projects?.city ?? "").toLowerCase() === myCity ? 0 : 1) -
+        ((b.projects?.city ?? "").toLowerCase() === myCity ? 0 : 1),
+    );
+  }
 
   const rows: PlotRow[] = raw.map((p) => ({
     id: p.id,

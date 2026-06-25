@@ -15,6 +15,7 @@ export interface NavItem {
     | "Clients"
     | "Sales"
     | "Business Partners"
+    | "Tokens"
     | "Operations"
     | "Reports"
     | "Administration";
@@ -68,13 +69,15 @@ export const NAV: NavItem[] = [
   // Payments list — finance only (admin reaches it via Part Payment / Fully Paid Receipt).
   { href: "/payments", label: "Payments", icon: "creditCard", roles: ["finance"], group: "Operations" },
   { href: "/registrations", label: "Registrations", icon: "scroll", roles: ["admin", "legal"], group: "Operations" },
-  { href: "/business-operators", label: "Business Operators", icon: "briefcase", roles: ["admin", "senior_director", "director", "business_manager"], group: "Business Partners" },
+  // Admin: token/coupon issuance lives in its own Tokens section. Sales managers
+  // keep the team view ("Business Operators" → "My Team") under Business Partners.
+  { href: "/business-operators", label: "Issue Token", icon: "creditCard", roles: ["admin"], group: "Tokens" },
+  { href: "/business-operators", label: "Business Operators", icon: "briefcase", roles: ["senior_director", "director", "business_manager"], group: "Business Partners" },
   { href: "/reports", label: "Reports", icon: "barChart", roles: ["admin", "senior_director", "director", "business_manager", "finance", "legal"], group: "Reports" },
   // --- Admin Partners (all backed by the existing /users page + users/actions) ---
   { href: "/users?action=new", label: "Add New Partner", icon: "plus", roles: ["admin"], group: "Business Partners" },
   { href: "/users", label: "View Partner", icon: "users", roles: ["admin"], group: "Business Partners" },
-  { href: "/users?view=block", label: "Block Partner", icon: "trash", roles: ["admin"], group: "Business Partners" },
-  { href: "/users?view=placement", label: "Change Team / Level", icon: "sitemap", roles: ["admin"], group: "Business Partners" },
+  { href: "/users?view=manage", label: "Block / Change Team & Level", icon: "sitemap", roles: ["admin"], group: "Business Partners" },
   { href: "/settings", label: "Settings", icon: "cog", roles: ["admin"], group: "Administration" },
 ];
 

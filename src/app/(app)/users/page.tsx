@@ -13,8 +13,10 @@ export const dynamic = "force-dynamic";
 // page content is unchanged — the add form + table cover every intent.
 const HEADERS = {
   new: { title: "Add New Partner", subtitle: "Create a partner / team member and place them in the hierarchy." },
-  block: { title: "Block Partner", subtitle: "Deactivate or re-activate a partner from the list below." },
-  placement: { title: "Change Team / Level", subtitle: "Reassign a partner's role or who they report to." },
+  manage: {
+    title: "Block / Change Team & Level",
+    subtitle: "Block or re-activate a partner, and change their team or level — all from one place.",
+  },
   view: {
     title: "View Partner",
     subtitle: "Who reports to whom — the full sales hierarchy. Expand a branch or add a member directly beneath any manager.",
@@ -28,8 +30,7 @@ export default async function UsersPage({
 }) {
   await requireCapability("manage_users");
   const sp = await searchParams;
-  const intent =
-    sp.action === "new" ? "new" : sp.view === "block" ? "block" : sp.view === "placement" ? "placement" : "view";
+  const intent = sp.action === "new" ? "new" : sp.view === "manage" ? "manage" : "view";
   const head = HEADERS[intent];
   const sb = getSupabase();
   const { data: users } = await sb
@@ -39,6 +40,11 @@ export default async function UsersPage({
 
   const list = (users ?? []) as User[];
   const byId = new Map(list.map((u) => [u.id, u]));
+  // City options for the partner form — distinct project cities (+ any used).
+  const { data: cityRows } = await sb.from("projects").select("city");
+  const cities = [
+    ...new Set(((cityRows ?? []) as { city: string | null }[]).map((r) => (r.city ?? "").trim()).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b));
   // Potential parents: anyone active who can manage (i.e. not a leaf partner).
   // The form filters these to the role valid for the chosen new-member role.
   const managers: ManagerOption[] = list
@@ -67,7 +73,7 @@ export default async function UsersPage({
         <PageHeader title={head.title} subtitle={head.subtitle} />
         <div className="card max-w-xl">
           <h2 className="mb-4 text-sm font-semibold">New Partner</h2>
-          <AddUserForm managers={managers} />
+          <AddUserForm managers={managers} cities={cities} />
         </div>
       </>
     );
@@ -96,12 +102,11 @@ export default async function UsersPage({
     );
   }
 
-  const tableMode = intent === "block" ? "block" : "placement";
-
+  // Combined page: both Block/Unblock and Change Team / Level actions.
   return (
     <>
       <PageHeader title={head.title} subtitle={head.subtitle} />
-      <UsersTable rows={rows} managers={managers} mode={tableMode} />
+      <UsersTable rows={rows} managers={managers} mode="manage" />
     </>
   );
 }

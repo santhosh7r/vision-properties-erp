@@ -31,6 +31,7 @@ export interface User {
   role: Role;
   partner_code: string | null;
   manager_id: string | null;
+  city: string | null;
   is_active: boolean;
   created_at: string;
 }

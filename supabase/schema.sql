@@ -80,6 +80,7 @@ create table if not exists users (
   role          user_role   not null,
   partner_code  text,                    -- sales ID: SD#/D#/BM#/BP# (auto-assigned; NULL for admin/finance/legal)
   manager_id    uuid        references users(id) on delete set null,
+  city          text,                    -- home city: sales panels show this city's inventory first
   is_active     boolean     not null default true,
   created_at    timestamptz not null default now()
 );

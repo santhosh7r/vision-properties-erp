@@ -30,6 +30,8 @@ const VALID_TYPES = Object.keys(REQUEST_CHAIN) as ServiceRequestType[];
 // ---------------------------------------------------------------------------
 export async function createServiceRequest(formData: FormData): Promise<void> {
   const actor = await requireCapability("create_request");
+  // Admin only approves requests — they never raise them.
+  if (actor.role === "admin") return;
   const sb = getSupabase();
 
   const type = s(formData.get("type")) as ServiceRequestType;
@@ -42,41 +44,39 @@ export async function createServiceRequest(formData: FormData): Promise<void> {
   if (meta.needsCustomer && !customer_id) return;
   if (meta.needsBooking && !booking_id) return;
 
-  // Ownership guard (admins may raise for anyone). A customer is "theirs" if they
-  // created it or booked with their own id; a booking is theirs if it was created
-  // by / assigned to anyone in their downline.
-  if (actor.role !== "admin") {
-    if (customer_id) {
-      const { data: cust } = await sb
-        .from("customers")
-        .select("id, created_by")
-        .eq("id", customer_id)
-        .maybeSingle();
-      if (!cust) return;
-      if (cust.created_by !== actor.id) {
-        const { data: ownBk } = await sb
-          .from("bookings")
-          .select("id")
-          .eq("customer_id", customer_id)
-          .or(`created_by.eq.${actor.id},partner_id.eq.${actor.id}`)
-          .limit(1)
-          .maybeSingle();
-        if (!ownBk) return;
-      }
-    }
-    if (booking_id) {
-      const ids = await getDownlineIds(sb, actor.id);
-      const { data: bk } = await sb
+  // Ownership guard. A customer is "theirs" if they created it or booked with
+  // their own id; a booking is theirs if created by / assigned to their downline.
+  // (Admin returned above and never reaches here.)
+  if (customer_id) {
+    const { data: cust } = await sb
+      .from("customers")
+      .select("id, created_by")
+      .eq("id", customer_id)
+      .maybeSingle();
+    if (!cust) return;
+    if (cust.created_by !== actor.id) {
+      const { data: ownBk } = await sb
         .from("bookings")
-        .select("id, created_by, partner_id")
-        .eq("id", booking_id)
+        .select("id")
+        .eq("customer_id", customer_id)
+        .or(`created_by.eq.${actor.id},partner_id.eq.${actor.id}`)
+        .limit(1)
         .maybeSingle();
-      if (!bk) return;
-      const owns =
-        (bk.created_by && ids.includes(bk.created_by)) ||
-        (bk.partner_id && ids.includes(bk.partner_id));
-      if (!owns) return;
+      if (!ownBk) return;
     }
+  }
+  if (booking_id) {
+    const ids = await getDownlineIds(sb, actor.id);
+    const { data: bk } = await sb
+      .from("bookings")
+      .select("id, created_by, partner_id")
+      .eq("id", booking_id)
+      .maybeSingle();
+    if (!bk) return;
+    const owns =
+      (bk.created_by && ids.includes(bk.created_by)) ||
+      (bk.partner_id && ids.includes(bk.partner_id));
+    if (!owns) return;
   }
 
   // Resolve the project from the booking (best effort) for reporting.

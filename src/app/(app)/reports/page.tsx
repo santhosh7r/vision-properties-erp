@@ -1,10 +1,11 @@
 import { requireCapability } from "@/lib/auth";
 import { ROLE_LABELS } from "@/lib/roles";
 import { supabaseConfigured } from "@/lib/supabase";
-import { getReports } from "@/lib/queries";
+import { getReports, getSalesLeaderboard } from "@/lib/queries";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { KpiCard, Panel, StackedBar } from "@/components/dashboard";
 import { Clock, FileText, Scroll, Grid, UserCircle, Building } from "@/components/icons";
+import LeaderboardTable from "./LeaderboardTable";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,10 @@ export default async function ReportsPage() {
     );
   }
 
-  const r = await getReports(user.id, user.role);
+  const [r, leaderboard] = await Promise.all([
+    getReports(user.id, user.role),
+    getSalesLeaderboard(user.id, user.role),
+  ]);
   const scopeLabel =
     r.scope === "company" ? "Company-wide totals." : "Totals across your network.";
 
@@ -75,6 +79,17 @@ export default async function ReportsPage() {
               { label: "cancellations", value: r.cancellations, color: "#e4433a" },
             ]}
           />
+        </Panel>
+      </div>
+
+      {/* Who sold how much — per-salesperson performance */}
+      <div className="mt-4">
+        <Panel
+          title={r.scope === "company" ? "Sales by Person — Company" : "Sales by Person — My Network"}
+          accent="#10b981"
+          action={<span className="text-xs text-[var(--muted)]">{leaderboard.length} sales people</span>}
+        >
+          <LeaderboardTable rows={leaderboard} />
         </Panel>
       </div>
 

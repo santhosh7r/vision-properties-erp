@@ -200,6 +200,103 @@ export interface ReportsData {
   siteVisitsByStatus: { pending: number; approved: number; declined: number };
 }
 
+// Per-salesperson performance row — who sold how much.
+export interface LeaderboardRow {
+  id: string;
+  name: string;
+  code: string | null;
+  role: Role;
+  blockings: number;
+  bookings: number;
+  deals: number; // active blockings + bookings
+  value: number; // active deal value
+  registrations: number;
+  cancellations: number;
+}
+
+// Sales-by-person breakdown. Company-wide for admin/finance/legal; the user's own
+// network otherwise. A deal is attributed to the partner stamped on it (the
+// salesperson), falling back to whoever created it. Admin/operator rows excluded.
+export async function getSalesLeaderboard(userId: string, role: Role): Promise<LeaderboardRow[]> {
+  const sb = getSupabase();
+  const companyWide = role === "admin" || role === "finance" || role === "legal";
+  const ids = companyWide ? null : await getDownlineIds(sb, userId);
+  const list = ids ? ids.join(",") : "";
+
+  let bq = sb
+    .from("bookings")
+    .select("created_by, partner_id, partner_name, partner_code, status, book_mode, total_plot_value");
+  if (ids) bq = bq.or(`created_by.in.(${list}),partner_id.in.(${list})`);
+
+  let rq = sb.from("registrations").select("created_by");
+  if (ids) rq = rq.in("created_by", ids);
+
+  const [{ data: bookingData }, { data: regData }, { data: userData }] = await Promise.all([
+    bq,
+    rq,
+    sb.from("users").select("id, full_name, role, partner_code"),
+  ]);
+
+  const users = new Map(
+    ((userData ?? []) as { id: string; full_name: string; role: Role; partner_code: string | null }[]).map((u) => [u.id, u]),
+  );
+  const agg = new Map<string, LeaderboardRow>();
+  const ensure = (id: string): LeaderboardRow => {
+    let row = agg.get(id);
+    if (!row) {
+      const u = users.get(id);
+      row = {
+        id,
+        name: u?.full_name ?? "—",
+        code: u?.partner_code ?? null,
+        role: (u?.role ?? "business_partner") as Role,
+        blockings: 0,
+        bookings: 0,
+        deals: 0,
+        value: 0,
+        registrations: 0,
+        cancellations: 0,
+      };
+      agg.set(id, row);
+    }
+    return row;
+  };
+
+  const bookings = (bookingData ?? []) as {
+    created_by: string | null;
+    partner_id: string | null;
+    partner_name: string | null;
+    partner_code: string | null;
+    status: string;
+    book_mode: string;
+    total_plot_value: number;
+  }[];
+  for (const b of bookings) {
+    const personId = b.partner_id ?? b.created_by;
+    if (!personId) continue;
+    const row = ensure(personId);
+    if (b.partner_name) row.name = b.partner_name;
+    if (b.partner_code) row.code = b.partner_code;
+    if (b.status === "cancelled") {
+      row.cancellations++;
+    } else {
+      row.deals++;
+      row.value += Number(b.total_plot_value || 0);
+      if (b.book_mode === "blocking") row.blockings++;
+      else row.bookings++;
+    }
+  }
+
+  for (const rg of (regData ?? []) as { created_by: string | null }[]) {
+    if (!rg.created_by) continue;
+    ensure(rg.created_by).registrations++;
+  }
+
+  return [...agg.values()]
+    .filter((r) => isSalesRole(r.role)) // sales people only — not admin / finance / legal
+    .sort((a, b) => b.value - a.value || b.deals - a.deals);
+}
+
 export async function getReports(userId: string, role: Role): Promise<ReportsData> {
   const sb = getSupabase();
   const companyWide = role === "admin" || role === "finance" || role === "legal";
