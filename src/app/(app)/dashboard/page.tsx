@@ -405,6 +405,14 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-3 mt-8 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+      {children}
+    </p>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Sales dashboard — a salesperson's OWN view. Deliberately omits all
 // company-wide figures (inventory value, company collections, pipeline). Shows
@@ -416,9 +424,15 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
     getSeniorOverview(user.id),
   ]);
   const salesDelta = pctChange(sd.thisMonthValue, sd.lastMonthValue);
+  // Business Partner has no team — hide all partner/network/team blocks.
+  const isBP = user.role === "business_partner";
+  const newPartnersThisMonth = ov.partnersGrowth.length
+    ? ov.partnersGrowth[ov.partnersGrowth.length - 1].value
+    : 0;
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
+  const monthName = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
   return (
     <>
@@ -434,31 +448,34 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
           {can(user.role, "manage_customers") && (
             <Link href="/customers/new" className="btn-ghost"><Plus size={16} /> Customer</Link>
           )}
-          <Link href="/bookings" className="btn-primary"><Plus size={16} /> Block Plot</Link>
+          <Link href="/bookings/add" className="btn-primary"><Plus size={16} /> New Blocking</Link>
         </div>
       </div>
 
-      {/* KPI row — personal + network only */}
+      {/* ── Updates — what's flowing through the network ──────────────────── */}
+      <SectionLabel>Updates</SectionLabel>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          label="My Sales" value={inrCompact(sd.mine.value)} delta={salesDelta}
-          spark={sd.salesSparkline} sub={`${sd.mine.count} blocking / booking`}
-          icon={<Trending size={20} />} accent="#e4433a" href="/bookings" highlight
+          label="Bookings / Blocked" value={String(sd.network.count)}
+          sub={`${ov.thisMonth.blocking + ov.thisMonth.booking} this month`}
+          icon={<FileText size={20} />} accent="#e4433a" href="/bookings" highlight
         />
         <KpiCard
-          label="My Network Sales" value={inrCompact(sd.network.value)}
-          sub={`${sd.network.count} deals · ${sd.teamSize} member${sd.teamSize === 1 ? "" : "s"}`}
-          icon={<UserCircle size={20} />} accent="#428fdf" href="/business-operators"
+          label="Registrations" value={String(ov.overall.registrations)}
+          sub={`${ov.thisMonth.registration} this month`}
+          icon={<Scroll size={20} />} accent="#8b5cf6"
         />
+        {!isBP && (
+          <KpiCard
+            label="Partners" value={String(ov.overall.partners)}
+            sub={`+${newPartnersThisMonth} this month`}
+            icon={<UserCircle size={20} />} accent="#10b981" href="/business-operators"
+          />
+        )}
         <KpiCard
           label="Available Plots" value={String(sd.availablePlots)}
           sub="Ready to block / book"
-          icon={<Grid size={20} />} accent="#428fdf" href="/plots"
-        />
-        <KpiCard
-          label="My Team" value={String(sd.teamSize)}
-          sub="People in your network"
-          icon={<Building size={20} />} accent="#e4433a" href="/business-operators"
+          icon={<Grid size={20} />} accent="#428fdf" href="/available-plots"
         />
       </div>
 
@@ -472,7 +489,7 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
             <Metric label="This Month" value={inrCompact(sd.thisMonthValue)} />
             <Metric label="Last Month" value={inrCompact(sd.lastMonthValue)} />
             <Metric label="My Total" value={inrCompact(sd.mine.value)} />
-            <Metric label="Network Total" value={inrCompact(sd.network.value)} />
+            {!isBP && <Metric label="Network Total" value={inrCompact(sd.network.value)} />}
           </div>
           <AreaChart
             data={sd.salesSeries.map((s) => ({ label: s.label, value: s.value }))}
@@ -482,37 +499,42 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
         </Panel>
       </div>
 
-      {/* This Month — activity counters */}
-      <div className="mt-4">
-        <Panel title="This Month" accent="#428fdf">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-            <Metric label="Site Visits" value={ov.thisMonth.siteVisits} />
-            <Metric label="Blocking" value={ov.thisMonth.blocking} />
-            <Metric label="Booking" value={ov.thisMonth.booking} />
-            <Metric label="Registration" value={ov.thisMonth.registration} />
-            <Metric label="Cancellations" value={ov.thisMonth.cancellations} />
-          </div>
-        </Panel>
-      </div>
-
-      {/* Overall — lifetime network counters */}
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      {/* ── Overall — lifetime counters ───────────────────────────────────── */}
+      <SectionLabel>Overall</SectionLabel>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCard label="Site Visits" value={String(ov.overall.siteVisits)} sub="All time" icon={<Clock size={20} />} accent="#428fdf" href="/requests" />
         <KpiCard label="Registrations" value={String(ov.overall.registrations)} sub="Plots registered" icon={<Scroll size={20} />} accent="#8b5cf6" />
         <KpiCard label="Cancellations" value={String(ov.overall.cancellations)} sub="Cancelled bookings" icon={<FileText size={20} />} accent="#e4433a" />
-        <KpiCard label="Partners" value={String(ov.overall.partners)} sub="In your network" icon={<UserCircle size={20} />} accent="#10b981" href="/business-operators" />
+        {!isBP && (
+          <KpiCard label="Partners" value={String(ov.overall.partners)} sub="In your network" icon={<UserCircle size={20} />} accent="#10b981" href="/business-operators" />
+        )}
         <KpiCard label="Customers" value={String(ov.overall.customers)} sub="Onboarded" icon={<Building size={20} />} accent="#428fdf" href="/customers" />
       </div>
 
-      {/* Performance charts */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="Partner Growth Performance" accent="#10b981" action={<span className="text-xs text-[var(--muted)]">New partners · last 8 months</span>}>
-          <BarChart
-            data={ov.partnersGrowth.map((s) => ({ label: s.label, value: s.value }))}
-            color="#10b981"
-            valueFormat={(v) => String(Math.round(v))}
-          />
-        </Panel>
+      {/* ── This Month ────────────────────────────────────────────────────── */}
+      <SectionLabel>This Month · {monthName}</SectionLabel>
+      <div className="card">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+          <Metric label="Site Visits" value={ov.thisMonth.siteVisits} />
+          <Metric label="Blocking" value={ov.thisMonth.blocking} />
+          <Metric label="Booking" value={ov.thisMonth.booking} />
+          <Metric label="Registration" value={ov.thisMonth.registration} />
+          <Metric label="Cancellations" value={ov.thisMonth.cancellations} />
+        </div>
+      </div>
+
+      {/* ── Charts ────────────────────────────────────────────────────────── */}
+      <SectionLabel>Performance</SectionLabel>
+      <div className={`grid grid-cols-1 gap-4 ${isBP ? "" : "lg:grid-cols-2"}`}>
+        {!isBP && (
+          <Panel title="Partners Growth Performance" accent="#10b981" action={<span className="text-xs text-[var(--muted)]">New partners · last 8 months</span>}>
+            <BarChart
+              data={ov.partnersGrowth.map((s) => ({ label: s.label, value: s.value }))}
+              color="#10b981"
+              valueFormat={(v) => String(Math.round(v))}
+            />
+          </Panel>
+        )}
         <Panel title="Registration Performance" accent="#8b5cf6" action={<span className="text-xs text-[var(--muted)]">Registrations · last 8 months</span>}>
           <AreaChart
             data={ov.registrationSeries.map((s) => ({ label: s.label, value: s.value }))}
@@ -522,31 +544,33 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
         </Panel>
       </div>
 
-      {/* Updates — what's flowing through the network */}
-      <div className="mt-4">
-        <Panel title="Updates" accent="#e4433a" action={<span className="text-xs text-[var(--muted)]">Bookings · registrations · partners · availability</span>}>
-          {ov.recentActivity.length === 0 ? (
-            <div className="flex h-32 items-center justify-center text-sm text-[var(--muted)]">No recent updates</div>
-          ) : (
-            <ul className="space-y-3.5">
-              {ov.recentActivity.map((a) => (
-                <li key={a.id} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--surface-3)", color: "var(--muted)" }}>
-                    {ENTITY_ICON[a.entity] ?? <FileText size={13} />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-snug">
-                      <span className="font-medium">{a.actor_name ?? "System"}</span>{" "}
-                      <span className="text-[var(--muted)]">{a.action.replace(/_/g, " ")} {a.entity}</span>
-                      {a.details && <span className="text-[var(--text-2)]"> · {a.details}</span>}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs text-[var(--muted)]">{timeAgo(a.created_at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
+      {/* ── Recent Activity — team feed ───────────────────────────────────── */}
+      <SectionLabel>Recent Activity</SectionLabel>
+      <div className="card">
+        <p className="mb-3 text-xs text-[var(--muted)]">
+          {isBP ? "Your latest activity." : "What's happening in your team — new joins, bookings, registrations, cancellations."}
+        </p>
+        {ov.recentActivity.length === 0 ? (
+          <div className="flex h-32 items-center justify-center text-sm text-[var(--muted)]">No recent activity</div>
+        ) : (
+          <ul className="space-y-3.5">
+            {ov.recentActivity.map((a) => (
+              <li key={a.id} className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--surface-3)", color: "var(--muted)" }}>
+                  {ENTITY_ICON[a.entity] ?? <FileText size={13} />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-snug">
+                    <span className="font-medium">{a.actor_name ?? "System"}</span>{" "}
+                    <span className="text-[var(--muted)]">{a.action.replace(/_/g, " ")} {a.entity}</span>
+                    {a.details && <span className="text-[var(--text-2)]"> · {a.details}</span>}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-[var(--muted)]">{timeAgo(a.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Recent bookings (their own + network) */}

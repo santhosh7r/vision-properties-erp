@@ -15,6 +15,7 @@ export interface FlowProject {
   id: string;
   name: string;
   city: string;
+  district: string;
   advance_percent: number;
   advance_min_amount: number;
   blocking_amount: number;
@@ -30,13 +31,13 @@ export default function StartBookingFlow({
   customers,
   canBlock = true,
   canBook = false,
-  myCity = null,
+  myDistrict = null,
 }: {
   projects: FlowProject[];
   customers: MiniCustomer[];
   canBlock?: boolean;
   canBook?: boolean;
-  myCity?: string | null;
+  myDistrict?: string | null;
 }) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ plot: FlowPlot; mode: "blocking" | "booking" } | null>(null);
@@ -207,14 +208,14 @@ export default function StartBookingFlow({
 
   // ── Step 1: pick a project, searchable ──────────────────────────────────────
   const pq = projectSearch.trim().toLowerCase();
-  const mc = (myCity ?? "").trim().toLowerCase();
+  const md = (myDistrict ?? "").trim().toLowerCase();
   const visibleProjects = projects
     .filter((p) => pq === "" || p.name.toLowerCase().includes(pq) || p.city.toLowerCase().includes(pq))
     .sort((a, b) => {
-      // The salesperson's home city always floats to the top.
-      if (mc) {
-        const am = a.city.toLowerCase() === mc ? 0 : 1;
-        const bm = b.city.toLowerCase() === mc ? 0 : 1;
+      // The salesperson's home district always floats to the top.
+      if (md) {
+        const am = a.district.toLowerCase() === md ? 0 : 1;
+        const bm = b.district.toLowerCase() === md ? 0 : 1;
         if (am !== bm) return am - bm;
       }
       return projectSort === "name"

@@ -35,6 +35,7 @@ export default function InventoryProjectGrid({
   title = "Select a Project",
   emptyHint,
   variant = "grid",
+  priorityDistrict,
 }: {
   projects: GridProject[];
   hrefBase?: string;
@@ -44,11 +45,14 @@ export default function InventoryProjectGrid({
   emptyHint?: string;
   // "grid" = card grid (3-up); "list" = one compact full-width row per project.
   variant?: "grid" | "list";
+  // When set, projects in this district float to the top (used by the sales panel).
+  priorityDistrict?: string;
 }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("avail_desc");
 
   const q = search.trim().toLowerCase();
+  const pd = (priorityDistrict ?? "").trim().toLowerCase();
   const visible = projects
     .filter(
       (p) =>
@@ -57,13 +61,18 @@ export default function InventoryProjectGrid({
         p.city.toLowerCase().includes(q) ||
         p.district.toLowerCase().includes(q),
     )
-    .sort((a, b) =>
-      sort === "name"
+    .sort((a, b) => {
+      if (pd) {
+        const am = a.district.toLowerCase() === pd ? 0 : 1;
+        const bm = b.district.toLowerCase() === pd ? 0 : 1;
+        if (am !== bm) return am - bm;
+      }
+      return sort === "name"
         ? a.name.localeCompare(b.name)
         : sort === "avail_asc"
           ? a.plots - b.plots
-          : b.plots - a.plots,
-    );
+          : b.plots - a.plots;
+    });
 
   return (
     <div className="space-y-5">

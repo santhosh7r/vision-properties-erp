@@ -5,13 +5,13 @@ import { PageHeader } from "@/components/ui";
 import CustomerFields from "@/components/CustomerFields";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createCustomer } from "../actions";
-import { distinctProjectDistricts } from "../districts";
+import { getDistrictNames } from "@/lib/districts";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewCustomerPage() {
   await requireCapability("manage_customers");
-  const districts = await distinctProjectDistricts(getSupabase());
+  const districts = await getDistrictNames(getSupabase());
   return (
     <>
       <PageHeader

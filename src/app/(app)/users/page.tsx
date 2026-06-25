@@ -1,5 +1,6 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { getDistrictNames } from "@/lib/districts";
 import { isSalesRole, type Role } from "@/lib/roles";
 import { PageHeader } from "@/components/ui";
 import type { User } from "@/lib/types";
@@ -40,11 +41,8 @@ export default async function UsersPage({
 
   const list = (users ?? []) as User[];
   const byId = new Map(list.map((u) => [u.id, u]));
-  // City options for the partner form — distinct project cities (+ any used).
-  const { data: cityRows } = await sb.from("projects").select("city");
-  const cities = [
-    ...new Set(((cityRows ?? []) as { city: string | null }[]).map((r) => (r.city ?? "").trim()).filter(Boolean)),
-  ].sort((a, b) => a.localeCompare(b));
+  // District options for the partner form — the admin-managed master list.
+  const districts = await getDistrictNames(sb);
   // Potential parents: anyone active who can manage (i.e. not a leaf partner).
   // The form filters these to the role valid for the chosen new-member role.
   const managers: ManagerOption[] = list
@@ -73,7 +71,7 @@ export default async function UsersPage({
         <PageHeader title={head.title} subtitle={head.subtitle} />
         <div className="card max-w-xl">
           <h2 className="mb-4 text-sm font-semibold">New Partner</h2>
-          <AddUserForm managers={managers} cities={cities} />
+          <AddUserForm managers={managers} districts={districts} />
         </div>
       </>
     );

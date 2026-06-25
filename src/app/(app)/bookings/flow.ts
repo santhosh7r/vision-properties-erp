@@ -28,7 +28,7 @@ export async function loadBookingFlow(
     sb
       .from("projects")
       .select(
-        "id, name, city, advance_percent, advance_min_amount, blocking_amount, blocking_window_hours, booking_window_days, plots(id, plot_no, sqft, price_per_sqft, status)",
+        "id, name, city, district, advance_percent, advance_min_amount, blocking_amount, blocking_window_hours, booking_window_days, plots(id, plot_no, sqft, price_per_sqft, status)",
       )
       .eq("status", "active")
       .order("name"),
@@ -58,6 +58,7 @@ export async function loadBookingFlow(
     id: string;
     name: string;
     city: string;
+    district: string;
     advance_percent: number;
     advance_min_amount: number;
     blocking_amount: number;
@@ -71,6 +72,7 @@ export async function loadBookingFlow(
       id: p.id,
       name: p.name,
       city: p.city,
+      district: p.district,
       advance_percent: p.advance_percent,
       advance_min_amount: p.advance_min_amount,
       blocking_amount: p.blocking_amount,

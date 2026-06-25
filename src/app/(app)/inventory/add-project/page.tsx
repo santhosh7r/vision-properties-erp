@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { getDistrictNames } from "@/lib/districts";
 import { APPROVAL_TYPES, PROJECT_TYPES } from "@/lib/options";
 import { PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -14,15 +15,15 @@ export const dynamic = "force-dynamic";
 // scoped to the admin card-based Inventory workspace.
 export default async function AddProjectPage() {
   await requireCapability("manage_projects");
+  const sb = getSupabase();
 
-  // Existing district/city values across projects feed the editable dropdowns.
-  const { data: locRows } = await getSupabase().from("projects").select("district, city");
-  const uniqSorted = (vals: (string | null)[]) =>
-    [...new Set(vals.map((v) => (v ?? "").trim()).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b),
-    );
-  const districtOptions = uniqSorted((locRows ?? []).map((r) => r.district));
-  const cityOptions = uniqSorted((locRows ?? []).map((r) => r.city));
+  // District options come from the admin-managed master list. City stays an
+  // editable list of values already used across projects.
+  const districtOptions = await getDistrictNames(sb);
+  const { data: locRows } = await sb.from("projects").select("city");
+  const cityOptions = [
+    ...new Set(((locRows ?? []) as { city: string | null }[]).map((r) => (r.city ?? "").trim()).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b));
 
   return (
     <>

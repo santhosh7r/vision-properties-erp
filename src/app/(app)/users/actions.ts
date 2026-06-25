@@ -15,7 +15,7 @@ export async function createUser(formData: FormData): Promise<void> {
   const email = String(formData.get("email") || "").trim().toLowerCase();
   const password = String(formData.get("password") || "");
   const mobile = String(formData.get("mobile") || "").trim() || null;
-  const city = String(formData.get("city") || "").trim() || null;
+  const district = String(formData.get("district") || "").trim() || null;
   const role = String(formData.get("role") || "") as Role;
   const manager_id = String(formData.get("manager_id") || "") || null;
 
@@ -57,7 +57,7 @@ export async function createUser(formData: FormData): Promise<void> {
   const password_hash = await bcrypt.hash(password, 10);
   const { data, error } = await sb
     .from("users")
-    .insert({ full_name, email, password_hash, mobile, city, role, manager_id: finalManagerId })
+    .insert({ full_name, email, password_hash, mobile, district, role, manager_id: finalManagerId })
     .select("id")
     .single();
 

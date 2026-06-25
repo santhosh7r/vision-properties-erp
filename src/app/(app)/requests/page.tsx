@@ -3,12 +3,13 @@ import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
 import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
 import { can } from "@/lib/roles";
-import { canActOnStage, type RequestStage } from "@/lib/requests";
+import { canActOnStage, isRequestComplete, type RequestStage } from "@/lib/requests";
 import { PageHeader } from "@/components/ui";
 import type { ServiceRequest, Customer } from "@/lib/types";
 import RequestsWorkspace, {
   type RequestRow,
   type MiniBooking,
+  type MiniProject,
 } from "./RequestsWorkspace";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ type RawRequest = ServiceRequest & {
   bookings:
     | { id: string; block: string | null; projects: { name: string } | null; plots: { plot_no: string } | null }
     | null;
+  project: { name: string } | null;
   requester: { full_name: string } | null;
 };
 
@@ -34,6 +36,12 @@ function toRow(r: RawRequest): RequestRow {
     booking: r.bookings
       ? `${r.bookings.projects?.name ?? "—"} · Plot ${r.bookings.plots?.plot_no ?? "—"}`
       : null,
+    project: r.project?.name ?? null,
+    // Raw relation ids — used to pre-fill the form when editing a draft.
+    customerId: r.customer_id,
+    projectId: r.project_id,
+    bookingId: r.booking_id,
+    draftReady: isRequestComplete(r.type, r),
     requestedBy: r.requester?.full_name ?? "—",
     subject: r.subject,
     details: r.details,
@@ -54,7 +62,7 @@ export default async function RequestsPage() {
   const canCreate = !isAdmin && can(user.role, "create_request");
 
   const SELECT =
-    "*, customers(name, mobile), bookings(id, block, projects(name), plots(plot_no)), requester:users!requested_by(full_name)";
+    "*, customers(name, mobile), bookings(id, block, projects(name), plots(plot_no)), project:projects!project_id(name), requester:users!requested_by(full_name)";
 
   // Stages this role can act on — drives the approver "inbox".
   const inboxStages = ALL_STAGES.filter((st) => canActOnStage(user.role, st));
@@ -66,25 +74,45 @@ export default async function RequestsPage() {
   let migrationMissing = false;
 
   if (isAdmin) {
-    const { data, error } = await sb.from("service_requests").select(SELECT).order("created_at", { ascending: false });
+    // Drafts are private to their author — admin never sees other people's drafts.
+    const { data, error } = await sb
+      .from("service_requests")
+      .select(SELECT)
+      .neq("status", "draft")
+      .order("created_at", { ascending: false });
     if (error) migrationMissing = true;
     for (const r of (data ?? []) as RawRequest[]) byId.set(r.id, r);
   } else {
+    // Team view excludes drafts (each person's drafts stay private)…
     const teamRes = await sb
       .from("service_requests")
       .select(SELECT)
       .in("requested_by", ids)
+      .neq("status", "draft")
       .order("created_at", { ascending: false });
     if (teamRes.error) migrationMissing = true;
     for (const r of (teamRes.data ?? []) as RawRequest[]) byId.set(r.id, r);
 
+    // …and the user's OWN drafts are added back in.
+    const draftRes = await sb
+      .from("service_requests")
+      .select(SELECT)
+      .eq("requested_by", user.id)
+      .eq("status", "draft")
+      .order("created_at", { ascending: false });
+    for (const r of (draftRes.data ?? []) as RawRequest[]) byId.set(r.id, r);
+
     // 2) Approver inbox — pending requests sitting at a stage this role handles.
+    // Cab requests are EXCLUDED here: they must stay within the requester's own
+    // branch, so they reach the Senior Director only through the downline-scoped
+    // team view above (not every SD's global inbox).
     if (inboxStages.length > 0) {
       const inboxRes = await sb
         .from("service_requests")
         .select(SELECT)
         .eq("status", "pending")
         .in("stage", inboxStages)
+        .neq("type", "cab")
         .order("created_at", { ascending: false });
       for (const r of (inboxRes.data ?? []) as RawRequest[]) byId.set(r.id, r);
     }
@@ -115,6 +143,52 @@ export default async function RequestsPage() {
     label: `${b.projects?.name ?? "—"} · Plot ${b.plots?.plot_no ?? "—"} · ${b.customers?.name ?? "—"}`,
   }));
 
+  // Project picker for the create form — the user's OWN active blocking/booking
+  // records (where THEY are the salesperson, not their team's). The form filters
+  // these by the chosen customer, so picking a client lists that client's active
+  // bookings/blockings. Admin doesn't raise requests, so gets the active list.
+  let projects: MiniProject[] = [];
+  if (isAdmin) {
+    const { data: projData } = await sb
+      .from("projects")
+      .select("id, name, city")
+      .eq("status", "active")
+      .order("name");
+    projects = ((projData ?? []) as { id: string; name: string; city: string | null }[]).map((p) => ({
+      id: p.id,
+      projectId: p.id,
+      name: p.name,
+      customerId: "",
+      plot: "",
+      mode: "",
+    }));
+  } else {
+    const { data: ownBk } = await sb
+      .from("bookings")
+      .select("id, project_id, customer_id, book_mode, projects(name), plots(plot_no)")
+      .or(`created_by.eq.${user.id},partner_id.eq.${user.id}`)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false });
+    for (const b of (ownBk ?? []) as unknown as {
+      id: string;
+      project_id: string | null;
+      customer_id: string | null;
+      book_mode: string | null;
+      projects: { name: string } | null;
+      plots: { plot_no: string } | null;
+    }[]) {
+      if (!b.project_id || !b.projects) continue;
+      projects.push({
+        id: b.id,
+        projectId: b.project_id,
+        name: b.projects.name,
+        customerId: b.customer_id ?? "",
+        plot: b.plots?.plot_no ?? "",
+        mode: b.book_mode ?? "",
+      });
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -125,6 +199,7 @@ export default async function RequestsPage() {
         rows={rows}
         customers={customers}
         bookings={bookings}
+        projects={projects}
         userRole={user.role}
         canCreate={canCreate}
         migrationMissing={migrationMissing}

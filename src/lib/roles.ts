@@ -175,6 +175,8 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "create_request",
     "view_reports",
   ],
+  // Business Manager & Business Partner cannot raise requests (no `create_request`)
+  // — only Senior Director and Director touch the Requests section.
   business_manager: [
     "manage_team",
     "manage_customers",
@@ -184,10 +186,9 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "cancel_booking",
     "manage_transfer",
     "request_cab",
-    "create_request",
     "view_reports",
   ],
-  business_partner: ["manage_customers", "create_blocking", "request_cab", "create_request"],
+  business_partner: ["manage_customers", "create_blocking", "request_cab"],
   finance: ["record_payment", "view_finance", "view_reports"],
   legal: ["manage_registration", "view_legal", "view_reports"],
 };

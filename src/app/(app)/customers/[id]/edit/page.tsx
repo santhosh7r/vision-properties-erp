@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import CustomerFields from "@/components/CustomerFields";
 import type { Customer } from "@/lib/types";
 import { updateCustomer } from "../../actions";
-import { distinctProjectDistricts } from "../../districts";
+import { getDistrictNames } from "@/lib/districts";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ export default async function EditCustomerPage({
   const { data } = await sb.from("customers").select("*").eq("id", id).maybeSingle();
   if (!data) notFound();
   const customer = data as Customer;
-  const districts = await distinctProjectDistricts(sb);
+  const districts = await getDistrictNames(sb);
 
   return (
     <>

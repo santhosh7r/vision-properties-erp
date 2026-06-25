@@ -21,20 +21,20 @@ export default async function PlotsPage() {
   const seesAllPlots = can(user.role, "manage_plots");
   let query = sb
     .from("plots")
-    .select("*, projects(name, city)")
+    .select("*, projects(name, city, district)")
     .order("created_at", { ascending: false });
   if (!seesAllPlots) query = query.eq("status", "available");
   const { data } = await query;
-  const raw = (data ?? []) as (Plot & { projects: Pick<Project, "name" | "city"> })[];
+  const raw = (data ?? []) as (Plot & { projects: Pick<Project, "name" | "city" | "district"> })[];
 
-  // Salesperson's home city first.
-  const { data: me } = await sb.from("users").select("city").eq("id", user.id).maybeSingle();
-  const myCity = ((me as { city?: string | null } | null)?.city ?? "").trim().toLowerCase();
-  if (myCity) {
+  // Salesperson's home district first.
+  const { data: me } = await sb.from("users").select("district").eq("id", user.id).maybeSingle();
+  const myDistrict = ((me as { district?: string | null } | null)?.district ?? "").trim().toLowerCase();
+  if (myDistrict) {
     raw.sort(
       (a, b) =>
-        ((a.projects?.city ?? "").toLowerCase() === myCity ? 0 : 1) -
-        ((b.projects?.city ?? "").toLowerCase() === myCity ? 0 : 1),
+        ((a.projects?.district ?? "").toLowerCase() === myDistrict ? 0 : 1) -
+        ((b.projects?.district ?? "").toLowerCase() === myDistrict ? 0 : 1),
     );
   }
 

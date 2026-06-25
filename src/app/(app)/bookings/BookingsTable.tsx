@@ -20,6 +20,7 @@ export interface BookingRow {
   booked_date: string | null;
   book_mode: string;
   status: string;
+  plotStatus: string | null; // the plot's CURRENT status (cancelled = held for admin release)
   payment_status: string;
   refund_status: string;
   expires_at: string | null;
@@ -68,7 +69,13 @@ export default function BookingsTable({
     { id: "value", header: "Value", align: "right", sort: (r) => r.value, hideBelow: "lg", cell: (r) => <span className="tabular-nums">{inr(r.value)}</span> },
     { id: "mode", header: "Mode", sort: (r) => r.book_mode, cell: (r) =>
       r.status === "cancelled" ? (
-        <Badge tone="gray">released</Badge>
+        // Cancelled but the plot is still held ('cancelled') = reserved until an
+        // admin releases it. Once released the plot is 'available' → "released".
+        r.plotStatus === "cancelled" ? (
+          <Badge tone="amber">reserved</Badge>
+        ) : (
+          <Badge tone="gray">released</Badge>
+        )
       ) : (
         <div>
           <Badge tone={r.book_mode === "blocking" ? "amber" : "blue"}>{r.book_mode}</Badge>

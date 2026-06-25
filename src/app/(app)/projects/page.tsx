@@ -40,12 +40,12 @@ export default async function ProjectsPage() {
     advance_percent: p.advance_percent,
   }));
 
-  // Surface the salesperson's home city FIRST (e.g. a Chennai partner sees
-  // Chennai projects at the top).
-  const { data: me } = await sb.from("users").select("city").eq("id", user.id).maybeSingle();
-  const myCity = ((me as { city?: string | null } | null)?.city ?? "").trim().toLowerCase();
-  if (myCity) {
-    rows.sort((a, b) => (a.city.toLowerCase() === myCity ? 0 : 1) - (b.city.toLowerCase() === myCity ? 0 : 1));
+  // Surface the salesperson's home district FIRST (e.g. a Chennai partner sees
+  // Chennai-district projects at the top).
+  const { data: me } = await sb.from("users").select("district").eq("id", user.id).maybeSingle();
+  const myDistrict = ((me as { district?: string | null } | null)?.district ?? "").trim().toLowerCase();
+  if (myDistrict) {
+    rows.sort((a, b) => (a.district.toLowerCase() === myDistrict ? 0 : 1) - (b.district.toLowerCase() === myDistrict ? 0 : 1));
   }
 
   const editable = can(user.role, "manage_projects");

@@ -2,6 +2,23 @@ import "server-only";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import type { Role } from "./roles";
+import { getSupabase } from "./supabase";
+
+// Best-effort fetch of a user's current session_version. Fails OPEN (returns
+// null) so a missing column / DB hiccup never locks anyone out.
+async function currentSessionVersion(userId: string): Promise<number | null> {
+  try {
+    const { data } = await getSupabase()
+      .from("users")
+      .select("session_version")
+      .eq("id", userId)
+      .maybeSingle();
+    const v = (data as { session_version?: number } | null)?.session_version;
+    return typeof v === "number" ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 const COOKIE_NAME = "vp_session";
 const MAX_AGE = 60 * 60 * 12; // 12 hours
@@ -19,7 +36,10 @@ function secret(): Uint8Array {
 }
 
 export async function createSession(user: SessionUser): Promise<void> {
-  const token = await new SignJWT({ ...user })
+  // Stamp the token with the user's current session version so "Sign out
+  // everywhere" (which bumps the version) invalidates it.
+  const sv = (await currentSessionVersion(user.id)) ?? 0;
+  const token = await new SignJWT({ ...user, sv })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
@@ -46,12 +66,21 @@ export async function getSession(): Promise<SessionUser | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
-    return {
+    const sessionUser: SessionUser = {
       id: payload.id as string,
       full_name: payload.full_name as string,
       email: payload.email as string,
       role: payload.role as Role,
     };
+    // "Sign out everywhere" bumps the user's session_version; a token stamped
+    // with an older version is rejected. Fail open (only reject on a definite
+    // mismatch) so a missing column / DB hiccup never locks anyone out.
+    const tokenSv = payload.sv as number | undefined;
+    if (typeof tokenSv === "number") {
+      const current = await currentSessionVersion(sessionUser.id);
+      if (current !== null && current !== tokenSv) return null;
+    }
+    return sessionUser;
   } catch {
     return null;
   }

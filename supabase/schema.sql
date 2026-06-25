@@ -81,6 +81,8 @@ create table if not exists users (
   partner_code  text,                    -- sales ID: SD#/D#/BM#/BP# (auto-assigned; NULL for admin/finance/legal)
   manager_id    uuid        references users(id) on delete set null,
   city          text,                    -- home city: sales panels show this city's inventory first
+  settings        jsonb     not null default '{}'::jsonb, -- per-user prefs (notifications, language)
+  session_version integer   not null default 0,           -- bumped by "Sign out everywhere"
   is_active     boolean     not null default true,
   created_at    timestamptz not null default now()
 );
@@ -438,12 +440,12 @@ create index if not exists idx_cab_requests_customer     on cab_requests(custome
 -- ---------------------------------------------------------------------------
 do $$ begin
   create type service_request_type as enum (
-    'site_visit', 'legal_query', 'draft', 'registration', 'cancellation'
+    'site_visit', 'legal_query', 'draft', 'registration', 'cancellation', 'cab'
   );
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type service_request_status as enum ('pending', 'approved', 'declined');
+  create type service_request_status as enum ('pending', 'approved', 'declined', 'draft');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
@@ -497,3 +499,23 @@ create table if not exists coupons (
 );
 create index if not exists idx_coupons_user on coupons(user_id);
 create index if not exists idx_coupons_type on coupons(type);
+
+-- ---------------------------------------------------------------------------
+-- DISTRICTS  (see migration 0014) — admin-managed master list used as the
+-- District dropdown across the app. Seeded with Tamil Nadu's 38 districts.
+-- ---------------------------------------------------------------------------
+create table if not exists districts (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null unique,
+  created_at  timestamptz not null default now()
+);
+insert into districts (name) values
+  ('Ariyalur'), ('Chengalpattu'), ('Chennai'), ('Coimbatore'), ('Cuddalore'),
+  ('Dharmapuri'), ('Dindigul'), ('Erode'), ('Kallakurichi'), ('Kancheepuram'),
+  ('Kanyakumari'), ('Karur'), ('Krishnagiri'), ('Madurai'), ('Mayiladuthurai'),
+  ('Nagapattinam'), ('Namakkal'), ('Nilgiris'), ('Perambalur'), ('Pudukkottai'),
+  ('Ramanathapuram'), ('Ranipet'), ('Salem'), ('Sivaganga'), ('Tenkasi'),
+  ('Thanjavur'), ('Theni'), ('Thoothukudi'), ('Tiruchirappalli'), ('Tirunelveli'),
+  ('Tirupathur'), ('Tiruppur'), ('Tiruvallur'), ('Tiruvannamalai'), ('Tiruvarur'),
+  ('Vellore'), ('Viluppuram'), ('Virudhunagar')
+on conflict (name) do nothing;

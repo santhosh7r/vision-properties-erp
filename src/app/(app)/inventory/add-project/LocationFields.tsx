@@ -148,13 +148,24 @@ export default function LocationFields({
           </p>
         )}
       </div>
-      <ComboSelect
-        name="district"
-        label="District"
-        options={districtOptions}
-        value={district}
-        onChange={setDistrict}
-      />
+      {/* District is a strict pick from the admin-managed master list. */}
+      <div>
+        <label className="label">District *</label>
+        <select
+          name="district"
+          className="select"
+          required
+          value={district}
+          onChange={(e) => setDistrict(e.target.value)}
+        >
+          <option value="" disabled>Select district</option>
+          {/* keep a pincode-filled value selectable even if not in the master list */}
+          {district && !districtOptions.includes(district) && <option value={district}>{district}</option>}
+          {districtOptions.map((d) => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
+      </div>
       <ComboSelect
         name="city"
         label="City"

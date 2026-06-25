@@ -97,19 +97,19 @@ export default function CustomerFields({
       </div>
       <div>
         <label className="label">9. District</label>
-        <input
+        <select
           name="district"
-          className="input"
-          list="customer-districts"
-          autoComplete="off"
+          className="select"
           value={district}
           onChange={(e) => setDistrict(e.target.value)}
-        />
-        <datalist id="customer-districts">
+        >
+          <option value="">— Select district —</option>
+          {/* keep a pincode-filled value selectable even if not in the master list */}
+          {district && !districts.includes(district) && <option value={district}>{district}</option>}
           {districts.map((d) => (
-            <option key={d} value={d} />
+            <option key={d} value={d}>{d}</option>
           ))}
-        </datalist>
+        </select>
       </div>
       <div>
         <label className="label">10. Country</label>

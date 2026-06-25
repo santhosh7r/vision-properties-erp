@@ -18,6 +18,7 @@ const GROUP_ORDER: NavItem["group"][] = [
   "Operations",
   "Reports",
   "Administration",
+  "Account",
 ];
 
 export default function SideNav({ items }: { items: NavItem[] }) {

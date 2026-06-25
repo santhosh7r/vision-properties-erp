@@ -19,8 +19,8 @@ export default async function AddBookingPage() {
   await sweepExpiredBookings();
   const sb = getSupabase();
   const flow = await loadBookingFlow(sb, user);
-  const { data: me } = await sb.from("users").select("city").eq("id", user.id).maybeSingle();
-  const myCity = (me as { city?: string | null } | null)?.city ?? null;
+  const { data: me } = await sb.from("users").select("district").eq("id", user.id).maybeSingle();
+  const myDistrict = (me as { district?: string | null } | null)?.district ?? null;
 
   return (
     <>
@@ -42,7 +42,7 @@ export default async function AddBookingPage() {
           customers={flow.customers}
           canBlock={canBlock}
           canBook={canBook}
-          myCity={myCity}
+          myDistrict={myDistrict}
         />
       )}
     </>

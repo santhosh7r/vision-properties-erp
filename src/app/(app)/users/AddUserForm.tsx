@@ -54,10 +54,10 @@ const MAX_RESULTS = 50;
 //   Admin           -> none (top of the org)
 export default function AddUserForm({
   managers,
-  cities = [],
+  districts = [],
 }: {
   managers: ManagerOption[];
-  cities?: string[];
+  districts?: string[];
 }) {
   const [role, setRole] = useState<Role | "">("");
   const [managerId, setManagerId] = useState("");
@@ -129,14 +129,14 @@ export default function AddUserForm({
         <input name="mobile" className="input" />
       </div>
       <div>
-        <label className="label">City</label>
-        <input name="city" className="input" list="user-cities" placeholder="e.g. Chennai" autoComplete="off" />
-        <datalist id="user-cities">
-          {cities.map((c) => (
-            <option key={c} value={c} />
+        <label className="label">District</label>
+        <select name="district" className="select" defaultValue="">
+          <option value="">— Select district —</option>
+          {districts.map((d) => (
+            <option key={d} value={d}>{d}</option>
           ))}
-        </datalist>
-        <p className="mt-1 text-xs text-[var(--muted)]">Sales panels show this city&apos;s inventory first.</p>
+        </select>
+        <p className="mt-1 text-xs text-[var(--muted)]">Sales panels show this district&apos;s inventory first.</p>
       </div>
 
       <div>
