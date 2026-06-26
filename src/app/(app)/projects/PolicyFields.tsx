@@ -26,6 +26,8 @@ export default function PolicyFields({ p }: { p?: Partial<Project> }) {
           <Num name="director_gold_coupon" label="Director Gold Coupon (₹ / sq.ft)" def={v("director_gold_coupon", 0)} step={50} />
           <Num name="director_digital_coupon" label="Director Digital Coupon (₹ / sq.ft)" def={v("director_digital_coupon", 0)} step={50} />
           <Num name="senior_director_gold_coupon" label="Senior Director Gold Coupon (₹ / sq.ft)" def={v("senior_director_gold_coupon", 0)} step={50} />
+          <Num name="director_tools_coupon" label="Director Tools Coupon (₹ / sq.ft)" def={v("director_tools_coupon", 0)} step={50} />
+          <Num name="senior_director_tools_coupon" label="Senior Director Tools Coupon (₹ / sq.ft)" def={v("senior_director_tools_coupon", 0)} step={50} />
         </div>
       </div>
 

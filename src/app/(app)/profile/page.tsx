@@ -4,7 +4,8 @@ import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
 import { getDistrictNames } from "@/lib/districts";
 import { isSalesRole, ROLE_LABELS, type Role } from "@/lib/roles";
-import { COUPON_TYPES } from "@/lib/options";
+import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
+import { inr } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { CreditCard, Cog, Grid, Sparkle } from "@/components/icons";
@@ -66,11 +67,12 @@ export default async function ProfilePage({
   // Districts come from the admin-managed master list (migration 0014).
   const districts = await getDistrictNames(sb);
 
-  // Coupon balances (graceful if coupons table isn't migrated yet).
-  const { data: couponData } = await sb.from("coupons").select("type, quantity").eq("user_id", user.id);
+  // Coupon balances (graceful if coupons table isn't migrated yet). Value-based
+  // coupons (tools) sum their ₹ value; the rest count whole tokens.
+  const { data: couponData } = await sb.from("coupons").select("type, quantity, value").eq("user_id", user.id);
   const balances: Record<string, number> = {};
-  for (const c of (couponData ?? []) as { type: string; quantity: number }[]) {
-    balances[c.type] = (balances[c.type] ?? 0) + Number(c.quantity || 0);
+  for (const c of (couponData ?? []) as { type: string; quantity: number; value: number }[]) {
+    balances[c.type] = (balances[c.type] ?? 0) + (isValueCoupon(c.type) ? Number(c.value || 0) : Number(c.quantity || 0));
   }
 
   const isDirector = user.role === "director";
@@ -137,7 +139,7 @@ export default async function ProfilePage({
                 <TokenCard
                   key={t.value}
                   label={t.label}
-                  value={String(balances[t.value] ?? 0)}
+                  value={isValueCoupon(t.value) ? inr(balances[t.value] ?? 0) : String(balances[t.value] ?? 0)}
                   note="Issued on registrations"
                   icon={TOKEN_META[t.value]?.icon}
                   color={TOKEN_META[t.value]?.color ?? "#428fdf"}

@@ -110,6 +110,19 @@ export function inrCompact(value: number | null | undefined): string {
   return `₹${n}`;
 }
 
+// Compact area in square feet for KPI tiles / charts: 1.25M sqft, 45.0K sqft.
+export function sqftCompact(value: number | null | undefined): string {
+  const n = Math.round(Number(value || 0));
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M sqft`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K sqft`;
+  return `${n} sqft`;
+}
+
+// Full area in square feet, e.g. "1,200 sqft". Used in table cells.
+export function sqft(value: number | null | undefined): string {
+  return `${num(Math.round(Number(value || 0)))} sqft`;
+}
+
 export function timeAgo(value: string | null | undefined): string {
   if (!value) return "—";
   const ms = Date.now() - new Date(value).getTime();

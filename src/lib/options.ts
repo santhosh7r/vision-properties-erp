@@ -56,6 +56,14 @@ export const COUPON_TYPES: { value: string; label: string }[] = [
   { value: "gold", label: "Gold Coupon" },
 ];
 
+// Tools coupons are tracked by ₹ VALUE — auto-issued per sq.ft on registration
+// and redeemable in any denomination. The rest are whole tokens counted by
+// quantity (e.g. one cab ride). Value coupons display & redeem in rupees.
+export const VALUE_COUPON_TYPES = ["tools"];
+export function isValueCoupon(type: string): boolean {
+  return VALUE_COUPON_TYPES.includes(type);
+}
+
 export const INDIAN_STATES = [
   "Tamil Nadu",
   "Karnataka",

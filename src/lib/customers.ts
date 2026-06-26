@@ -32,3 +32,32 @@ export function ownCustomerOrFilter(userId: string, bookedCustomerIds: string[])
   if (bookedCustomerIds.length) ors.push(`id.in.(${bookedCustomerIds.join(",")})`);
   return ors.join(",");
 }
+
+// Network versions — same idea as the "own" helpers above, but rolled up across a
+// manager's whole downline (the id list from getDownlineIds, which includes self).
+// A manager sees a customer when ANYONE in their subtree created it OR booked with
+// it. For a leaf member (downline = just themselves) this is identical to the
+// "own" scope, so behaviour only widens for people who actually manage others.
+export async function networkBookedCustomerIds(
+  sb: SupabaseClient,
+  ids: string[],
+): Promise<string[]> {
+  const list = ids.join(",");
+  const { data } = await sb
+    .from("bookings")
+    .select("customer_id")
+    .or(`created_by.in.(${list}),partner_id.in.(${list})`);
+  return [
+    ...new Set(
+      ((data ?? []) as { customer_id: string | null }[])
+        .map((b) => b.customer_id)
+        .filter((v): v is string => Boolean(v)),
+    ),
+  ];
+}
+
+export function networkCustomerOrFilter(ids: string[], bookedCustomerIds: string[]): string {
+  const ors = [`created_by.in.(${ids.join(",")})`];
+  if (bookedCustomerIds.length) ors.push(`id.in.(${bookedCustomerIds.join(",")})`);
+  return ors.join(",");
+}

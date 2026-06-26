@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge, BookingStatusBadge, PaymentBadge } from "@/components/ui";
 import { fmtDate, timeLeft, inr } from "@/lib/format";
@@ -93,10 +92,6 @@ export default function BookingsTable({
     } },
     { id: "action", header: "", align: "right", cell: (r) => (
       <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-        <Link href={`/bookings/${r.id}`} className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }}>View</Link>
-        {r.status !== "cancelled" && (
-          <Link href={`/bookings/${r.id}/edit`} className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }}>Edit</Link>
-        )}
         {r.status === "pending" && canConfirm && (
           <form action={confirmBooking}>
             <input type="hidden" name="id" value={r.id} />

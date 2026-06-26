@@ -1,6 +1,7 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { ROLE_LABELS, SALES_HIERARCHY, isSalesRole, type Role } from "@/lib/roles";
+import { isValueCoupon } from "@/lib/options";
 import { PageHeader, StatCard } from "@/components/ui";
 import type { User } from "@/lib/types";
 import BusinessOperatorsTree, { type TreeUser } from "./BusinessOperatorsTree";
@@ -25,13 +26,14 @@ export default async function BusinessOperatorsPage() {
       .order("full_name", { ascending: true });
     const salesUsers = (salesData ?? []) as Pick<User, "id" | "full_name" | "role" | "partner_code">[];
 
-    // Coupons may not be migrated yet — fall back to empty balances.
-    const { data: couponData } = await sb.from("coupons").select("user_id, type, quantity");
-    const coupons = (couponData ?? []) as { user_id: string; type: string; quantity: number }[];
+    // Coupons may not be migrated yet — fall back to empty balances. Value-based
+    // types (tools) sum their ₹ value; the rest count whole tokens (quantity).
+    const { data: couponData } = await sb.from("coupons").select("user_id, type, quantity, value");
+    const coupons = (couponData ?? []) as { user_id: string; type: string; quantity: number; value: number }[];
     const balancesByUser = new Map<string, Record<string, number>>();
     for (const c of coupons) {
       const m = balancesByUser.get(c.user_id) ?? {};
-      m[c.type] = (m[c.type] ?? 0) + Number(c.quantity || 0);
+      m[c.type] = (m[c.type] ?? 0) + (isValueCoupon(c.type) ? Number(c.value || 0) : Number(c.quantity || 0));
       balancesByUser.set(c.user_id, m);
     }
 

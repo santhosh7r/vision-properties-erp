@@ -40,6 +40,8 @@ function officeFields(f: FormData) {
     director_gold_coupon: n("director_gold_coupon", 0),
     director_digital_coupon: n("director_digital_coupon", 0),
     senior_director_gold_coupon: n("senior_director_gold_coupon", 0),
+    director_tools_coupon: n("director_tools_coupon", 0),
+    senior_director_tools_coupon: n("senior_director_tools_coupon", 0),
   };
 }
 

@@ -10,6 +10,7 @@
     "lint": "next lint",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:demo": "SEED_DEMO=1 tsx scripts/seed.ts",
+    "db:seed:team": "tsx scripts/seed-team.ts",
     "db:reset": "tsx scripts/reset-data.ts",
     "db:migrate-emails": "tsx scripts/migrate-emails.ts",
     "db:fix-logins": "tsx scripts/fix-logins.ts"

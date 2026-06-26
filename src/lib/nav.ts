@@ -83,6 +83,8 @@ export const NAV: NavItem[] = [
   // Admin: token/coupon issuance lives in its own Tokens section. Sales managers
   // keep the team view ("Business Operators" → "My Team") under Business Partners.
   { href: "/business-operators", label: "Issue Token", icon: "creditCard", roles: ["admin"], group: "Tokens" },
+  // Sales roles: a read-only view of the tokens they hold + their issue/redeem history.
+  { href: "/tokens", label: "Tokens", icon: "creditCard", roles: SALES_TIERS, group: "Tokens" },
   { href: "/business-operators", label: "My Team", icon: "briefcase", roles: ["senior_director", "director", "business_manager"], group: "Business Partners" },
   { href: "/reports", label: "Reports", icon: "barChart", roles: ["admin", "senior_director", "director", "business_manager", "finance", "legal"], group: "Reports" },
   // --- Admin Partners (all backed by the existing /users page + users/actions) ---

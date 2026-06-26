@@ -180,6 +180,8 @@ create table if not exists projects (
   director_gold_coupon        numeric(12,2) not null default 0, -- ₹ per sq.ft
   director_digital_coupon     numeric(12,2) not null default 0, -- ₹ per sq.ft
   senior_director_gold_coupon numeric(12,2) not null default 0, -- ₹ per sq.ft
+  director_tools_coupon        numeric(12,2) not null default 0, -- ₹ per sq.ft (auto-issued by value to the Director on registration)
+  senior_director_tools_coupon numeric(12,2) not null default 0, -- ₹ per sq.ft (auto-issued by value to the Senior Director on registration)
   -- Reservation / booking configuration (editable per project, per the board) ----
   blocking_amount        numeric(14,2) not null default 10000, -- §1 initial block amount (e.g. 10k)
   blocking_window_hours  integer       not null default 48,    -- §1 block -> must book within N hours

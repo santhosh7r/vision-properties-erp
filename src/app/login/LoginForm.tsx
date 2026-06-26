@@ -20,7 +20,7 @@ export default function LoginForm() {
   return (
     <form action={formAction} className="space-y-4">
       <div>
-        <label className="label" htmlFor="email">Email</label>
+        <label className="label" htmlFor="email">Email or Sales ID</label>
         <div className="relative">
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]">
             <MailIcon />
@@ -28,9 +28,9 @@ export default function LoginForm() {
           <input
             id="email"
             name="email"
-            type="email"
+            type="text"
             autoComplete="username"
-            placeholder="you@visionproperties.co"
+            placeholder="you@visionproperties.co or VPSD22"
             className="input"
             style={{ paddingLeft: 38 }}
             required

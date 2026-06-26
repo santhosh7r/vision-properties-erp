@@ -30,12 +30,18 @@ async function wipe(table: string) {
 }
 
 async function main() {
-  // Order respects foreign keys (children first).
+  // Order respects foreign keys (children first). Districts are a master/reference
+  // list (needed for project dropdowns), so they're intentionally NOT wiped.
   await wipe("notifications");
   await wipe("payments");
+  await wipe("plot_transfers");
   await wipe("registrations");
+  await wipe("service_requests");
+  await wipe("cab_requests");
+  await wipe("coupons");
   await wipe("bookings");
   await wipe("plots");
+  await wipe("plot_categories");
   await wipe("customers");
   await wipe("projects");
   await wipe("project_categories");

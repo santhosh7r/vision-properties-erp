@@ -1,7 +1,7 @@
 import "server-only";
 import { getSupabase } from "./supabase";
 import { getDownlineIds } from "./hierarchy";
-import { isSalesRole, type Role } from "./roles";
+import { isSalesRole, isNetworkHead, type Role } from "./roles";
 
 async function count(table: string, filter?: (q: any) => any): Promise<number> {
   let q = getSupabase().from(table).select("id", { count: "exact", head: true });
@@ -37,6 +37,7 @@ export interface RecentBooking {
   book_mode: string;
   payment_status: string;
   total_plot_value: number;
+  plot_sqft: number | null;
   created_at: string;
   customer: string | null;
   project: string | null;
@@ -108,12 +109,12 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
   const [bookingsRes, availRes, recentRes] = await Promise.all([
     sb
       .from("bookings")
-      .select("created_at, total_plot_value, status, created_by, partner_id")
+      .select("created_at, plot_sqft, status, created_by, partner_id")
       .or(orFilter),
     sb.from("plots").select("id", { count: "exact", head: true }).eq("status", "available"),
     sb
       .from("bookings")
-      .select("id, status, book_mode, payment_status, total_plot_value, created_at, customers(name), projects(name), plots(plot_no)")
+      .select("id, status, book_mode, payment_status, total_plot_value, plot_sqft, created_at, customers(name), projects(name), plots(plot_no)")
       .or(orFilter)
       .order("created_at", { ascending: false })
       .limit(6),
@@ -121,7 +122,7 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
 
   const rows = (bookingsRes.data ?? []) as {
     created_at: string;
-    total_plot_value: number;
+    plot_sqft: number | null;
     status: string;
     created_by: string | null;
     partner_id: string | null;
@@ -139,7 +140,7 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
 
   for (const b of rows) {
     if (b.status === "cancelled") continue;
-    const v = Number(b.total_plot_value || 0);
+    const v = Number(b.plot_sqft || 0);
     // Attribute to the salesperson on the record (partner), else the creator.
     const owner = b.partner_id ?? b.created_by;
     if (owner === userId) {
@@ -165,6 +166,7 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
     book_mode: b.book_mode,
     payment_status: b.payment_status,
     total_plot_value: b.total_plot_value,
+    plot_sqft: b.plot_sqft ?? null,
     created_at: b.created_at,
     customer: b.customers?.name ?? null,
     project: b.projects?.name ?? null,
@@ -365,10 +367,13 @@ export interface SeniorOverview {
   recentActivity: ActivityRow[];
 }
 
-export async function getSeniorOverview(userId: string): Promise<SeniorOverview> {
+export async function getSeniorOverview(userId: string, role: Role): Promise<SeniorOverview> {
   const sb = getSupabase();
   const ids = await getDownlineIds(sb, userId);
   const list = ids.join(",");
+  // Only the network head (Senior Director) sees the whole TEAM's activity feed.
+  // Director and below see just their own actions — a personal feed, not the team's.
+  const activityIds = isNetworkHead(role) ? ids : [userId];
   const nowKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
 
   const [bookingsRes, regRes, svRes, usersRes, customersCount, activityRes] = await Promise.all([
@@ -383,7 +388,7 @@ export async function getSeniorOverview(userId: string): Promise<SeniorOverview>
     sb
       .from("audit_log")
       .select("id, actor_name, action, entity, details, created_at")
-      .in("actor_id", ids)
+      .in("actor_id", activityIds)
       .order("created_at", { ascending: false })
       .limit(8),
   ]);
@@ -477,7 +482,7 @@ export async function getDashboard(scopeUserId?: string): Promise<DashboardData>
 
   let recentQ = sb
     .from("bookings")
-    .select("id, status, book_mode, payment_status, total_plot_value, created_at, customers(name), projects(name), plots(plot_no)")
+    .select("id, status, book_mode, payment_status, total_plot_value, plot_sqft, created_at, customers(name), projects(name), plots(plot_no)")
     .order("created_at", { ascending: false })
     .limit(6);
   if (scoped) recentQ = recentQ.eq("created_by", scopeUserId!);
@@ -593,6 +598,7 @@ export async function getDashboard(scopeUserId?: string): Promise<DashboardData>
     book_mode: b.book_mode,
     payment_status: b.payment_status,
     total_plot_value: b.total_plot_value,
+    plot_sqft: b.plot_sqft ?? null,
     created_at: b.created_at,
     customer: b.customers?.name ?? null,
     project: b.projects?.name ?? null,

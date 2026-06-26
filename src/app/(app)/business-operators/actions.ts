@@ -6,6 +6,7 @@ import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { ROLE_LABELS, creatableRolesUnder, type Role } from "@/lib/roles";
+import { isValueCoupon } from "@/lib/options";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface CreateMemberState {
@@ -149,4 +150,52 @@ export async function issueCoupon(formData: FormData): Promise<void> {
 
   await logAudit(actor, "coupon", user_id, "issue", `${quantity || value} ${type}`);
   revalidatePath("/business-operators");
+  revalidatePath("/tokens");
+}
+
+// Redeem (spend) coupons/tokens from a salesperson's balance — ADMIN only. Sales
+// people can SEE their balance & history but cannot redeem. Recorded as a NEGATIVE
+// ledger row (source 'redeem') so the summed balance drops and the redemption is
+// its own history entry. Never redeems more than the current balance for the type.
+export async function redeemCoupon(formData: FormData): Promise<void> {
+  const actor = await requireCapability("manage_users");
+  const sb = getSupabase();
+
+  const user_id = String(formData.get("user_id") || "");
+  const type = String(formData.get("type") || "").trim();
+  const note = String(formData.get("note") || "").trim() || null;
+  if (!user_id || !type) return;
+
+  const valueBased = isValueCoupon(type);
+  // Value coupons (tools) redeem a ₹ amount in any denomination; the rest redeem
+  // whole tokens. Either way: never redeem more than the current balance.
+  const { data: rows } = await sb
+    .from("coupons")
+    .select("quantity, value")
+    .eq("user_id", user_id)
+    .eq("type", type);
+  const balance = (rows ?? []).reduce(
+    (s, r) => s + Number((r as { quantity: number; value: number })[valueBased ? "value" : "quantity"] || 0),
+    0,
+  );
+
+  const amount = valueBased
+    ? Math.max(0, Number(formData.get("amount") || 0))
+    : Math.max(0, Math.floor(Number(formData.get("quantity") || 0)));
+  if (amount <= 0 || amount > balance) return; // can't redeem zero or more than held
+
+  const { error } = await sb.from("coupons").insert({
+    user_id,
+    type,
+    quantity: valueBased ? 0 : -amount,
+    value: valueBased ? -amount : 0,
+    source: "redeem",
+    note,
+    issued_by: actor.id,
+  });
+  if (error) return;
+
+  await logAudit(actor, "coupon", user_id, "redeem", `${amount} ${type}`);
+  revalidatePath("/business-operators");
+  revalidatePath("/tokens");
 }

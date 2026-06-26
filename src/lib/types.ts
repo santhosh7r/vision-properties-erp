@@ -53,6 +53,8 @@ export interface Project {
   director_gold_coupon: number;
   director_digital_coupon: number;
   senior_director_gold_coupon: number;
+  director_tools_coupon: number;
+  senior_director_tools_coupon: number;
   // §1–§2 blocking & advance
   blocking_amount: number;
   blocking_window_hours: number;

@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import type { SessionUser } from "@/lib/session";
-import { can, isSalesRole, ROLE_LABELS } from "@/lib/roles";
+import { can, isSalesRole, isNetworkHead, ROLE_LABELS } from "@/lib/roles";
 import { supabaseConfigured } from "@/lib/supabase";
 import { getDashboard, getAdminInsights, getSalesDashboard, getSeniorOverview } from "@/lib/queries";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
-import { inr, inrCompact, timeAgo } from "@/lib/format";
+import { inr, inrCompact, sqft, sqftCompact, timeAgo } from "@/lib/format";
 import { EmptyState, BookingStatusBadge, PaymentBadge, Badge } from "@/components/ui";
 import { KpiCard, Panel, Donut, Funnel, STATUS_COLOR } from "@/components/dashboard";
 import { AreaChart, BarChart } from "@/components/charts";
@@ -421,7 +421,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 async function SalesDashboard({ user }: { user: SessionUser }) {
   const [sd, ov] = await Promise.all([
     getSalesDashboard(user.id),
-    getSeniorOverview(user.id),
+    getSeniorOverview(user.id, user.role),
   ]);
   const salesDelta = pctChange(sd.thisMonthValue, sd.lastMonthValue);
   // Business Partner has no team — hide all partner/network/team blocks.
@@ -483,18 +483,18 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
       <div className="mt-4">
         <Panel
           title="My Sales Performance" accent="#e4433a"
-          action={<span className="text-xs text-[var(--muted)]">Booked value · last 8 months</span>}
+          action={<span className="text-xs text-[var(--muted)]">Booked area · last 8 months</span>}
         >
           <div className="mb-5 flex flex-wrap gap-8">
-            <Metric label="This Month" value={inrCompact(sd.thisMonthValue)} />
-            <Metric label="Last Month" value={inrCompact(sd.lastMonthValue)} />
-            <Metric label="My Total" value={inrCompact(sd.mine.value)} />
-            {!isBP && <Metric label="Network Total" value={inrCompact(sd.network.value)} />}
+            <Metric label="This Month" value={sqftCompact(sd.thisMonthValue)} />
+            <Metric label="Last Month" value={sqftCompact(sd.lastMonthValue)} />
+            <Metric label="My Total" value={sqftCompact(sd.mine.value)} />
+            {!isBP && <Metric label="Network Total" value={sqftCompact(sd.network.value)} />}
           </div>
           <AreaChart
             data={sd.salesSeries.map((s) => ({ label: s.label, value: s.value }))}
             color="#e4433a"
-            valueFormat={inrCompact}
+            valueFormat={sqftCompact}
           />
         </Panel>
       </div>
@@ -548,7 +548,7 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
       <SectionLabel>Recent Activity</SectionLabel>
       <div className="card">
         <p className="mb-3 text-xs text-[var(--muted)]">
-          {isBP ? "Your latest activity." : "What's happening in your team — new joins, bookings, registrations, cancellations."}
+          {isNetworkHead(user.role) ? "What's happening in your team — new joins, bookings, registrations, cancellations." : "Your latest activity."}
         </p>
         {ov.recentActivity.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-sm text-[var(--muted)]">No recent activity</div>
@@ -593,7 +593,7 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
                   <th className="th">Project</th>
                   <th className="th">Plot</th>
                   <th className="th">Customer</th>
-                  <th className="th">Value</th>
+                  <th className="th">Area</th>
                   <th className="th">Mode</th>
                   <th className="th">Status</th>
                   <th className="th">Payment</th>
@@ -606,7 +606,7 @@ async function SalesDashboard({ user }: { user: SessionUser }) {
                     <td className="td"><Link href={`/bookings/${b.id}`} className="font-medium hover:text-[var(--accent)]">{b.project ?? "—"}</Link></td>
                     <td className="td">{b.plot ?? "—"}</td>
                     <td className="td">{b.customer ?? "—"}</td>
-                    <td className="td tabular-nums">{inr(b.total_plot_value)}</td>
+                    <td className="td tabular-nums">{sqft(b.plot_sqft)}</td>
                     <td className="td"><Badge tone={b.book_mode === "blocking" ? "amber" : "blue"}>{b.book_mode}</Badge></td>
                     <td className="td"><BookingStatusBadge status={b.status} /></td>
                     <td className="td"><PaymentBadge status={b.payment_status} /></td>

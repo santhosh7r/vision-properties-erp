@@ -46,6 +46,13 @@ export function isSalesRole(role: Role): boolean {
   return SALES_HIERARCHY.includes(role);
 }
 
+// The head of a sales network — the only sales role that sees aggregated TEAM /
+// network data (downline activity, downline customers). Directors and below get a
+// purely personal view of their own work, not their team's.
+export function isNetworkHead(role: Role): boolean {
+  return role === "senior_director";
+}
+
 // Human-readable sales ID prefix per role (matches the DB trigger in
 // supabase/schema.sql). Codes are PREFIX + 2 random digits, e.g. VPSD47.
 // Non-sales roles have no code.
