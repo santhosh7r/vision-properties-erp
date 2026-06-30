@@ -307,6 +307,7 @@ create table if not exists bookings (
   refund_approved_at       timestamptz,
   refund_due_date          date,
   refund_paid_at           timestamptz,
+  cab_tokens_issued        boolean not null default false,    -- 3 cab tokens auto-issued to the director once held > 48h
   created_by               uuid references users(id) on delete set null,
   created_at               timestamptz not null default now()
 );

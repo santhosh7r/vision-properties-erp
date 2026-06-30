@@ -288,7 +288,9 @@ export default async function BookingDetailPage({
                 </form>
               )}
 
-              {b.status === "confirmed" && canRegister && !reg && (
+              {/* Admin may convert any active booking/blocking straight into a
+                  registration — confirming first is not required. */}
+              {canRegister && !reg && (
                 <Link href={`/registrations/new?booking=${b.id}`} className="btn-primary w-full">
                   Register Plot
                 </Link>

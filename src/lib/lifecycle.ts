@@ -14,6 +14,11 @@ export async function sweepExpiredBookings(): Promise<number> {
   const sb = getSupabase();
   const nowIso = new Date().toISOString();
 
+  // Piggy-back the cab-token grant on the same lazy sweep so it runs on every
+  // bookings/plots list load (this function has early returns below, so issuing
+  // here guarantees coverage regardless of whether anything is expiring).
+  await sweepCabTokens();
+
   const { data: expired } = await sb
     .from("bookings")
     .select("id, plot_id, payment_status, total_plot_value, advance_paid, customer_id")
@@ -51,4 +56,56 @@ export async function sweepExpiredBookings(): Promise<number> {
     }),
   );
   return toRelease.length;
+}
+
+// ---------------------------------------------------------------------------
+// Cab-token auto-issuance sweep (SOP §Cab Tokens):
+//   "auto-issue 3 tokens per booking/blocking held > 48h"
+// Any active blocking/booking that has survived 48h and carries a Director on
+// its sales chain grants that Director 3 cab tokens — exactly once per booking
+// (guarded by `cab_tokens_issued`). Senior Directors are unlimited, so the
+// chain's Director is the only beneficiary. Runs lazily alongside the expiry
+// sweep on bookings/plots list loads.
+// ---------------------------------------------------------------------------
+export async function sweepCabTokens(): Promise<number> {
+  const sb = getSupabase();
+  const cutoff = new Date(Date.now() - 48 * 3_600_000).toISOString();
+
+  const { data: due } = await sb
+    .from("bookings")
+    .select("id, director_id, book_mode")
+    .in("status", ["pending", "confirmed"])
+    .eq("cab_tokens_issued", false)
+    .not("director_id", "is", null)
+    .lt("created_at", cutoff);
+
+  if (!due || due.length === 0) return 0;
+
+  let issued = 0;
+  await Promise.all(
+    due.map(async (b) => {
+      // Claim the booking first (and only if still unissued) so two concurrent
+      // sweeps on parallel page loads can never double-grant the tokens.
+      const { data: claimed } = await sb
+        .from("bookings")
+        .update({ cab_tokens_issued: true })
+        .eq("id", b.id)
+        .eq("cab_tokens_issued", false)
+        .select("id")
+        .maybeSingle();
+      if (!claimed) return;
+
+      await sb.from("coupons").insert({
+        user_id: b.director_id,
+        type: "cab",
+        quantity: 3,
+        value: 0,
+        source: "auto",
+        note: `Cab tokens · ${b.book_mode} held > 48h`,
+        issued_by: null,
+      });
+      issued += 1;
+    }),
+  );
+  return issued;
 }

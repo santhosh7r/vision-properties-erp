@@ -31,15 +31,20 @@ export default async function RegistrationsPage() {
     mobile: r.mobile ?? "",
   }));
 
+  // Any active booking/blocking the admin can still turn into a registration —
+  // confirming first is not required. Already-registered bookings are excluded.
+  const registeredBookingIds = new Set(
+    raw.map((r) => r.booking_id).filter(Boolean) as string[],
+  );
   const { data: pendingReg } = await sb
     .from("bookings")
     .select("id, plots(plot_no), customers(name), projects(name)")
-    .eq("status", "confirmed");
+    .neq("status", "cancelled");
   const awaiting = ((pendingReg ?? []) as unknown as (Pick<Booking, "id"> & {
     plots: Pick<Plot, "plot_no">;
     customers: Pick<Customer, "name">;
     projects: Pick<Project, "name">;
-  })[]).filter(Boolean);
+  })[]).filter((b) => b && !registeredBookingIds.has(b.id));
 
   const canRegister = can(user.role, "manage_registration");
 
