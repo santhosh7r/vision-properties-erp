@@ -91,6 +91,7 @@ export const NAV: NavItem[] = [
   { href: "/users?action=new", label: "Add New Partner", icon: "plus", roles: ["admin"], group: "Business Partners" },
   { href: "/users", label: "View Partner", icon: "users", roles: ["admin"], group: "Business Partners" },
   { href: "/users?view=manage", label: "Block / Change Team & Level", icon: "sitemap", roles: ["admin"], group: "Business Partners" },
+  { href: "/activity", label: "Activity Logs", icon: "clock", roles: ["admin"], group: "Administration" },
   { href: "/settings", label: "Settings", icon: "cog", roles: ["admin"], group: "Administration" },
   // Account — sales roles: one Profile page (details, tokens, password,
   // appearance, language, sign-out-everywhere).

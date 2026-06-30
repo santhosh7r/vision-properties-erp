@@ -22,12 +22,12 @@ export default async function AppLayout({
     .toUpperCase();
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <Suspense fallback={null}>
         <SideNav items={items} />
       </Suspense>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header
           className="sticky top-0 z-20 flex h-16 items-center justify-between px-6"
           style={{
@@ -68,8 +68,8 @@ export default async function AppLayout({
             </form>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-[1400px] flex-1 overflow-x-hidden p-6 lg:p-8">
-          {children}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="w-full p-6 lg:p-8">{children}</div>
         </main>
       </div>
     </div>

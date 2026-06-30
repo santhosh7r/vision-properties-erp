@@ -26,6 +26,12 @@ export default function SideNav({ items }: { items: NavItem[] }) {
   const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  // Which accordion sections are expanded. The section holding the current page
+  // is opened automatically (see effect below); the user can toggle any other.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  // Hover tooltip for the collapsed rail. Rendered as a fixed element so it is
+  // not clipped by the scrolling nav's overflow.
+  const [tip, setTip] = useState<{ label: string; top: number } | null>(null);
 
   // Highlight the SINGLE best-matching item for the current URL, so query-param
   // entry points (e.g. /bookings?new=blocking vs /bookings) light up the right
@@ -51,6 +57,8 @@ export default function SideNav({ items }: { items: NavItem[] }) {
       activeHref = item.href;
     }
   }
+  const activeGroup =
+    bestScore >= 0 ? items.find((i) => i.href === activeHref)?.group ?? null : null;
 
   useEffect(() => {
     setMounted(true);
@@ -61,7 +69,24 @@ export default function SideNav({ items }: { items: NavItem[] }) {
     }
   }, []);
 
+  // Keep the section of the current page expanded (without collapsing any the
+  // user has opened manually).
+  useEffect(() => {
+    if (!activeGroup) return;
+    setOpenGroups((prev) => (prev.has(activeGroup) ? prev : new Set(prev).add(activeGroup)));
+  }, [activeGroup]);
+
+  function toggleGroup(name: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
   function toggle() {
+    setTip(null);
     setCollapsed((c) => {
       const next = !c;
       try {
@@ -77,6 +102,54 @@ export default function SideNav({ items }: { items: NavItem[] }) {
     name: g,
     items: items.filter((i) => i.group === g),
   })).filter((g) => g.items.length > 0);
+
+  // Dashboard (and anything else under "Overview") sits at the top with no
+  // section header; every other section is a collapsible accordion.
+  const topItems = groups.filter((g) => g.name === "Overview").flatMap((g) => g.items);
+  const sections = groups.filter((g) => g.name !== "Overview");
+
+  function renderItem(item: NavItem) {
+    const active = item.href === activeHref && bestScore >= 0;
+    const Icon = Icons[item.icon];
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onMouseEnter={
+          collapsed
+            ? (e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setTip({ label: item.label, top: r.top + r.height / 2 });
+              }
+            : undefined
+        }
+        onMouseLeave={collapsed ? () => setTip(null) : undefined}
+        className="group relative flex items-center rounded-xl text-[15px] font-medium transition-colors"
+        style={{
+          gap: 12,
+          padding: collapsed ? "12px" : "12px 14px",
+          justifyContent: collapsed ? "center" : "flex-start",
+          color: active ? "var(--accent)" : "var(--muted)",
+          background: active ? "var(--accent-soft)" : "transparent",
+        }}
+      >
+        <span
+          className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full transition-opacity"
+          style={{ background: "var(--accent)", opacity: active ? 1 : 0 }}
+        />
+        <Icon
+          size={22}
+          className="shrink-0 transition-colors group-hover:text-[var(--text)]"
+          style={active ? { color: "var(--accent)" } : undefined}
+        />
+        {!collapsed && (
+          <span className="whitespace-nowrap transition-colors group-hover:text-[var(--text)]">
+            {item.label}
+          </span>
+        )}
+      </Link>
+    );
+  }
 
   return (
     <aside
@@ -113,51 +186,56 @@ export default function SideNav({ items }: { items: NavItem[] }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
-        {groups.map((group) => (
-          <div key={group.name} className="mb-4 last:mb-0">
-            {!collapsed && (
-              <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
-                {group.name}
-              </p>
-            )}
-            <div className="flex flex-col gap-1">
-              {group.items.map((item) => {
-                const active = item.href === activeHref && bestScore >= 0;
-                const Icon = Icons[item.icon];
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={collapsed ? item.label : undefined}
-                    className="group relative flex items-center rounded-xl text-sm font-medium transition-colors"
-                    style={{
-                      gap: 12,
-                      padding: collapsed ? "11px" : "11px 12px",
-                      justifyContent: collapsed ? "center" : "flex-start",
-                      color: active ? "var(--accent)" : "var(--muted)",
-                      background: active ? "var(--accent-soft)" : "transparent",
-                    }}
-                  >
-                    <span
-                      className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full transition-opacity"
-                      style={{ background: "var(--accent)", opacity: active ? 1 : 0 }}
-                    />
-                    <Icon
-                      size={20}
-                      className="shrink-0 transition-colors group-hover:text-[var(--text)]"
-                      style={active ? { color: "var(--accent)" } : undefined}
-                    />
-                    {!collapsed && (
-                      <span className="whitespace-nowrap transition-colors group-hover:text-[var(--text)]">
-                        {item.label}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
+        {/* Collapsed rail: show every item as an icon, no accordion. */}
+        {collapsed ? (
+          <div className="flex flex-col gap-1">
+            {topItems.map(renderItem)}
+            {sections.flatMap((s) => s.items).map(renderItem)}
           </div>
-        ))}
+        ) : (
+          <>
+            {/* Dashboard / Overview — no header, always visible */}
+            {topItems.length > 0 && (
+              <div className="mb-2 flex flex-col gap-1">{topItems.map(renderItem)}</div>
+            )}
+
+            {/* Collapsible sections */}
+            {sections.map((group) => {
+              const open = openGroups.has(group.name);
+              const hasActive = group.name === activeGroup;
+              return (
+                <div key={group.name} className="mb-1.5 last:mb-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.name)}
+                    aria-expanded={open}
+                    className="group flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-[15px] font-semibold tracking-tight transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ color: hasActive ? "var(--accent)" : "var(--text)" }}
+                  >
+                    <span className="whitespace-nowrap">{group.name}</span>
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="shrink-0 transition-transform"
+                      style={{ transform: open ? "rotate(90deg)" : "none" }}
+                    >
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                  </button>
+                  {open && (
+                    <div className="mt-1 flex flex-col gap-1">{group.items.map(renderItem)}</div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* Collapse toggle */}
@@ -194,6 +272,22 @@ export default function SideNav({ items }: { items: NavItem[] }) {
           {!collapsed && <span className="whitespace-nowrap">Collapse</span>}
         </button>
       </div>
+
+      {/* Hover tooltip for the collapsed rail (fixed → escapes nav overflow). */}
+      {collapsed && tip && (
+        <div
+          className="pointer-events-none fixed z-50 -translate-y-1/2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-sm font-medium shadow-lg"
+          style={{
+            left: 84,
+            top: tip.top,
+            background: "var(--surface-2)",
+            borderColor: "var(--border)",
+            color: "var(--text)",
+          }}
+        >
+          {tip.label}
+        </div>
+      )}
     </aside>
   );
 }

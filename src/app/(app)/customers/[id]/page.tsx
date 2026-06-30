@@ -67,13 +67,20 @@ export default async function CustomerDetailPage({
         </div>
 
         <div className="space-y-4 lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Plot Booking History ({bookings.length})</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Booking &amp; Blocking History ({bookings.length})</h2>
+            {bookings.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 text-xs">
+                <Badge tone="blue">{bookings.filter((b) => b.book_mode === "booking").length} booking</Badge>
+                <Badge tone="amber">{bookings.filter((b) => b.book_mode === "blocking").length} blocking</Badge>
+                <Badge tone="red">{bookings.filter((b) => b.status === "cancelled").length} cancelled</Badge>
+              </div>
+            )}
           </div>
 
           {bookings.length === 0 ? (
             <div className="card">
-              <EmptyState message="No plot bookings for this customer yet." />
+              <EmptyState message="No bookings or blockings for this customer yet." />
             </div>
           ) : (
             bookings.map((b) => (

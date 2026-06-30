@@ -9,11 +9,6 @@ import { computeAdvanceRequired } from "@/lib/sop";
 import { createBooking } from "../actions";
 import PartnerDetailsFields from "../PartnerDetailsFields";
 
-interface MiniCustomer {
-  id: string;
-  name: string;
-  mobile: string;
-}
 interface Props {
   mode: "blocking" | "booking";
   plot: { id: string; plot_no: string; sqft: number; price_per_sqft: number };
@@ -25,13 +20,15 @@ interface Props {
     blocking_window_hours: number;
     booking_window_days: number;
   };
-  customers: MiniCustomer[];
+  // Accepted for backwards-compat with callers; no longer used — every booking
+  // captures the customer fresh and is matched to an existing record by mobile.
+  customers?: { id: string; name: string; mobile: string }[];
 }
 
 const inr = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-export default function BookingForm({ mode, plot, project, customers }: Props) {
+export default function BookingForm({ mode, plot, project }: Props) {
   const value = useMemo(() => Math.round(plot.sqft * plot.price_per_sqft), [plot]);
   // Mirror the server gate exactly: advance = max(percent of value, min amount).
   const defaultAdvance = useMemo(
@@ -39,8 +36,6 @@ export default function BookingForm({ mode, plot, project, customers }: Props) {
     [value, project.advance_percent, project.advance_min_amount],
   );
 
-  const [useExisting, setUseExisting] = useState(customers.length > 0);
-  const [customerId, setCustomerId] = useState("");
   // Required amounts are configured on the PROJECT and are NOT editable here —
   // the blocking amount and the advance % are set at project creation. This
   // form only captures how much the customer is paying right now.
@@ -83,54 +78,18 @@ export default function BookingForm({ mode, plot, project, customers }: Props) {
         </p>
       </div>
 
-      {/* Customer Details */}
+      {/* Customer Details — always captured fresh. If the mobile matches an
+          existing customer, the server links this record to them automatically
+          (no duplicate is created), so their full history stays in one place. */}
       <div className="card">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-1 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Customer Details</h2>
-          {customers.length > 0 && (
-            <div className="flex gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setUseExisting(true)}
-                className={`rounded-full border px-3 py-1 ${useExisting ? "border-[var(--accent)] text-[var(--accent)]" : "text-[var(--muted)]"}`}
-              >
-                Existing
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseExisting(false)}
-                className={`rounded-full border px-3 py-1 ${!useExisting ? "border-[var(--accent)] text-[var(--accent)]" : "text-[var(--muted)]"}`}
-              >
-                New
-              </button>
-            </div>
-          )}
         </div>
-
-        {useExisting ? (
-          <div>
-            <label className="label">Select Customer *</label>
-            <select
-              name="customer_id"
-              className="select"
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              required
-            >
-              <option value="">Select an existing customer</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} — {c.mobile}
-                </option>
-              ))}
-            </select>
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Not listed? <Link href="/customers/new" className="text-[var(--accent)]">Add a customer</Link> or switch to “New”.
-            </p>
-          </div>
-        ) : (
-          <CustomerFields />
-        )}
+        <p className="mb-4 text-xs text-[var(--muted)]">
+          Enter the customer’s details. If the mobile number already belongs to an existing
+          customer, this {mode} is linked to them automatically.
+        </p>
+        <CustomerFields />
       </div>
 
       {/* Project / Plot Details (snapshot) */}

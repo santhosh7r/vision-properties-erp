@@ -22,11 +22,11 @@ export default async function AddProjectPage() {
         back={{ href: "/inventory/manage", label: "← Manage/Edit Plots" }}
       />
 
-      <form action={createProject} className="max-w-3xl space-y-6">
+      <form action={createProject} className="space-y-6">
         <div className="card">
           <h2 className="mb-4 text-sm font-semibold">Project Details</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="sm:col-span-2 lg:col-span-3">
               <label className="label">Name *</label>
               <input name="name" className="input" required />
             </div>

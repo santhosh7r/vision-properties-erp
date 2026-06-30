@@ -69,20 +69,28 @@ export async function createPlotCategory(formData: FormData): Promise<void> {
   revalidatePath(`/projects/${project_id}`);
 }
 
+// Statuses a plot may be created with. booked/registered/sold require an actual
+// transaction, so creation is limited to these.
+const CREATABLE_PLOT_STATUSES = ["available", "blocked"] as const;
+
 export async function createPlot(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_plots");
   const project_id = String(formData.get("project_id") || "");
   const plot_category_id = String(formData.get("plot_category_id") || "") || null;
   const plot_no = String(formData.get("plot_no") || "").trim();
   const sqft = Number(formData.get("sqft") || 0);
-  const price_per_sqft = Number(formData.get("price_per_sqft") || 0);
   const description = String(formData.get("description") || "").trim() || null;
+  const statusInput = String(formData.get("status") || "available");
+  const status = (CREATABLE_PLOT_STATUSES as readonly string[]).includes(statusInput)
+    ? statusInput
+    : "available";
 
-  if (!project_id || !plot_no || sqft <= 0) return;
+  // Block (category) is mandatory — a plot must belong to a category.
+  if (!project_id || !plot_category_id || !plot_no || sqft <= 0) return;
 
   const { data, error } = await getSupabase()
     .from("plots")
-    .insert({ project_id, plot_category_id, plot_no, sqft, price_per_sqft, description, status: "available" })
+    .insert({ project_id, plot_category_id, plot_no, sqft, description, status })
     .select("id")
     .single();
 

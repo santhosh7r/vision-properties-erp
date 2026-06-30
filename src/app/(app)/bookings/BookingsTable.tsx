@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge, BookingStatusBadge, PaymentBadge } from "@/components/ui";
 import { fmtDate, timeLeft, inr } from "@/lib/format";
@@ -24,6 +25,7 @@ export interface BookingRow {
   refund_status: string;
   expires_at: string | null;
   created_at: string;
+  registered: boolean; // a registration record already exists for this booking
 }
 
 // When a booking is cancelled the plot goes back to the company, so the deal is
@@ -40,11 +42,13 @@ export default function BookingsTable({
   rows,
   canConfirm,
   canCancel,
+  canRegister = false,
   showSalesperson = false,
 }: {
   rows: BookingRow[];
   canConfirm: boolean;
   canCancel: boolean;
+  canRegister?: boolean;
   showSalesperson?: boolean;
 }) {
   const columns: Column<BookingRow>[] = [
@@ -98,7 +102,18 @@ export default function BookingsTable({
             <SubmitButton className="btn-success" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">Confirm</SubmitButton>
           </form>
         )}
-        {r.status !== "cancelled" && canCancel && (
+        {/* Admin can take an active plot straight to registration from the list. */}
+        {r.status !== "cancelled" && canRegister && !r.registered && (
+          <Link
+            href={`/registrations/new?booking=${r.id}`}
+            className="btn-primary"
+            style={{ padding: "5px 10px", fontSize: 12 }}
+          >
+            Register
+          </Link>
+        )}
+        {r.registered && <Badge tone="green">Registered</Badge>}
+        {r.status !== "cancelled" && !r.registered && canCancel && (
           <form action={cancelBooking}>
             <input type="hidden" name="id" value={r.id} />
             <SubmitButton className="btn-danger" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">Cancel</SubmitButton>

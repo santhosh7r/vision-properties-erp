@@ -44,6 +44,16 @@ export default async function BookingsPage({
     creator: { full_name: string } | null;
   })[];
 
+  // Which of these bookings already have a registration — so the list hides the
+  // "Register" action once a plot is registered.
+  const { data: regRows } = await sb
+    .from("registrations")
+    .select("booking_id")
+    .not("booking_id", "is", null);
+  const registeredBookingIds = new Set(
+    ((regRows ?? []) as { booking_id: string | null }[]).map((r) => r.booking_id).filter(Boolean) as string[],
+  );
+
   const rows: BookingRow[] = raw
     .filter((b) => (mode ? b.book_mode === mode : true))
     .map((b, i) => ({
@@ -68,6 +78,7 @@ export default async function BookingsPage({
       refund_status: b.refund_status,
       expires_at: b.expires_at,
       created_at: b.created_at,
+      registered: registeredBookingIds.has(b.id),
     }));
 
   const salesView = isSalesRole(user.role);
@@ -96,6 +107,7 @@ export default async function BookingsPage({
         rows={rows}
         canConfirm={can(user.role, "confirm_booking")}
         canCancel={can(user.role, "cancel_booking")}
+        canRegister={can(user.role, "manage_registration")}
         canCreate={false}
         showSalesperson={showSalesperson}
         flow={null}

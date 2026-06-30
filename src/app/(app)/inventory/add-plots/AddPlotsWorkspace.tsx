@@ -103,36 +103,52 @@ export default function AddPlotsWorkspace({ projects }: { projects: WorkspacePro
       {/* Add plot */}
       <div className="card">
         <h3 className="mb-3 text-sm font-semibold">Add Plot</h3>
-        <form action={createPlot} className="grid gap-3 sm:grid-cols-5">
-          <input type="hidden" name="project_id" value={project.id} />
-          <div className="sm:col-span-2">
-            <label className="label">Plot Category</label>
-            <select name="plot_category_id" className="select" defaultValue="">
-              <option value="">— Uncategorised —</option>
-              {project.groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
+        {project.groups.length === 0 ? (
+          <div
+            className="rounded-lg border px-4 py-3 text-sm"
+            style={{ borderColor: "var(--border)", color: "var(--muted)" }}
+          >
+            Add a <span className="font-medium">Block (category)</span> first — every plot must
+            belong to one. Use the form above to create a block, then add plots to it.
           </div>
-          <div>
-            <label className="label">Plot No *</label>
-            <input name="plot_no" className="input" required />
-          </div>
-          <div>
-            <label className="label">Sq.ft *</label>
-            <input name="sqft" type="number" min={1} step="0.01" className="input" required />
-          </div>
-          <div>
-            <label className="label">₹ / Sq.ft</label>
-            <input name="price_per_sqft" type="number" min={0} step="0.01" className="input" defaultValue={0} />
-          </div>
-          <div className="flex items-end">
-            <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add</SubmitButton>
-          </div>
-          <div className="sm:col-span-5">
-            <input name="description" className="input" placeholder="Description (optional)" />
-          </div>
-        </form>
+        ) : (
+          <form action={createPlot} className="grid gap-3 sm:grid-cols-5">
+            <input type="hidden" name="project_id" value={project.id} />
+            <div className="sm:col-span-2">
+              <label className="label">Block *</label>
+              <select name="plot_category_id" className="select" defaultValue="" required>
+                <option value="" disabled>
+                  — Select a block —
+                </option>
+                {project.groups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Plot No *</label>
+              <input name="plot_no" className="input" required />
+            </div>
+            <div>
+              <label className="label">Plot Sq.ft *</label>
+              <input name="sqft" type="number" min={1} step="0.01" className="input" required />
+            </div>
+            <div>
+              <label className="label">Current Status</label>
+              <select name="status" className="select" defaultValue="available">
+                <option value="available">Vacant</option>
+                <option value="blocked">Not Vacant</option>
+              </select>
+            </div>
+            <div className="sm:col-span-4">
+              <label className="label">Description</label>
+              <input name="description" className="input" placeholder="Description (optional)" />
+            </div>
+            <div className="flex items-end">
+              <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add</SubmitButton>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Existing plots, card design */}

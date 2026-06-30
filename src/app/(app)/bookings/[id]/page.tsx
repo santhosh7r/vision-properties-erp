@@ -273,7 +273,7 @@ export default async function BookingDetailPage({
                 </form>
               )}
 
-              {canCancel && (
+              {canCancel && !reg && (
                 <form action={cancelBooking} className="space-y-2">
                   <input type="hidden" name="id" value={b.id} />
                   <input name="reason" className="input" placeholder="Cancellation reason (optional)" />
