@@ -24,7 +24,11 @@ if (!url || !key) {
 }
 const sb = createClient(url, key, { auth: { persistSession: false } });
 
-const PASSWORD = "REDACTED";
+const PASSWORD = process.env.SEED_PASSWORD ?? "";
+if (!PASSWORD) {
+  console.error("Missing SEED_PASSWORD in .env.local — set a seed/demo password there.");
+  process.exit(1);
+}
 
 async function upsertUser(
   u: { full_name: string; email: string; role: string; mobile: string },

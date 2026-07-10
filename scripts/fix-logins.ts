@@ -2,7 +2,7 @@
  * Normalize logins to @visionproperties.co:
  *   1. Rename the existing admin from .in -> .co (account preserved, NOT deleted).
  *   2. Delete any other leftover @visionproperties.in logins.
- *   3. Create/refresh the team logins with .co emails (password: REDACTED).
+ *   3. Create/refresh the team logins with .co emails (password from SEED_PASSWORD).
  *
  *   npm run db:fix-logins
  */
@@ -20,7 +20,11 @@ if (!url || !key) {
 }
 const sb = createClient(url, key, { auth: { persistSession: false } });
 
-const PASSWORD = "REDACTED";
+const PASSWORD = process.env.SEED_PASSWORD ?? "";
+if (!PASSWORD) {
+  console.error("Missing SEED_PASSWORD in .env.local — set a seed/demo password there.");
+  process.exit(1);
+}
 
 // Team logins to create with .co (admin is handled by rename, not recreated).
 const TEAM = [
