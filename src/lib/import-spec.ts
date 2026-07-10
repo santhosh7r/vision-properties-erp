@@ -8,20 +8,51 @@ export interface ImportColumn {
   required?: boolean;
   example: string | number;
   note: string;
+  // For dropdown fields: every accepted value + what it means. Drives the
+  // "Dropdown Values" sheet and one worked example row per option.
+  options?: { value: string; label: string }[];
 }
+
+// Dropdown option sets (mirror the app's form selects / DB enums).
+const DISTRICT_OPTS = [
+  { value: "Chennai", label: "Chennai" },
+  { value: "Trichy", label: "Trichy" },
+];
+const APPROVAL_OPTS = [
+  { value: "dtcp_rera", label: "DTCP + RERA" },
+  { value: "dtcp_only", label: "DTCP Only" },
+];
+const PROJECT_TYPE_OPTS = [
+  { value: "affordable", label: "Affordable Project" },
+  { value: "luxury", label: "Luxury Project" },
+];
+const PROJECT_STATUS_OPTS = [
+  { value: "draft", label: "Draft" },
+  { value: "active", label: "Active" },
+  { value: "on_hold", label: "On hold" },
+  { value: "closed", label: "Closed" },
+];
+const PLOT_STATUS_OPTS = [
+  { value: "available", label: "Vacant" },
+  { value: "blocked", label: "Not Vacant" },
+];
 
 // ── Projects ────────────────────────────────────────────────────────────────
 export const PROJECT_COLUMNS: ImportColumn[] = [
   { key: "name", header: "name", required: true, example: "Green Valley", note: "Project name (required, must be unique)" },
-  { key: "district", header: "district", required: true, example: "Chennai", note: "District (required), e.g. Chennai, Trichy" },
+  { key: "district", header: "district", required: true, example: "Chennai", note: "Dropdown — type one of the values from the Dropdown Values sheet", options: DISTRICT_OPTS },
   { key: "city", header: "city", required: true, example: "Chennai", note: "City (required)" },
   { key: "pincode", header: "pincode", example: "600001", note: "Pincode (optional)" },
   { key: "area", header: "area", required: true, example: "2.5 acres", note: "Extent / area (required), free text" },
-  { key: "approval_type", header: "approval_type", required: true, example: "dtcp_rera", note: "dtcp_rera OR dtcp_only" },
-  { key: "project_type", header: "project_type", required: true, example: "affordable", note: "affordable OR luxury" },
-  { key: "status", header: "status", example: "draft", note: "draft | active | on_hold | closed (default draft)" },
+  { key: "approval_type", header: "approval_type", required: true, example: "dtcp_rera", note: "Dropdown — type exactly: dtcp_rera or dtcp_only", options: APPROVAL_OPTS },
+  { key: "project_type", header: "project_type", required: true, example: "affordable", note: "Dropdown — type exactly: affordable or luxury", options: PROJECT_TYPE_OPTS },
+  { key: "status", header: "status", example: "draft", note: "Dropdown — type exactly: draft, active, on_hold or closed (default draft)", options: PROJECT_STATUS_OPTS },
   { key: "branch", header: "branch", example: "Main Branch", note: "Branch / office (optional)" },
   { key: "guideline_value", header: "guideline_value", example: 1500, note: "₹ per sq.ft guideline value (optional)" },
+  { key: "director_gold_coupon", header: "director_gold_coupon", example: 0, note: "Director Gold Coupon ₹ per sq.ft (optional, default 0)" },
+  { key: "director_digital_coupon", header: "director_digital_coupon", example: 0, note: "Director Digital Coupon ₹ per sq.ft (optional, default 0)" },
+  { key: "senior_director_gold_coupon", header: "senior_director_gold_coupon", example: 0, note: "Senior Director Gold Coupon ₹ per sq.ft (optional, default 0)" },
+  { key: "director_tools_coupon", header: "director_tools_coupon", example: 0, note: "Director Tools Coupon ₹ per sq.ft (optional, default 0)" },
   { key: "blocking_amount", header: "blocking_amount", example: 10000, note: "Initial block amount ₹ (default 10000)" },
   { key: "blocking_window_hours", header: "blocking_window_hours", example: 48, note: "Block → must book within N hours (default 48)" },
   { key: "advance_percent", header: "advance_percent", example: 5, note: "Booking advance = N% of value (default 5)" },
@@ -36,12 +67,12 @@ export const PROJECT_COLUMNS: ImportColumn[] = [
 // ── Plots ───────────────────────────────────────────────────────────────────
 export const PLOT_COLUMNS: ImportColumn[] = [
   { key: "project", header: "project", required: true, example: "Green Valley", note: "Existing project name (required, must match exactly)" },
-  { key: "block", header: "block", example: "Phase 1", note: "Block / category name — created automatically if new" },
+  { key: "block", header: "block", example: "Phase 1", note: "Block / category name (free text) — created automatically if new" },
   { key: "plot_no", header: "plot_no", required: true, example: "A-101", note: "Plot number (required, unique within the project)" },
   { key: "sqft", header: "sqft", required: true, example: 1200, note: "Plot area in sq.ft (required, number > 0)" },
-  { key: "price_per_sqft", header: "price_per_sqft", example: 1500, note: "₹ per sq.ft (optional, default 0)" },
+  { key: "price_per_sqft", header: "price_per_sqft", example: 1500, note: "₹ per sq.ft — drives plot value (optional, default 0). Value = sqft × this." },
   { key: "description", header: "description", example: "Corner plot", note: "Notes (optional)" },
-  { key: "status", header: "status", example: "available", note: "available | blocked  (blocked = Not Vacant; default available)" },
+  { key: "status", header: "status", example: "available", note: "Dropdown — type exactly: available (Vacant) or blocked (Not Vacant); default available", options: PLOT_STATUS_OPTS },
 ];
 
 // ── Enum normalizers (accept the code or the human label, case-insensitive) ──

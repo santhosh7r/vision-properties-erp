@@ -1,14 +1,14 @@
-import { requireCapability } from "@/lib/auth";
+import { requireDevUser } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 import ImportCard from "./ImportCard";
 import { importProjects, importPlots } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-// Admin-only bulk import from Excel. Upload a filled template; each row is parsed
+// Dev-only bulk import from Excel. Upload a filled template; each row is parsed
 // to JSON, validated, and inserted. Projects and plots have separate templates.
 export default async function ImportPage() {
-  await requireCapability("manage_projects"); // admin only
+  await requireDevUser(); // hidden dev account only
 
   return (
     <>

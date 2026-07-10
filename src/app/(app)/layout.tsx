@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { mustChangePassword } from "@/lib/session";
+import { isHiddenUser } from "@/lib/hidden-users";
 import { navFor } from "@/lib/nav";
 import { ROLE_LABELS } from "@/lib/roles";
 import { logout } from "@/app/login/actions";
@@ -18,7 +19,7 @@ export default async function AppLayout({
   // Force a password change before the app is usable when flagged (e.g. a
   // freshly-provisioned account with an admin-set temporary password).
   if (await mustChangePassword(user.id)) redirect("/change-password");
-  const items = navFor(user.role);
+  const items = navFor(user.role, isHiddenUser(user.email));
   const initials = user.full_name
     .split(" ")
     .map((p) => p[0])

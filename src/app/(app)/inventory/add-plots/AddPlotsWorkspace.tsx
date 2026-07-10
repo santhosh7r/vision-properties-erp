@@ -134,13 +134,17 @@ export default function AddPlotsWorkspace({ projects }: { projects: WorkspacePro
               <input name="sqft" type="number" min={1} step="0.01" className="input" required />
             </div>
             <div>
+              <label className="label">Price / Sq.ft (₹)</label>
+              <input name="price_per_sqft" type="number" min={0} step="0.01" className="input" defaultValue={0} />
+            </div>
+            <div>
               <label className="label">Current Status</label>
               <select name="status" className="select" defaultValue="available">
                 <option value="available">Vacant</option>
                 <option value="blocked">Not Vacant</option>
               </select>
             </div>
-            <div className="sm:col-span-4">
+            <div className="sm:col-span-3">
               <label className="label">Description</label>
               <input name="description" className="input" placeholder="Description (optional)" />
             </div>

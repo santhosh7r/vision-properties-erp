@@ -6,6 +6,8 @@ export interface NavItem {
   label: string;
   icon: IconName;
   roles: Role[];
+  // Visible only to the hidden dev/support account (in addition to the roles).
+  devOnly?: boolean;
   // optional grouping for section headers in the sidebar
   group:
     | "Overview"
@@ -58,7 +60,7 @@ export const NAV: NavItem[] = [
   { href: "/inventory/add-project", label: "Add Project", icon: "building", roles: ["admin"], group: "Inventory" },
   { href: "/inventory/add-plots", label: "Add Plots", icon: "cube", roles: ["admin"], group: "Inventory" },
   { href: "/inventory/manage", label: "Manage/Edit Plots", icon: "layers", roles: ["admin"], group: "Inventory" },
-  { href: "/inventory/import", label: "Import from Excel", icon: "fileText", roles: ["admin"], group: "Inventory" },
+  { href: "/inventory/import", label: "Import from Excel", icon: "fileText", roles: ["admin"], group: "Inventory", devOnly: true },
   { href: "/customers", label: "Customers", icon: "userCircle", roles: SALES, group: "Clients" },
   // Shared bookings list — non-admin sales + finance. Admin uses the Pre/Post-Sales
   // labelled actions below (which deep-link into this same engine via query params).
@@ -99,6 +101,6 @@ export const NAV: NavItem[] = [
   { href: "/profile", label: "Profile", icon: "userCircle", roles: SALES_TIERS, group: "Account" },
 ];
 
-export function navFor(role: Role): NavItem[] {
-  return NAV.filter((n) => n.roles.includes(role));
+export function navFor(role: Role, isDev = false): NavItem[] {
+  return NAV.filter((n) => n.roles.includes(role) && (!n.devOnly || isDev));
 }

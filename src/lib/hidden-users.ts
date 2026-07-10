@@ -9,3 +9,9 @@ export const HIDDEN_USER_EMAILS = ["dev@visionproperties.co"];
 // e.g. "(dev@visionproperties.co)". Emails contain no commas/parens so no
 // quoting is needed.
 export const HIDDEN_IN_LIST = `(${HIDDEN_USER_EMAILS.join(",")})`;
+
+// The hidden accounts double as the "dev" accounts — dev-only tooling (e.g. the
+// Excel import) is gated to these emails so no other admin sees or reaches it.
+export function isHiddenUser(email: string | null | undefined): boolean {
+  return !!email && HIDDEN_USER_EMAILS.includes(email.trim().toLowerCase());
+}

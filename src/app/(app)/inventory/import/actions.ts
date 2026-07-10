@@ -4,7 +4,7 @@ import { Readable } from "stream";
 import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
-import { requireCapability } from "@/lib/auth";
+import { requireDevUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import {
   PROJECT_COLUMNS,
@@ -75,7 +75,7 @@ function getFile(formData: FormData): File | null {
 
 // ── Projects ────────────────────────────────────────────────────────────────
 export async function importProjects(_prev: ImportResult, formData: FormData): Promise<ImportResult> {
-  const actor = await requireCapability("manage_projects"); // admin only
+  const actor = await requireDevUser(); // hidden dev account only
   const file = getFile(formData);
   if (!file) return { ok: false, error: "Please choose an .xlsx or .csv file." };
 
@@ -122,6 +122,10 @@ export async function importProjects(_prev: ImportResult, formData: FormData): P
       status: normProjectStatus(r.status),
       branch: str(r.branch) || null,
       guideline_value: num(r.guideline_value),
+      director_gold_coupon: num(r.director_gold_coupon),
+      director_digital_coupon: num(r.director_digital_coupon),
+      senior_director_gold_coupon: num(r.senior_director_gold_coupon),
+      director_tools_coupon: num(r.director_tools_coupon),
       blocking_amount: num(r.blocking_amount, 10000),
       blocking_window_hours: num(r.blocking_window_hours, 48),
       advance_percent: num(r.advance_percent, 5),
@@ -148,7 +152,7 @@ export async function importProjects(_prev: ImportResult, formData: FormData): P
 
 // ── Plots ───────────────────────────────────────────────────────────────────
 export async function importPlots(_prev: ImportResult, formData: FormData): Promise<ImportResult> {
-  const actor = await requireCapability("manage_plots"); // admin only
+  const actor = await requireDevUser(); // hidden dev account only
   const file = getFile(formData);
   if (!file) return { ok: false, error: "Please choose an .xlsx or .csv file." };
 
