@@ -2,9 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { inr, fmtDate } from "@/lib/format";
+import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
+import { loanTokenByLabel } from "@/lib/options";
 import { PageHeader, Badge, BookingStatusBadge, PaymentBadge, EmptyState } from "@/components/ui";
-import type { Booking, Customer, Plot, Project } from "@/lib/types";
+import type { Booking, Customer, Payment, Plot, Project } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,23 @@ export default async function CustomerDetailPage({
     plots: Pick<Plot, "plot_no">;
     projects: Pick<Project, "name">;
   })[];
+
+  // Every payment recorded against this customer's bookings — so the profile
+  // shows the full money trail (mode + card / instrument details) per deal.
+  const bookingIds = bookings.map((b) => b.id);
+  const { data: payData } = bookingIds.length
+    ? await sb
+        .from("payments")
+        .select("*")
+        .in("booking_id", bookingIds)
+        .order("paid_at", { ascending: false })
+    : { data: [] };
+  const paymentsByBooking = new Map<string, Payment[]>();
+  for (const p of (payData ?? []) as Payment[]) {
+    const list = paymentsByBooking.get(p.booking_id) ?? [];
+    list.push(p);
+    paymentsByBooking.set(p.booking_id, list);
+  }
 
   return (
     <>
@@ -88,8 +106,11 @@ export default async function CustomerDetailPage({
                 {/* header */}
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-3">
                   <div>
-                    <div className="font-medium">
+                    <div className="flex flex-wrap items-center gap-2 font-medium">
                       {b.projects?.name} · Plot {b.plots?.plot_no}
+                      <span className="rounded border px-1.5 py-0.5 font-mono text-xs font-normal text-[var(--muted)]">
+                        Ref {shortRef(b.id)}
+                      </span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <Badge tone={b.book_mode === "blocking" ? "amber" : "blue"}>{b.book_mode}</Badge>
@@ -126,9 +147,54 @@ export default async function CustomerDetailPage({
                 <Section title="Payment & Dates">
                   <D label="Tentative Registration">{fmtDate(b.tentative_registration_date)}</D>
                   <D label="Mode of Payment">{b.mode_of_payment ?? "—"}</D>
-                  <D label="Loan Taken By">{b.loan_token_by ?? "—"}</D>
+                  <D label="Loan Taken By">{loanTokenByLabel(b.loan_token_by)}</D>
                   <D label="Booked Date">{fmtDate(b.booked_date)}</D>
                 </Section>
+
+                {/* Full payment ledger for this deal — each collection with its
+                    mode and card / instrument details. */}
+                {(() => {
+                  const pays = paymentsByBooking.get(b.id) ?? [];
+                  return (
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                        Payments ({pays.length})
+                      </p>
+                      {pays.length === 0 ? (
+                        <p className="text-sm text-[var(--muted)]">No payments recorded yet.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-xs uppercase tracking-wide text-[var(--muted)]">
+                                <th className="pb-1 pr-3 font-medium">Date</th>
+                                <th className="pb-1 pr-3 font-medium">Kind</th>
+                                <th className="pb-1 pr-3 font-medium">Mode</th>
+                                <th className="pb-1 pr-3 font-medium">Card / Reference</th>
+                                <th className="pb-1 text-right font-medium">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pays.map((p) => (
+                                <tr key={p.id} className="border-t" style={{ borderColor: "var(--border)" }}>
+                                  <td className="py-1.5 pr-3 whitespace-nowrap">{fmtDateTime(p.paid_at)}</td>
+                                  <td className="py-1.5 pr-3 capitalize">{p.kind}</td>
+                                  <td className="py-1.5 pr-3">{p.mode ?? "—"}</td>
+                                  <td className="py-1.5 pr-3 text-[var(--muted)]">
+                                    {[p.reference, p.bank_name, p.instrument_date ? fmtDate(p.instrument_date) : null]
+                                      .filter(Boolean)
+                                      .join(" · ") || "—"}
+                                  </td>
+                                  <td className="py-1.5 text-right tabular-nums">{inr(p.amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {(b.remarks || (b.refund_status && b.refund_status !== "none")) && (
                   <Section title="Notes">

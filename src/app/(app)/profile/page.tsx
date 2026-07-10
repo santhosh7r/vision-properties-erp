@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
-import { getDistrictNames } from "@/lib/districts";
 import { isSalesRole, ROLE_LABELS, type Role } from "@/lib/roles";
 import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
 import { inr } from "@/lib/format";
@@ -64,9 +63,6 @@ export default async function ProfilePage({
   const downline = await getDownlineIds(sb, user.id);
   const teamCount = Math.max(0, downline.length - 1);
 
-  // Districts come from the admin-managed master list (migration 0014).
-  const districts = await getDistrictNames(sb);
-
   // Coupon balances (graceful if coupons table isn't migrated yet). Value-based
   // coupons (tools) sum their ₹ value; the rest count whole tokens.
   const { data: couponData } = await sb.from("coupons").select("type, quantity, value").eq("user_id", user.id);
@@ -113,7 +109,6 @@ export default async function ProfilePage({
               managerName,
               teamCount,
             }}
-            districts={districts}
           />
         </div>
 

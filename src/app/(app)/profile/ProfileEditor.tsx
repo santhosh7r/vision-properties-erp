@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
+import { DISTRICTS } from "@/lib/options";
 import { updateMyProfile } from "./actions";
 
 export interface ProfileData {
@@ -23,7 +24,7 @@ function initials(name: string): string {
 }
 
 // Profile details: read-only until "Edit" is clicked, then a save form.
-export default function ProfileEditor({ data, districts }: { data: ProfileData; districts: string[] }) {
+export default function ProfileEditor({ data }: { data: ProfileData }) {
   const [editing, setEditing] = useState(false);
 
   if (!editing) {
@@ -99,7 +100,10 @@ export default function ProfileEditor({ data, districts }: { data: ProfileData; 
           <label className="label">District</label>
           <select name="district" className="select" defaultValue={data.district}>
             <option value="">— Select district —</option>
-            {districts.map((d) => (
+            {data.district && !DISTRICTS.includes(data.district) && (
+              <option value={data.district}>{data.district}</option>
+            )}
+            {DISTRICTS.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
           </select>

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, notify } from "@/lib/audit";
 
 // Plot Release (Admin panel · Sales · Post-Sales) — free a plot back to the
 // company. Releases any active (pending/confirmed) booking WITHOUT a refund flow
@@ -45,6 +45,86 @@ export async function releasePlot(formData: FormData): Promise<void> {
   revalidatePath("/plots");
   revalidatePath("/inventory/release");
   revalidatePath("/dashboard");
+}
+
+// Plot Release · Extend — reclaim an auto-expired hold for the ORIGINAL
+// customer. On expiry the plot was released back to 'available' so anyone could
+// take it; an Admin may extend it back to that customer for a custom duration,
+// but ONLY while the plot is still free. If anyone else has since blocked/booked
+// (or it was registered), the plot is no longer 'available' and the extend is
+// refused. Admin-only.
+export async function extendHold(formData: FormData): Promise<void> {
+  const actor = await requireCapability("manage_plots");
+  const sb = getSupabase();
+  const booking_id = String(formData.get("booking_id") || "");
+  const value = Number(formData.get("value") || 0);
+  const unit = String(formData.get("unit") || "hours"); // hours | days
+  if (!booking_id || !(value > 0)) {
+    redirect("/inventory/release?err=extend_input");
+  }
+
+  const { data: booking } = await sb
+    .from("bookings")
+    .select("id, plot_id, book_mode, expired_at, pre_expiry_status")
+    .eq("id", booking_id)
+    .maybeSingle();
+
+  // Must still be an un-extended, released hold.
+  if (!booking || !booking.expired_at) {
+    redirect("/inventory/release?err=extend_gone");
+  }
+
+  // The plot must still be free — once anyone else has blocked/booked/registered
+  // it, the original hold can no longer be extended.
+  const { data: plot } = await sb
+    .from("plots")
+    .select("id, status")
+    .eq("id", booking.plot_id)
+    .maybeSingle();
+  if (!plot || plot.status !== "available") {
+    redirect("/inventory/release?err=extend_taken");
+  }
+
+  const ms = unit === "days" ? value * 86_400_000 : value * 3_600_000;
+  const expires_at = new Date(Date.now() + ms).toISOString();
+
+  const { error: bookErr } = await sb
+    .from("bookings")
+    .update({
+      status: booking.pre_expiry_status ?? "pending", // restore prior state
+      expires_at,
+      expired_at: null,
+      released_at: null,
+      pre_expiry_status: null,
+      cancellation_reason: null,
+    })
+    .eq("id", booking.id)
+    .eq("expired_at", booking.expired_at); // no-op if a concurrent extend won
+
+  // The unique active-booking index rejects if a race booked the plot first.
+  if (bookErr) {
+    redirect("/inventory/release?err=extend_taken");
+  }
+
+  await sb
+    .from("plots")
+    .update({ status: booking.book_mode === "blocking" ? "blocked" : "booked" })
+    .eq("id", booking.plot_id);
+
+  await logAudit(actor, "booking", booking.id, "extend", `${value} ${unit}`);
+  await notify(
+    booking.id,
+    "sms",
+    null,
+    `Good news — your hold has been extended. It is now valid until ${new Date(expires_at).toLocaleString()}.`,
+  );
+
+  revalidatePath("/inventory/release");
+  revalidatePath("/bookings");
+  revalidatePath(`/plots/${booking.plot_id}`);
+  revalidatePath("/plots");
+  revalidatePath("/dashboard");
+  redirect("/inventory/release?ok=extended");
 }
 
 // Create a plot group/category within a project (e.g. Phase 1, Premium).

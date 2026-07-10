@@ -23,6 +23,7 @@ export default async function RegistrationsPage() {
   })[];
   const rows: RegistrationRow[] = raw.map((r) => ({
     id: r.id,
+    bookingId: r.booking_id ?? null,
     project: r.projects?.name ?? "—",
     plot: r.plots ? r.plots.plot_no : "—",
     register_number: r.register_number,

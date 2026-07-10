@@ -1,5 +1,6 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { can } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { inr } from "@/lib/format";
 import { PageHeader, StatCard } from "@/components/ui";
@@ -7,6 +8,7 @@ import type { Booking, Customer, Plot, Project } from "@/lib/types";
 import { type PaymentRow } from "./PaymentsTable";
 import { type LedgerRow } from "./PaymentLedger";
 import PaymentsWorkspace from "./PaymentsWorkspace";
+import CancellationRequests, { type CancelRequestRow } from "./CancellationRequests";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,9 @@ interface RawPayment {
   amount: number;
   kind: string;
   mode: string | null;
+  reference: string | null;
+  bank_name: string | null;
+  instrument_date: string | null;
   status: string;
   paid_at: string;
   recorder: { full_name: string } | null;
@@ -44,7 +49,7 @@ interface RawRefund {
 }
 
 export default async function PaymentsPage() {
-  await requireCapability("view_finance");
+  const me = await requireCapability("view_finance");
   await sweepExpiredBookings();
 
   const sb = getSupabase();
@@ -77,7 +82,7 @@ export default async function PaymentsPage() {
   const { data: payData } = await sb
     .from("payments")
     .select(
-      "id, booking_id, amount, kind, mode, status, paid_at, recorder:users!recorded_by(full_name), bookings(plots(plot_no), customers(name), projects(name))",
+      "id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, status, paid_at, recorder:users!recorded_by(full_name), bookings(plots(plot_no), customers(name), projects(name))",
     )
     .order("paid_at", { ascending: false });
   const payRaw = (payData ?? []) as unknown as RawPayment[];
@@ -92,6 +97,9 @@ export default async function PaymentsPage() {
     kind: p.kind,
     amount: Number(p.amount),
     mode: p.mode ?? "—",
+    reference: [p.reference, p.bank_name, p.instrument_date]
+      .filter(Boolean)
+      .join(" · "),
     recordedBy: p.recorder?.full_name ?? "—",
     status: p.status,
   }));
@@ -115,6 +123,7 @@ export default async function PaymentsPage() {
     kind: "refund",
     amount: -Number(b.refund_amount ?? 0),
     mode: "—",
+    reference: "",
     recordedBy: "—",
     status: b.refund_status === "paid" ? "completed" : "pending",
   }));
@@ -122,6 +131,36 @@ export default async function PaymentsPage() {
   const ledger: LedgerRow[] = [...payments, ...refunds].sort(
     (a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime(),
   );
+
+  // Pending cancellation requests raised by sales — Admin actions them here.
+  const { data: crData } = await sb
+    .from("bookings")
+    .select(
+      "id, book_mode, cancel_request_reason, cancel_requested_at, plots(plot_no), customers(name), projects(name), requester:users!cancel_requested_by(full_name)",
+    )
+    .not("cancel_requested_at", "is", null)
+    .neq("status", "cancelled")
+    .order("cancel_requested_at", { ascending: false });
+  const crRaw = (crData ?? []) as unknown as {
+    id: string;
+    book_mode: string;
+    cancel_request_reason: string | null;
+    cancel_requested_at: string;
+    plots: Pick<Plot, "plot_no"> | null;
+    customers: Pick<Customer, "name"> | null;
+    projects: Pick<Project, "name"> | null;
+    requester: { full_name: string } | null;
+  }[];
+  const cancelRequests: CancelRequestRow[] = crRaw.map((b) => ({
+    id: b.id,
+    customer: b.customers?.name ?? "—",
+    project: b.projects?.name ?? "—",
+    plot: b.plots ? `${b.plots.plot_no}` : "—",
+    mode: b.book_mode,
+    requestedBy: b.requester?.full_name ?? "—",
+    reason: b.cancel_request_reason ?? "—",
+    requestedAt: b.cancel_requested_at,
+  }));
 
   const totalValue = rows.reduce((s, b) => s + b.value, 0);
   const totalPaid = rows.reduce((s, b) => s + b.paid, 0);
@@ -133,7 +172,10 @@ export default async function PaymentsPage() {
 
   return (
     <>
-      <PageHeader title="Payments" subtitle="Collections and outstanding across every active deal." />
+      <PageHeader title="Payments & Cancellation" subtitle="Collections, outstanding and cancellation requests." />
+
+      <CancellationRequests rows={cancelRequests} canAct={can(me.role, "cancel_booking")} />
+
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard label="Deal Value" value={inr(totalValue)} />
         <StatCard label="Received" value={inr(totalReceived)} />

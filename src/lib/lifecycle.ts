@@ -6,9 +6,12 @@ import { notify } from "./audit";
 // Lazy expiry sweep (board flow):
 //   - Blocking not converted within window  -> "land will be return"
 //   - Booking advance/full not paid in time -> "land is back to company"
-// Any pending booking whose `expires_at` has passed and which is NOT fully
-// paid is released: the plot goes back to 'available' and the booking is
-// cancelled. Runs cheaply on bookings/plots list loads.
+// Any ACTIVE hold (blocking or booking, whether 'pending' or 'confirmed') whose
+// `expires_at` has passed and which is NOT fully paid is released: the plot goes
+// straight back to 'available' so anyone may block/book it again. We also stamp
+// `expired_at` + `pre_expiry_status` so the hold surfaces on Plot Release, where
+// an Admin can EXTEND it back to the original customer — but only while the plot
+// is still free (see extendHold). Runs cheaply on bookings/plots list loads.
 // ---------------------------------------------------------------------------
 export async function sweepExpiredBookings(): Promise<number> {
   const sb = getSupabase();
@@ -21,14 +24,15 @@ export async function sweepExpiredBookings(): Promise<number> {
 
   const { data: expired } = await sb
     .from("bookings")
-    .select("id, plot_id, payment_status, total_plot_value, advance_paid, customer_id")
-    .eq("status", "pending")
+    .select("id, plot_id, status, payment_status, customer_id")
+    .in("status", ["pending", "confirmed"])
     .not("expires_at", "is", null)
     .lt("expires_at", nowIso);
 
   if (!expired || expired.length === 0) return 0;
 
-  // Fully paid bookings are never auto-released even if a window passed.
+  // Fully paid bookings are never auto-released even if a window passed — the
+  // money is on the plot and the deadline is only the registration target.
   const toRelease = expired.filter((b) => b.payment_status !== "completed");
   if (toRelease.length === 0) return 0;
 
@@ -39,7 +43,12 @@ export async function sweepExpiredBookings(): Promise<number> {
     toRelease.map(async (b) => {
       await sb
         .from("bookings")
-        .update({ status: "cancelled", released_at: nowIso })
+        .update({
+          status: "cancelled",
+          released_at: nowIso,
+          expired_at: nowIso,
+          pre_expiry_status: b.status, // restored verbatim if an Admin extends
+        })
         .eq("id", b.id);
 
       await sb

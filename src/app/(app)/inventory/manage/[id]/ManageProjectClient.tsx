@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { inr } from "@/lib/format";
-import { APPROVAL_TYPES, PROJECT_TYPES } from "@/lib/options";
+import { APPROVAL_TYPES, DISTRICTS, PROJECT_TYPES } from "@/lib/options";
 import { Badge, PlotStatusBadge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { Project } from "@/lib/types";
@@ -91,7 +91,15 @@ export default function ManageProjectClient({
               </div>
               <div>
                 <label className="label">District *</label>
-                <input name="district" className="input" required defaultValue={project.district} />
+                <select name="district" className="select" required defaultValue={project.district}>
+                  <option value="" disabled>— Select district —</option>
+                  {project.district && !DISTRICTS.includes(project.district) && (
+                    <option value={project.district}>{project.district}</option>
+                  )}
+                  {DISTRICTS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="label">City *</label>

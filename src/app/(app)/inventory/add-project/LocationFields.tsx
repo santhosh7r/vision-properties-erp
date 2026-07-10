@@ -1,11 +1,9 @@
 // Project location fields for the Add Project form. District is a fixed
-// dropdown (currently Chennai & Trichy only); City is a manual text input and
+// dropdown fed by the app-wide DISTRICTS master; City is a manual text input and
 // Pincode is an optional manual input shown after City. The earlier India Post
 // auto-fetch was removed — pincode is captured for reference and is not
 // persisted to the projects table today.
-
-// "For now" district master is limited to these two. Add more here when needed.
-const DISTRICTS = ["Chennai", "Trichy"];
+import { DISTRICTS } from "@/lib/options";
 
 export default function LocationFields() {
   return (

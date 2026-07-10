@@ -19,6 +19,9 @@ interface RawPayment {
   amount: number;
   kind: string;
   mode: string | null;
+  reference: string | null;
+  bank_name: string | null;
+  instrument_date: string | null;
   status: string;
   paid_at: string;
   recorder: { full_name: string } | null;
@@ -125,7 +128,7 @@ export default async function PostSalesPage({
   const { data: payData } = await sb
     .from("payments")
     .select(
-      "id, booking_id, amount, kind, mode, status, paid_at, recorder:users!recorded_by(full_name), bookings(plots(plot_no), customers(name), projects(name))",
+      "id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, status, paid_at, recorder:users!recorded_by(full_name), bookings(plots(plot_no), customers(name), projects(name))",
     )
     .order("paid_at", { ascending: false });
   const payRaw = (payData ?? []) as unknown as RawPayment[];
@@ -139,6 +142,7 @@ export default async function PostSalesPage({
     kind: p.kind,
     amount: Number(p.amount),
     mode: p.mode ?? "—",
+    reference: [p.reference, p.bank_name, p.instrument_date].filter(Boolean).join(" · "),
     recordedBy: p.recorder?.full_name ?? "—",
     status: p.status,
   }));
@@ -160,6 +164,7 @@ export default async function PostSalesPage({
     kind: "refund",
     amount: -Number(b.refund_amount ?? 0),
     mode: "—",
+    reference: "",
     recordedBy: "—",
     status: b.refund_status === "paid" ? "completed" : "pending",
   }));

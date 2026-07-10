@@ -18,7 +18,9 @@ export default function BookingsWorkspace({
   rows,
   canConfirm,
   canCancel,
+  canRequestCancel = false,
   canRegister = false,
+  canConvert = false,
   canCreate,
   canBlock = false,
   canBook = false,
@@ -31,7 +33,9 @@ export default function BookingsWorkspace({
   rows: BookingRow[];
   canConfirm: boolean;
   canCancel: boolean;
+  canRequestCancel?: boolean;
   canRegister?: boolean;
+  canConvert?: boolean;
   canCreate: boolean;
   canBlock?: boolean;
   canBook?: boolean;
@@ -50,7 +54,9 @@ export default function BookingsWorkspace({
         rows={rows}
         canConfirm={canConfirm}
         canCancel={canCancel}
+        canRequestCancel={canRequestCancel}
         canRegister={canRegister}
+        canConvert={canConvert}
         showSalesperson={showSalesperson}
       />
     );
@@ -95,7 +101,9 @@ export default function BookingsWorkspace({
         rows={rows}
         canConfirm={canConfirm}
         canCancel={canCancel}
+        canRequestCancel={canRequestCancel}
         canRegister={canRegister}
+        canConvert={canConvert}
         showSalesperson={showSalesperson}
       />
     </div>

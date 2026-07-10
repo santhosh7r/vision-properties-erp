@@ -21,7 +21,7 @@ export type BookMode = "blocking" | "booking";
 export type BookingStatus = "pending" | "confirmed" | "cancelled";
 export type PaymentStatus = "pending" | "completed";
 export type PaymentKind = "blocking" | "advance" | "installment" | "final";
-export type LoanTokenBy = "customer" | "director";
+export type LoanTokenBy = "customer" | "senior_director";
 
 export interface User {
   id: string;
@@ -162,6 +162,9 @@ export interface Booking {
   payment_status: PaymentStatus;
   expires_at: string | null;
   released_at: string | null;
+  // Expiry release + admin extend — migration 0023
+  expired_at: string | null;
+  pre_expiry_status: BookingStatus | null;
   // §3 cancellation & refund
   cancellation_reason: string | null;
   cancellation_charge: number | null;
@@ -171,6 +174,10 @@ export interface Booking {
   refund_approved_at: string | null;
   refund_due_date: string | null;
   refund_paid_at: string | null;
+  // Cancellation request (non-admin sales asks Admin to cancel) — migration 0021
+  cancel_requested_by: string | null;
+  cancel_requested_at: string | null;
+  cancel_request_reason: string | null;
   created_by: string | null;
   created_at: string;
 }
@@ -181,6 +188,9 @@ export interface Payment {
   amount: number;
   kind: PaymentKind;
   mode: string | null;
+  reference: string | null;
+  bank_name: string | null;
+  instrument_date: string | null;
   status: PaymentStatus;
   paid_at: string;
   recorded_by: string | null;

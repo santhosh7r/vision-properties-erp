@@ -16,6 +16,7 @@ export interface LedgerRow {
   kind: string;
   amount: number;
   mode: string;
+  reference: string;
   recordedBy: string;
   status: string;
 }
@@ -69,7 +70,17 @@ export default function PaymentLedger({ rows }: { rows: LedgerRow[] }) {
         </span>
       ),
     },
-    { id: "mode", header: "Mode", hideBelow: "lg", cell: (r) => r.mode },
+    {
+      id: "mode",
+      header: "Mode",
+      hideBelow: "lg",
+      cell: (r) => (
+        <div className="leading-tight">
+          <div>{r.mode}</div>
+          {r.reference && <div className="text-xs text-[var(--muted)]">{r.reference}</div>}
+        </div>
+      ),
+    },
     { id: "recordedBy", header: "Recorded By", hideBelow: "lg", sort: (r) => r.recordedBy.toLowerCase(), cell: (r) => r.recordedBy },
     { id: "status", header: "Status", cell: (r) => <PaymentBadge status={r.status} /> },
     {
@@ -94,7 +105,7 @@ export default function PaymentLedger({ rows }: { rows: LedgerRow[] }) {
       rows={rows}
       columns={columns}
       getRowHref={(r) => `/bookings/${r.bookingId}`}
-      search={(r) => `${r.customer} ${r.project} ${r.plot} ${r.kind} ${r.mode} ${r.recordedBy}`}
+      search={(r) => `${r.customer} ${r.project} ${r.plot} ${r.kind} ${r.mode} ${r.reference} ${r.recordedBy}`}
       searchPlaceholder="Search customer, project, plot, who paid…"
       filters={[
         {

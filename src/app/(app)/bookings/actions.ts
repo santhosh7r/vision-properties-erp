@@ -17,6 +17,21 @@ function nullable(v: FormDataEntryValue | null): string | null {
   return t === "" ? null : t;
 }
 
+// Instrument details captured alongside a payment (cheque no / UTR / UPI txn id
+// / lender + a date). Which of these the form actually collected depends on the
+// selected Mode (see PAYMENT_MODE_FIELDS) — we just persist whatever was sent.
+function paymentDetails(f: FormData): {
+  reference: string | null;
+  bank_name: string | null;
+  instrument_date: string | null;
+} {
+  return {
+    reference: nullable(f.get("reference")),
+    bank_name: nullable(f.get("bank_name")),
+    instrument_date: nullable(f.get("instrument_date")),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // LOOK UP a sales person by their Partner ID (SD#/D#/BM#/BP#). Returns the
 // partner's name plus the director above them in the chain (their nearest
@@ -136,10 +151,13 @@ export async function createBooking(formData: FormData): Promise<void> {
     const mobile = s(formData.get("mobile"));
     if (!name || !mobile) redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=customer`);
 
+    // Reuse only the actor's OWN customer for this mobile — another salesperson's
+    // record with the same number is a separate customer, not to be shared.
     const { data: existingCust } = await sb
       .from("customers")
       .select("id")
       .eq("mobile", mobile)
+      .eq("created_by", actor.id)
       .maybeSingle();
     if (existingCust) {
       customer_id = existingCust.id;
@@ -163,8 +181,21 @@ export async function createBooking(formData: FormData): Promise<void> {
         })
         .select("id")
         .single();
-      if (error || !newCust) return;
-      customer_id = newCust.id;
+      if (error || !newCust) {
+        // A concurrent booking may have just created this customer (unique
+        // (created_by, mobile)) — link to the actor's own existing record rather
+        // than failing/duplicating.
+        const { data: raced } = await sb
+          .from("customers")
+          .select("id")
+          .eq("mobile", mobile)
+          .eq("created_by", actor.id)
+          .maybeSingle();
+        if (!raced) return;
+        customer_id = raced.id;
+      } else {
+        customer_id = newCust.id;
+      }
     }
   }
 
@@ -230,6 +261,7 @@ export async function createBooking(formData: FormData): Promise<void> {
       amount: amountPaidNow,
       kind: mode === "blocking" ? "blocking" : "advance",
       mode: paymentMode,
+      ...paymentDetails(formData),
       status: "completed",
       recorded_by: actor.id,
     });
@@ -292,9 +324,17 @@ export async function recordPayment(formData: FormData): Promise<void> {
     amount,
     kind,
     mode,
+    ...paymentDetails(formData),
     status: "completed",
     recorded_by: actor.id,
   });
+  // Reflect the latest mode / loan arranger on the booking too (for a home loan
+  // the form captures who took it).
+  const loan_token_by = (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null;
+  await sb
+    .from("bookings")
+    .update({ mode_of_payment: mode, ...(loan_token_by ? { loan_token_by } : {}) })
+    .eq("id", booking_id);
   await recomputePayment(booking_id);
   await logAudit(actor, "payment", booking_id, "record", `₹${amount} (${kind})`);
   await notify(booking_id, "sms", null, `Payment of ₹${amount} received and recorded.`);
@@ -360,7 +400,9 @@ export async function confirmBooking(formData: FormData): Promise<void> {
     .maybeSingle();
   if (!booking) return;
 
-  await sb.from("bookings").update({ status: "confirmed", expires_at: null }).eq("id", id);
+  // Keep expires_at so the hold's deadline keeps running through 'confirmed'
+  // right up until the plot is registered (registration clears it).
+  await sb.from("bookings").update({ status: "confirmed" }).eq("id", id);
   // Confirming a blocking promotes it to a booking; plot becomes booked.
   await sb.from("plots").update({ status: "booked" }).eq("id", booking.plot_id);
 
@@ -378,10 +420,21 @@ export async function cancelBooking(formData: FormData): Promise<void> {
 
   const { data: booking } = await sb
     .from("bookings")
-    .select("plot_id, advance_paid, booked_date, created_at, projects(*)")
+    .select("plot_id, advance_paid, booked_date, created_at, cancel_request_reason, projects(*)")
     .eq("id", id)
     .maybeSingle();
   if (!booking) return;
+
+  // A registered plot is sold and final — it can never be cancelled. The UI hides
+  // the Cancel action once a registration exists, but guard here too so a stale
+  // page or direct POST can't flip a registered booking (and its plot) back to
+  // "cancelled" and orphan the registration + its auto-issued coupons.
+  const { data: reg } = await sb
+    .from("registrations")
+    .select("id")
+    .eq("booking_id", id)
+    .maybeSingle();
+  if (reg) redirect(`/bookings/${id}?error=already_registered`);
 
   // §3 Refund computation from the project's editable policy.
   const project = booking.projects as unknown as {
@@ -401,10 +454,16 @@ export async function cancelBooking(formData: FormData): Promise<void> {
     .update({
       status: "cancelled",
       released_at: nowIso,
-      cancellation_reason: nullable(formData.get("reason")),
+      // Fall back to the reason captured on the sales request when an Admin
+      // cancels straight from the request list (no reason re-typed).
+      cancellation_reason: nullable(formData.get("reason")) ?? booking.cancel_request_reason ?? null,
       cancellation_charge: r.charge,
       refund_amount: r.refund,
       refund_status,
+      // Clear any pending cancellation request now that it's actioned.
+      cancel_requested_by: null,
+      cancel_requested_at: null,
+      cancel_request_reason: null,
     })
     .eq("id", id);
   // Hold the plot as 'cancelled' (not 'available') so an Admin releases it from
@@ -426,6 +485,63 @@ export async function cancelBooking(formData: FormData): Promise<void> {
       ? `Booking cancelled. Refund of ₹${r.refund} is pending approval${r.charge ? ` (₹${r.charge} admin charge deducted)` : ""}.`
       : "Booking cancelled. The plot has been released back to inventory.",
   );
+  revalidatePath(`/bookings/${id}`);
+  revalidatePath("/bookings");
+}
+
+// ---------------------------------------------------------------------------
+// CANCELLATION REQUEST (non-admin sales) → surfaces to Admin in Payments &
+// Cancellation. Only Admin holds cancel_booking; everyone else records a
+// request with a mandatory reason for an Admin to action or dismiss.
+// ---------------------------------------------------------------------------
+export async function requestCancellation(formData: FormData): Promise<void> {
+  const actor = await requireCapability("request_cancellation");
+  const sb = getSupabase();
+  const id = s(formData.get("id"));
+  const reason = nullable(formData.get("reason"));
+  if (!id || !reason) return;
+
+  const { data: booking } = await sb
+    .from("bookings")
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!booking || booking.status === "cancelled") return;
+
+  // A registered plot is sold and final — never cancellable, so block the request.
+  const { data: reg } = await sb.from("registrations").select("id").eq("booking_id", id).maybeSingle();
+  if (reg) redirect(`/bookings/${id}?error=already_registered`);
+
+  await sb
+    .from("bookings")
+    .update({
+      cancel_requested_by: actor.id,
+      cancel_requested_at: new Date().toISOString(),
+      cancel_request_reason: reason,
+    })
+    .eq("id", id);
+
+  await logAudit(actor, "booking", id, "request_cancel", reason);
+  revalidatePath(`/bookings/${id}`);
+  revalidatePath("/bookings");
+  revalidatePath("/payments");
+  redirect(`/bookings/${id}`);
+}
+
+// Admin dismisses a pending cancellation request without cancelling the booking.
+export async function dismissCancellationRequest(formData: FormData): Promise<void> {
+  const actor = await requireCapability("cancel_booking");
+  const sb = getSupabase();
+  const id = s(formData.get("id"));
+  if (!id) return;
+
+  await sb
+    .from("bookings")
+    .update({ cancel_requested_by: null, cancel_requested_at: null, cancel_request_reason: null })
+    .eq("id", id);
+
+  await logAudit(actor, "booking", id, "dismiss_cancel_request");
+  revalidatePath("/payments");
   revalidatePath(`/bookings/${id}`);
   revalidatePath("/bookings");
 }
@@ -590,11 +706,50 @@ export async function convertToBooking(formData: FormData): Promise<void> {
     .eq("id", booking.project_id)
     .maybeSingle();
   const days = project?.booking_window_days ?? 15;
-  const expires_at = new Date(Date.now() + days * 86_400_000).toISOString();
+  const now = Date.now();
+  const expires_at = new Date(now + days * 86_400_000).toISOString();
+  // The hold becomes a booking NOW — stamp the booking date to today and reset
+  // the deal to 'pending' so it must be confirmed afresh as a booking.
+  const booked_date = new Date(now).toISOString().slice(0, 10);
 
-  await sb.from("bookings").update({ book_mode: "booking", expires_at }).eq("id", id);
+  const mode = nullable(formData.get("mode"));
+  const loan_token_by = (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null;
+
+  await sb
+    .from("bookings")
+    .update({
+      book_mode: "booking",
+      status: "pending",
+      booked_date,
+      expires_at,
+      mode_of_payment: mode,
+      loan_token_by,
+    })
+    .eq("id", id);
   await sb.from("plots").update({ status: "booked" }).eq("id", booking.plot_id);
+
+  // Record the advance collected at conversion so the ledger + payment status
+  // reflect it (same shape as recordPayment).
+  const amount = Number(formData.get("amount") || 0);
+  if (amount > 0) {
+    await sb.from("payments").insert({
+      booking_id: id,
+      amount,
+      kind: "advance",
+      mode,
+      ...paymentDetails(formData),
+      status: "completed",
+      recorded_by: actor.id,
+    });
+    await recomputePayment(id);
+    await logAudit(actor, "payment", id, "record", `₹${amount} (advance · conversion)`);
+  }
+
   await logAudit(actor, "booking", id, "convert_to_booking");
   await notify(id, "sms", null, "Your hold has been converted to a booking.");
   revalidatePath(`/bookings/${id}`);
+  revalidatePath("/bookings");
+  revalidatePath("/payments");
+  // Navigate so the popup unmounts and the refreshed booking is shown.
+  redirect(`/bookings/${id}`);
 }

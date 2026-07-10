@@ -298,6 +298,8 @@ create table if not exists bookings (
   payment_status           payment_status not null default 'pending',
   expires_at               timestamptz,                        -- block/booking window deadline
   released_at              timestamptz,                        -- when reverted to company
+  expired_at               timestamptz,                        -- when auto-expired (extendable on Plot Release until re-taken)
+  pre_expiry_status        booking_status,                     -- status before expiry, restored on admin extend
   -- §3 Cancellation & refund -----------------------------------------------------
   cancellation_reason      text,
   cancellation_charge      numeric(14,2),

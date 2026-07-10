@@ -125,6 +125,7 @@ export type Capability =
   | "approve_booking"
   | "confirm_booking"
   | "cancel_booking"
+  | "request_cancellation"
   | "record_payment"
   | "manage_registration"
   | "approve_refund"
@@ -158,13 +159,15 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "view_legal",
     "view_reports",
   ],
+  // Only Admin holds `cancel_booking`. Every sales role can `request_cancellation`
+  // (with a reason) for an Admin to action — see Payments & Cancellation.
   senior_director: [
     "manage_team",
     "manage_customers",
     "create_blocking",
     "approve_booking",
     "confirm_booking",
-    "cancel_booking",
+    "request_cancellation",
     "manage_transfer",
     "request_cab",
     "create_request",
@@ -176,7 +179,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "create_blocking",
     "approve_booking",
     "confirm_booking",
-    "cancel_booking",
+    "request_cancellation",
     "manage_transfer",
     "request_cab",
     "create_request",
@@ -190,12 +193,12 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "create_blocking",
     "approve_booking",
     "confirm_booking",
-    "cancel_booking",
+    "request_cancellation",
     "manage_transfer",
     "request_cab",
     "view_reports",
   ],
-  business_partner: ["manage_customers", "create_blocking", "request_cab"],
+  business_partner: ["manage_customers", "create_blocking", "request_cancellation", "request_cab"],
   finance: ["record_payment", "view_finance", "view_reports"],
   legal: ["manage_registration", "view_legal", "view_reports"],
 };

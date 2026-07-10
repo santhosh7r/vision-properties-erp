@@ -14,11 +14,14 @@ export async function createCustomer(formData: FormData): Promise<void> {
   const name = String(formData.get("name") || "").trim();
   if (!name || !mobile) return;
 
-  // Duplicate detection by mobile (board: customer must exist before booking).
+  // Duplicate detection by mobile, scoped to THIS salesperson's own book. The
+  // same number under a different salesperson is a separate customer, so we only
+  // block a duplicate the actor already owns (created).
   const { data: existing } = await sb
     .from("customers")
     .select("id")
     .eq("mobile", mobile)
+    .eq("created_by", actor.id)
     .maybeSingle();
   if (existing) {
     redirect(`/customers/${existing.id}?dup=1`);
@@ -41,7 +44,18 @@ export async function createCustomer(formData: FormData): Promise<void> {
   };
 
   const { data, error } = await sb.from("customers").insert(payload).select("id").single();
-  if (error || !data) return;
+  if (error || !data) {
+    // Unique(created_by, mobile) violation from a race — surface the actor's own
+    // existing customer for this mobile.
+    const { data: ex } = await sb
+      .from("customers")
+      .select("id")
+      .eq("mobile", mobile)
+      .eq("created_by", actor.id)
+      .maybeSingle();
+    if (ex) redirect(`/customers/${ex.id}?dup=1`);
+    return;
+  }
   await logAudit(actor, "customer", data.id, "create", name);
 
   const next = String(formData.get("next") || "");
@@ -57,15 +71,26 @@ export async function updateCustomer(formData: FormData): Promise<void> {
   const name = String(formData.get("name") || "").trim();
   if (!id || !name || !mobile) return;
 
-  // Block changing mobile to one already used by a DIFFERENT customer.
-  const { data: clash } = await sb
+  // Block changing mobile to one already held by a DIFFERENT customer in the
+  // SAME book — i.e. owned by whoever owns the record being edited (which may be
+  // a salesperson, when an admin/network head edits on their behalf). A clash
+  // with another salesperson's customer is allowed — their books are independent.
+  const { data: current } = await sb
     .from("customers")
-    .select("id")
-    .eq("mobile", mobile)
-    .neq("id", id)
+    .select("created_by")
+    .eq("id", id)
     .maybeSingle();
-  if (clash) {
-    redirect(`/customers/${id}/edit?err=dup`);
+  if (current?.created_by) {
+    const { data: clash } = await sb
+      .from("customers")
+      .select("id")
+      .eq("mobile", mobile)
+      .eq("created_by", current.created_by)
+      .neq("id", id)
+      .maybeSingle();
+    if (clash) {
+      redirect(`/customers/${id}/edit?err=dup`);
+    }
   }
 
   const payload = {

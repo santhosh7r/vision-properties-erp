@@ -7,7 +7,6 @@ import { SubmitButton } from "@/components/SubmitButton";
 import CustomerFields from "@/components/CustomerFields";
 import type { Customer } from "@/lib/types";
 import { updateCustomer } from "../../actions";
-import { getDistrictNames } from "@/lib/districts";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +25,6 @@ export default async function EditCustomerPage({
   const { data } = await sb.from("customers").select("*").eq("id", id).maybeSingle();
   if (!data) notFound();
   const customer = data as Customer;
-  const districts = await getDistrictNames(sb);
 
   return (
     <>
@@ -45,7 +43,7 @@ export default async function EditCustomerPage({
       <form action={updateCustomer} className="max-w-3xl space-y-6">
         <input type="hidden" name="id" value={customer.id} />
         <div className="card">
-          <CustomerFields c={customer} districts={districts} />
+          <CustomerFields c={customer} />
         </div>
         <div className="flex justify-end gap-3">
           <Link href={`/customers/${id}`} className="btn-ghost">Cancel</Link>

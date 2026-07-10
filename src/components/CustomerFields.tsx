@@ -1,49 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { OCCUPATIONS } from "@/lib/options";
+import { DISTRICTS, OCCUPATIONS } from "@/lib/options";
 import type { Customer } from "@/lib/types";
 
 // Shared Customer Details fieldset. Reused by the standalone "Add Customer"
 // page and inline in the booking form.
-// Pincode auto-fills State / District / Country via the free India Post API;
-// the fields stay editable so any value can be corrected.
+// District is a fixed dropdown from the app-wide master (DISTRICTS). Pincode is
+// captured as a plain number — no external lookup / auto-fill.
 export default function CustomerFields({
   c,
-  districts = [],
 }: {
   c?: Partial<Customer>;
-  districts?: string[];
 }) {
   const [pincode, setPincode] = useState(c?.pincode ?? "");
-  const [state, setState] = useState(c?.state ?? "");
-  const [district, setDistrict] = useState(c?.district ?? "");
-  const [country, setCountry] = useState(c?.country ?? "");
-  const [lookup, setLookup] = useState<"idle" | "loading" | "error">("idle");
 
-  async function onPincodeChange(value: string) {
-    const pin = value.replace(/\D/g, "").slice(0, 6);
-    setPincode(pin);
-    if (pin.length !== 6) {
-      setLookup("idle");
-      return;
-    }
-    setLookup("loading");
-    try {
-      const res = await fetch(`https://api.postalpincode.in/pincode/${pin}`);
-      const data = await res.json();
-      const office = data?.[0]?.Status === "Success" ? data[0].PostOffice?.[0] : null;
-      if (office) {
-        setState(office.State ?? "");
-        setDistrict(office.District ?? "");
-        setCountry(office.Country ?? "India");
-        setLookup("idle");
-      } else {
-        setLookup("error");
-      }
-    } catch {
-      setLookup("error");
-    }
+  function onPincodeChange(value: string) {
+    setPincode(value.replace(/\D/g, "").slice(0, 6));
   }
 
   return (
@@ -61,8 +34,8 @@ export default function CustomerFields({
         <input name="email" type="email" className="input" defaultValue={c?.email ?? ""} placeholder="name@example.com" />
       </div>
       <div>
-        <label className="label">4. D.O.B</label>
-        <input name="dob" type="date" className="input" defaultValue={c?.dob ?? ""} />
+        <label className="label">4. D.O.B *</label>
+        <input name="dob" type="date" className="input" defaultValue={c?.dob ?? ""} required />
       </div>
       <div>
         <label className="label">5. Street</label>
@@ -83,37 +56,27 @@ export default function CustomerFields({
           onChange={(e) => onPincodeChange(e.target.value)}
           placeholder="6-digit PIN"
         />
-        <p className="mt-1 text-xs text-[var(--muted)]">
-          {lookup === "loading"
-            ? "Looking up location…"
-            : lookup === "error"
-              ? "Couldn’t find that PIN — enter location manually."
-              : "State, district & country auto-fill from PIN."}
-        </p>
       </div>
       <div>
         <label className="label">8. State</label>
-        <input name="state" className="input" value={state} onChange={(e) => setState(e.target.value)} />
+        <input name="state" className="input" defaultValue={c?.state ?? ""} />
       </div>
       <div>
-        <label className="label">9. District</label>
-        <select
-          name="district"
-          className="select"
-          value={district}
-          onChange={(e) => setDistrict(e.target.value)}
-        >
-          <option value="">— Select district —</option>
-          {/* keep a pincode-filled value selectable even if not in the master list */}
-          {district && !districts.includes(district) && <option value={district}>{district}</option>}
-          {districts.map((d) => (
+        <label className="label">9. District *</label>
+        <select name="district" className="select" defaultValue={c?.district ?? ""} required>
+          <option value="" disabled>— Select district —</option>
+          {/* preserve an existing saved value even if it's no longer in the master list */}
+          {c?.district && !DISTRICTS.includes(c.district) && (
+            <option value={c.district}>{c.district}</option>
+          )}
+          {DISTRICTS.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>
       </div>
       <div>
         <label className="label">10. Country</label>
-        <input name="country" className="input" value={country} onChange={(e) => setCountry(e.target.value)} />
+        <input name="country" className="input" defaultValue={c?.country ?? "India"} />
       </div>
       <div>
         <label className="label">11. Occupation</label>

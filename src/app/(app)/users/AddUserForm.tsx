@@ -11,6 +11,7 @@ import {
 } from "@/lib/roles";
 import { createUser } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { DISTRICTS } from "@/lib/options";
 
 export interface ManagerOption {
   id: string;
@@ -54,10 +55,8 @@ const MAX_RESULTS = 50;
 //   Admin           -> none (top of the org)
 export default function AddUserForm({
   managers,
-  districts = [],
 }: {
   managers: ManagerOption[];
-  districts?: string[];
 }) {
   const [role, setRole] = useState<Role | "">("");
   const [managerId, setManagerId] = useState("");
@@ -132,7 +131,7 @@ export default function AddUserForm({
         <label className="label">District</label>
         <select name="district" className="select" defaultValue="">
           <option value="">— Select district —</option>
-          {districts.map((d) => (
+          {DISTRICTS.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>

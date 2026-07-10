@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui";
-import { NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
+import { LOAN_TOKEN_BY_OPTIONS, NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
 import { updateBooking } from "../../actions";
 import PartnerDetailsFields from "../../PartnerDetailsFields";
@@ -114,11 +114,12 @@ export default async function EditBookingPage({
               </select>
             </div>
             <div>
-              <label className="label">Loan Token By</label>
+              <label className="label">Loan Taken By</label>
               <select name="loan_token_by" className="select" defaultValue={b.loan_token_by ?? ""}>
                 <option value="">Select</option>
-                <option value="customer">Customer</option>
-                <option value="director">Director</option>
+                {LOAN_TOKEN_BY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
             </div>
             <div>

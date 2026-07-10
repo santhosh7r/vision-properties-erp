@@ -4,7 +4,9 @@ import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
-import { inr, fmtDate, fmtDateTime, timeLeft } from "@/lib/format";
+import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
+import { loanTokenByLabel } from "@/lib/options";
+import Countdown from "@/components/Countdown";
 import {
   PageHeader,
   BookingStatusBadge,
@@ -13,15 +15,16 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { computeRefund } from "@/lib/sop";
-import { PAYMENT_MODES } from "@/lib/options";
 import PrintReceiptButton from "./PrintReceiptButton";
+import RecordPaymentForm from "../RecordPaymentForm";
+import ConvertToBookingButton from "../ConvertToBookingButton";
+import RequestCancelButton from "../RequestCancelButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { Booking, Customer, Payment, Plot, Project, PlotTransfer } from "@/lib/types";
 import {
   confirmBooking,
   cancelBooking,
-  convertToBooking,
-  recordPayment,
+  dismissCancellationRequest,
   approveRefund,
   markRefundPaid,
   transferBooking,
@@ -42,12 +45,21 @@ const REFUND_LABEL: Record<string, string> = {
 
 export const dynamic = "force-dynamic";
 
+const BOOKING_ERRORS: Record<string, string> = {
+  already_registered:
+    "This plot is already registered, so the booking can’t be cancelled. A registered plot is sold and final.",
+};
+
 export default async function BookingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
+  const { error: errorKey } = await searchParams;
+  const bookingError = errorKey ? BOOKING_ERRORS[errorKey] : undefined;
   const user = await requireUser();
   await sweepExpiredBookings();
   const sb = getSupabase();
@@ -78,9 +90,21 @@ export default async function BookingDetailPage({
     .eq("booking_id", id)
     .maybeSingle();
 
+  // Hold deadline = expires_at (kept through 'confirmed' until registration).
+  // Fallback for older confirmed rows: created_at + that project's window
+  // (blocking → hours, booking → days).
+  const winMs =
+    b.book_mode === "blocking"
+      ? (b.projects.blocking_window_hours ?? 0) * 3_600_000
+      : (b.projects.booking_window_days ?? 0) * 86_400_000;
+  const deadline =
+    b.expires_at ??
+    (b.created_at && winMs > 0 ? new Date(new Date(b.created_at).getTime() + winMs).toISOString() : null);
+
   const balance = Math.max(0, b.total_plot_value - b.advance_paid);
   const canConfirm = can(user.role, "confirm_booking");
   const canCancel = can(user.role, "cancel_booking");
+  const canRequestCancel = can(user.role, "request_cancellation");
   const canPay = can(user.role, "record_payment");
   const canConvert = can(user.role, "create_booking");
   const canRegister = can(user.role, "manage_registration");
@@ -121,14 +145,23 @@ export default async function BookingDetailPage({
         action={<PrintReceiptButton id={b.id} />}
       />
 
+      {bookingError && (
+        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {bookingError}
+        </div>
+      )}
+
       {/* Status strip */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
+        <span className="rounded-md border px-2 py-0.5 font-mono text-xs text-[var(--muted)]" title="Order reference">
+          Ref {shortRef(b.id)}
+        </span>
         <BookingStatusBadge status={b.status} />
         <PaymentBadge status={b.payment_status} />
         <Badge tone={b.book_mode === "blocking" ? "amber" : "blue"}>{b.book_mode}</Badge>
-        {b.status === "pending" && b.expires_at && (
+        {b.status !== "cancelled" && !reg && deadline && (
           <span className="text-xs text-[var(--muted)]">
-            {timeLeft(b.expires_at)} (until {fmtDateTime(b.expires_at)})
+            <Countdown deadline={deadline} /> (until {fmtDateTime(deadline)})
           </span>
         )}
       </div>
@@ -181,7 +214,7 @@ export default async function BookingDetailPage({
             <Grid>
               <F label="Tentative Registration">{fmtDate(b.tentative_registration_date)}</F>
               <F label="Mode of Payment">{b.mode_of_payment ?? "—"}</F>
-              <F label="Loan Token By">{b.loan_token_by ?? "—"}</F>
+              <F label="Loan Taken By">{loanTokenByLabel(b.loan_token_by)}</F>
               <F label="Booked Date">{fmtDate(b.booked_date)}</F>
               {b.book_mode === "blocking" && <F label="Blocking Amount">{inr(b.blocking_amount)}</F>}
               <F label="Advance Required">{inr(b.advance_required)}</F>
@@ -203,6 +236,7 @@ export default async function BookingDetailPage({
                       <th className="th">Date</th>
                       <th className="th">Kind</th>
                       <th className="th">Mode</th>
+                      <th className="th">Reference</th>
                       <th className="th">Amount</th>
                     </tr>
                   </thead>
@@ -212,6 +246,17 @@ export default async function BookingDetailPage({
                         <td className="td">{fmtDateTime(p.paid_at)}</td>
                         <td className="td capitalize">{p.kind}</td>
                         <td className="td">{p.mode ?? "—"}</td>
+                        <td className="td">
+                          {p.reference || p.bank_name || p.instrument_date ? (
+                            <span className="text-xs">
+                              {[p.reference, p.bank_name, p.instrument_date ? fmtDate(p.instrument_date) : null]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td className="td">{inr(p.amount)}</td>
                       </tr>
                     ))}
@@ -267,25 +312,49 @@ export default async function BookingDetailPage({
               )}
 
               {b.book_mode === "blocking" && b.status === "pending" && canConvert && (
-                <form action={convertToBooking}>
-                  <input type="hidden" name="id" value={b.id} />
-                  <SubmitButton className="btn-primary w-full" pendingLabel="Converting…">Convert to Booking</SubmitButton>
-                </form>
+                <ConvertToBookingButton
+                  bookingId={b.id}
+                  advanceRequired={b.advance_required}
+                  className="btn-primary w-full"
+                />
               )}
 
+              {/* Pending cancellation request — shown to everyone; Admin acts on it. */}
+              {b.cancel_requested_at && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                  <p className="font-semibold">Cancellation requested</p>
+                  {b.cancel_request_reason && <p className="mt-0.5 opacity-90">“{b.cancel_request_reason}”</p>}
+                  {!canCancel && <p className="mt-0.5 opacity-80">Pending Admin review.</p>}
+                </div>
+              )}
+
+              {/* Admin: cancel directly (reason optional — falls back to the request's reason). */}
               {canCancel && !reg && (
-                <form action={cancelBooking} className="space-y-2">
-                  <input type="hidden" name="id" value={b.id} />
-                  <input name="reason" className="input" placeholder="Cancellation reason (optional)" />
-                  {refundPreview && (
-                    <p className="text-xs text-[var(--muted)]">
-                      {refundPreview.withinFullRefundWindow
-                        ? `Within ${b.projects.cancel_full_refund_days}-day window → full refund of ${inr(refundPreview.refund)}.`
-                        : `After ${b.projects.cancel_full_refund_days}-day window → refund ${inr(refundPreview.refund)} (₹ charge ${inr(refundPreview.charge)}).`}
-                    </p>
+                <>
+                  <form action={cancelBooking} className="space-y-2">
+                    <input type="hidden" name="id" value={b.id} />
+                    <input name="reason" className="input" placeholder="Cancellation reason (optional)" />
+                    {refundPreview && (
+                      <p className="text-xs text-[var(--muted)]">
+                        {refundPreview.withinFullRefundWindow
+                          ? `Within ${b.projects.cancel_full_refund_days}-day window → full refund of ${inr(refundPreview.refund)}.`
+                          : `After ${b.projects.cancel_full_refund_days}-day window → refund ${inr(refundPreview.refund)} (₹ charge ${inr(refundPreview.charge)}).`}
+                      </p>
+                    )}
+                    <SubmitButton className="btn-danger w-full" pendingLabel="Cancelling…">Cancel Booking</SubmitButton>
+                  </form>
+                  {b.cancel_requested_at && (
+                    <form action={dismissCancellationRequest}>
+                      <input type="hidden" name="id" value={b.id} />
+                      <SubmitButton className="btn-ghost w-full" pendingLabel="Dismissing…">Dismiss Request</SubmitButton>
+                    </form>
                   )}
-                  <SubmitButton className="btn-danger w-full" pendingLabel="Cancelling…">Cancel Booking</SubmitButton>
-                </form>
+                </>
+              )}
+
+              {/* Non-admin sales: raise a cancellation request (unless one's pending). */}
+              {!canCancel && canRequestCancel && !reg && !b.cancel_requested_at && (
+                <RequestCancelButton bookingId={b.id} className="btn-danger w-full" />
               )}
 
               {/* Admin may convert any active booking/blocking straight into a
@@ -334,34 +403,7 @@ export default async function BookingDetailPage({
           {canPay && b.status !== "cancelled" && (
             <div className="card">
               <h2 className="mb-3 text-sm font-semibold">Record Payment</h2>
-              <form action={recordPayment} className="space-y-3">
-                <input type="hidden" name="booking_id" value={b.id} />
-                <div>
-                  <label className="label">Amount (₹)</label>
-                  <input name="amount" type="number" min={1} className="input" required />
-                </div>
-                <div>
-                  <label className="label">Kind</label>
-                  <select name="kind" className="select" defaultValue="installment">
-                    <option value="advance">Advance</option>
-                    <option value="installment">Installment</option>
-                    <option value="final">Final</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Mode</label>
-                  <select name="mode" className="select" defaultValue="">
-                    <option value="" disabled>Select mode</option>
-                    {PAYMENT_MODES.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-                <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add Payment</SubmitButton>
-                <p className="text-xs text-[var(--muted)]">
-                  Payment stays Pending until the full plot value is received.
-                </p>
-              </form>
+              <RecordPaymentForm bookingId={b.id} balance={balance} />
             </div>
           )}
 

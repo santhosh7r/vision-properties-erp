@@ -4,10 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import CustomerFields from "@/components/CustomerFields";
 import { SubmitButton } from "@/components/SubmitButton";
-import { NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
+import { LOAN_TOKEN_BY_OPTIONS, NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
 import { computeAdvanceRequired } from "@/lib/sop";
 import { createBooking } from "../actions";
 import PartnerDetailsFields from "../PartnerDetailsFields";
+import PaymentModeFields from "../PaymentModeFields";
 
 interface Props {
   mode: "blocking" | "booking";
@@ -153,11 +154,12 @@ export default function BookingForm({ mode, plot, project }: Props) {
             </select>
           </div>
           <div>
-            <label className="label">24. Loan Token By</label>
+            <label className="label">24. Loan Taken By</label>
             <select name="loan_token_by" className="select" defaultValue="">
               <option value="">Select</option>
-              <option value="customer">Customer</option>
-              <option value="director">Director</option>
+              {LOAN_TOKEN_BY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -204,46 +206,28 @@ export default function BookingForm({ mode, plot, project }: Props) {
               min={0}
             />
           </div>
-          <div>
-            <label className="label">Payment Mode</label>
-            <select name="payment_mode" className="select" defaultValue="">
-              <option value="">Select</option>
-              {PAYMENT_MODES.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
+          <PaymentModeFields modeName="payment_mode" label="Payment Mode" />
         </div>
 
-        {/* Lock status — paid-in-full vs shortfall */}
-        <div
-          className={`mt-4 rounded-lg border px-3 py-3 text-xs ${
-            underpaid
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-          }`}
-        >
-          <div className="flex flex-wrap justify-between gap-2">
-            <span>
-              Required to {mode === "blocking" ? "block" : "book"}: <b>{inr(requiredToLock)}</b>
-              <span className="mx-2 opacity-50">·</span>
-              Paying now: <b>{inr(paidNow)}</b>
-            </span>
-            <span className="font-semibold">
-              {underpaid
-                ? `Short by ${inr(shortfall)} — plot stays AVAILABLE`
-                : `Full ${mode === "blocking" ? "blocking amount" : "advance"} paid — plot will be ${
-                    mode === "blocking" ? "BLOCKED" : "BOOKED"
-                  }`}
-            </span>
-          </div>
-          {underpaid && (
+        {/* Only warn when short — the full-paid "success" banner is dropped; a
+            sufficient amount simply enables the Block/Book button below. */}
+        {underpaid && (
+          <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-xs text-amber-600 dark:text-amber-400">
+            <div className="flex flex-wrap justify-between gap-2">
+              <span>
+                Required to {mode === "blocking" ? "block" : "book"}: <b>{inr(requiredToLock)}</b>
+                <span className="mx-2 opacity-50">·</span>
+                Paying now: <b>{inr(paidNow)}</b>
+              </span>
+              <span className="font-semibold">Short by {inr(shortfall)} — plot stays AVAILABLE</span>
+            </div>
             <p className="mt-1 opacity-80">
-              The plot only locks once the full {mode === "blocking" ? "blocking amount" : "advance"} is
-              paid. Until then it remains available for others to block.
+              Enter the full {mode === "blocking" ? "blocking amount" : "advance"} in “Amount Paid Now” to{" "}
+              {mode === "blocking" ? "block" : "book"} — until then the button stays disabled and the plot
+              remains available for others.
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-3">

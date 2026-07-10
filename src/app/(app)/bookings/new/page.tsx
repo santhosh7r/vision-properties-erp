@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
 import { PageHeader } from "@/components/ui";
 import type { Customer, Plot, Project } from "@/lib/types";
 import BookingForm from "./BookingForm";
@@ -16,7 +17,7 @@ export default async function NewBookingPage({
   const plotId = sp.plot;
   const mode = sp.mode === "blocking" ? "blocking" : "booking";
   // Sales roles may BLOCK; only Admin may BOOK.
-  await requireCapability(mode === "booking" ? "create_booking" : "create_blocking");
+  const user = await requireCapability(mode === "booking" ? "create_booking" : "create_blocking");
   if (!plotId) redirect("/plots");
 
   const sb = getSupabase();
@@ -32,10 +33,14 @@ export default async function NewBookingPage({
     redirect(`/plots/${plotId}`);
   }
 
-  const { data: custData } = await sb
-    .from("customers")
-    .select("id, name, mobile")
-    .order("name");
+  // Scope the customer picker to the user's own book — a salesperson must not
+  // see (or attach a plot to) another salesperson's customer. Admin sees all.
+  let custQ = sb.from("customers").select("id, name, mobile").order("name");
+  if (user.role !== "admin") {
+    const bookedIds = await ownBookedCustomerIds(sb, user.id);
+    custQ = custQ.or(ownCustomerOrFilter(user.id, bookedIds));
+  }
+  const { data: custData } = await custQ;
 
   return (
     <>

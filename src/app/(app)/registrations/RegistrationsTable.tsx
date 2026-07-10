@@ -1,10 +1,11 @@
 "use client";
 
 import DataTable, { type Column } from "@/components/DataTable";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, shortRef } from "@/lib/format";
 
 export interface RegistrationRow {
   id: string;
+  bookingId: string | null; // source booking — its Ref traces the whole journey
   project: string;
   plot: string;
   register_number: string;
@@ -15,6 +16,7 @@ export interface RegistrationRow {
 
 export default function RegistrationsTable({ rows }: { rows: RegistrationRow[] }) {
   const columns: Column<RegistrationRow>[] = [
+    { id: "ref", header: "Booking Ref", sort: (r) => r.bookingId ?? "", cell: (r) => <span className="font-mono text-xs text-[var(--muted)]">{shortRef(r.bookingId)}</span> },
     { id: "project", header: "Project", sort: (r) => r.project.toLowerCase(), cell: (r) => <span className="font-medium text-[var(--text)]">{r.project}</span> },
     { id: "plot", header: "Plot", cell: (r) => r.plot },
     { id: "regno", header: "Register No", sort: (r) => r.register_number, cell: (r) => <span className="font-medium">{r.register_number}</span> },
@@ -27,7 +29,7 @@ export default function RegistrationsTable({ rows }: { rows: RegistrationRow[] }
     <DataTable
       rows={rows}
       columns={columns}
-      search={(r) => `${r.project} ${r.plot} ${r.register_number} ${r.registrant}`}
+      search={(r) => `${shortRef(r.bookingId)} ${r.project} ${r.plot} ${r.register_number} ${r.registrant}`}
       searchPlaceholder="Search register no, project, registrant…"
       emptyMessage="No registrations yet."
     />

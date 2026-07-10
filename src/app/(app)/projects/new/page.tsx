@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/auth";
-import { APPROVAL_TYPES, PROJECT_TYPES } from "@/lib/options";
+import { APPROVAL_TYPES, DISTRICTS, PROJECT_TYPES } from "@/lib/options";
 import { PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import PolicyFields from "../PolicyFields";
@@ -29,7 +29,12 @@ export default async function NewProjectPage() {
             </div>
             <div>
               <label className="label">District *</label>
-              <input name="district" className="input" required />
+              <select name="district" className="select" required defaultValue="">
+                <option value="" disabled>— Select district —</option>
+                {DISTRICTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label">City *</label>

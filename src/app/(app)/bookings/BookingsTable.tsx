@@ -3,9 +3,12 @@
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge, BookingStatusBadge, PaymentBadge } from "@/components/ui";
-import { fmtDate, timeLeft, inr } from "@/lib/format";
+import { fmtDate, inr, shortRef } from "@/lib/format";
+import Countdown from "@/components/Countdown";
 import { SubmitButton } from "@/components/SubmitButton";
 import { confirmBooking, cancelBooking } from "./actions";
+import ConvertToBookingButton from "./ConvertToBookingButton";
+import RequestCancelButton from "./RequestCancelButton";
 
 export interface BookingRow {
   id: string;
@@ -17,6 +20,9 @@ export interface BookingRow {
   mobile: string;
   salesperson: string;
   value: number;
+  advance_required: number;
+  paid: number; // total received so far (advance_paid)
+  balance: number; // outstanding = value − paid (due before registration)
   booked_date: string | null;
   book_mode: string;
   status: string;
@@ -24,6 +30,8 @@ export interface BookingRow {
   payment_status: string;
   refund_status: string;
   expires_at: string | null;
+  deadline: string | null; // hold deadline = created_at + project window (runs until registration)
+  cancel_requested_at: string | null; // a pending cancellation request (non-admin sales)
   created_at: string;
   registered: boolean; // a registration record already exists for this booking
 }
@@ -42,17 +50,22 @@ export default function BookingsTable({
   rows,
   canConfirm,
   canCancel,
+  canRequestCancel = false,
   canRegister = false,
+  canConvert = false,
   showSalesperson = false,
 }: {
   rows: BookingRow[];
   canConfirm: boolean;
   canCancel: boolean;
+  canRequestCancel?: boolean;
   canRegister?: boolean;
+  canConvert?: boolean;
   showSalesperson?: boolean;
 }) {
   const columns: Column<BookingRow>[] = [
     { id: "sno", header: "#", sort: (r) => r.sno, cell: (r) => <span className="tabular-nums text-[var(--muted)]">{r.sno}</span> },
+    { id: "ref", header: "Ref", sort: (r) => r.id, cell: (r) => <span className="font-mono text-xs text-[var(--muted)]">{shortRef(r.id)}</span> },
     { id: "project", header: "Project", sort: (r) => r.project.toLowerCase(), cell: (r) => <span className="font-medium text-[var(--text)]">{r.project}</span> },
     { id: "plot", header: "Plot No", sort: (r) => r.plot, cell: (r) => r.plot },
     { id: "sqft", header: "Sq.ft", align: "right", hideBelow: "md", sort: (r) => r.sqft ?? 0, cell: (r) => <span className="tabular-nums">{r.sqft ?? "—"}</span> },
@@ -70,6 +83,8 @@ export default function BookingsTable({
         }]
       : []),
     { id: "value", header: "Value", align: "right", sort: (r) => r.value, hideBelow: "lg", cell: (r) => <span className="tabular-nums">{inr(r.value)}</span> },
+    { id: "paid", header: "Paid", align: "right", sort: (r) => r.paid, hideBelow: "lg", cell: (r) => <span className="tabular-nums text-emerald-600 dark:text-emerald-400">{inr(r.paid)}</span> },
+    { id: "balance", header: "Balance", align: "right", sort: (r) => r.balance, hideBelow: "lg", cell: (r) => <span className={`tabular-nums ${r.balance > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--muted)]"}`}>{inr(r.balance)}</span> },
     { id: "mode", header: "Mode", sort: (r) => r.book_mode, cell: (r) =>
       r.status === "cancelled" ? (
         // Cancelled but the plot is still held ('cancelled') = reserved until an
@@ -80,14 +95,17 @@ export default function BookingsTable({
           <Badge tone="gray">released</Badge>
         )
       ) : (
-        <div>
-          <Badge tone={r.book_mode === "blocking" ? "amber" : "blue"}>{r.book_mode}</Badge>
-          {r.status === "pending" && r.expires_at && (
-            <div className="mt-0.5 text-[10px] text-[var(--muted)]">{timeLeft(r.expires_at)}</div>
-          )}
-        </div>
+        <Badge tone={r.book_mode === "blocking" ? "amber" : "blue"}>{r.book_mode}</Badge>
       ) },
     { id: "booked_date", header: "Booked Date", hideBelow: "lg", sort: (r) => r.booked_date ?? "", cell: (r) => <span className="whitespace-nowrap text-[var(--muted)]">{fmtDate(r.booked_date)}</span> },
+    // Live deadline for the hold — blocking counts in hours, booking in days
+    // (that project's window). The clock keeps running through 'confirmed' until
+    // the plot is registered; once registered or cancelled the deal is settled
+    // and there's no deadline to show.
+    { id: "deadline", header: "Deadline", sort: (r) => r.deadline ?? "", cell: (r) =>
+      r.status !== "cancelled" && !r.registered
+        ? <Countdown deadline={r.deadline} />
+        : <span className="text-[var(--muted)]">—</span> },
     { id: "status", header: "Status", sort: (r) => r.status, cell: (r) => <BookingStatusBadge status={r.status} /> },
     { id: "payment", header: "Payment", sort: (r) => r.payment_status, cell: (r) => {
       if (r.status !== "cancelled") return <PaymentBadge status={r.payment_status} />;
@@ -102,6 +120,16 @@ export default function BookingsTable({
             <SubmitButton className="btn-success" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">Confirm</SubmitButton>
           </form>
         )}
+        {/* Promote a pending blocking to a full booking (blocking → booking) —
+            opens a payment/loan popup that records the advance. */}
+        {r.status === "pending" && r.book_mode === "blocking" && canConvert && (
+          <ConvertToBookingButton
+            bookingId={r.id}
+            advanceRequired={r.advance_required}
+            className="btn-primary"
+            style={{ padding: "5px 10px", fontSize: 12 }}
+          />
+        )}
         {/* Admin can take an active plot straight to registration from the list. */}
         {r.status !== "cancelled" && canRegister && !r.registered && (
           <Link
@@ -113,11 +141,19 @@ export default function BookingsTable({
           </Link>
         )}
         {r.registered && <Badge tone="green">Registered</Badge>}
+        {/* Admin cancels directly; sales raise a request. A pending request shows a badge. */}
         {r.status !== "cancelled" && !r.registered && canCancel && (
           <form action={cancelBooking}>
             <input type="hidden" name="id" value={r.id} />
             <SubmitButton className="btn-danger" style={{ padding: "5px 10px", fontSize: 12 }} pendingLabel="…">Cancel</SubmitButton>
           </form>
+        )}
+        {r.status !== "cancelled" && !r.registered && !canCancel && canRequestCancel && (
+          r.cancel_requested_at ? (
+            <Badge tone="amber">Cancel requested</Badge>
+          ) : (
+            <RequestCancelButton bookingId={r.id} className="btn-danger" style={{ padding: "5px 10px", fontSize: 12 }} label="Request Cancel" />
+          )
         )}
       </div>
     ) },
@@ -128,8 +164,8 @@ export default function BookingsTable({
       rows={rows}
       columns={columns}
       getRowHref={(r) => `/bookings/${r.id}`}
-      search={(r) => `${r.project} ${r.plot} ${r.customer} ${r.mobile} ${r.salesperson}`}
-      searchPlaceholder="Search customer, project, plot…"
+      search={(r) => `${shortRef(r.id)} ${r.project} ${r.plot} ${r.customer} ${r.mobile} ${r.salesperson}`}
+      searchPlaceholder="Search ref, customer, project, plot…"
       filters={[
         { id: "status", label: "Status", options: [
           { value: "pending", label: "Pending" },

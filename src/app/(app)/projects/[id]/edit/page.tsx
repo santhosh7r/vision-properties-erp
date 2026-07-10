@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { APPROVAL_TYPES, PROJECT_TYPES } from "@/lib/options";
+import { APPROVAL_TYPES, DISTRICTS, PROJECT_TYPES } from "@/lib/options";
 import { PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import PolicyFields from "../../PolicyFields";
@@ -43,7 +43,15 @@ export default async function EditProjectPage({
             </div>
             <div>
               <label className="label">District *</label>
-              <input name="district" className="input" required defaultValue={p.district} />
+              <select name="district" className="select" required defaultValue={p.district}>
+                <option value="" disabled>— Select district —</option>
+                {p.district && !DISTRICTS.includes(p.district) && (
+                  <option value={p.district}>{p.district}</option>
+                )}
+                {DISTRICTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label">City *</label>

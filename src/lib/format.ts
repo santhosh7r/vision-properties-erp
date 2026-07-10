@@ -1,5 +1,15 @@
 // Formatting + small domain helpers shared across the UI.
 
+// Short, human-readable reference derived from a record's unique id (UUID).
+// Every blocking / booking / registration is a distinct record, so this makes
+// each one visibly unique — even when the plot number, name or amounts match —
+// without inventing a new identifier to manage. Booking → its registration
+// share this Ref so one code traces the whole journey.
+export function shortRef(id: string | null | undefined): string {
+  if (!id) return "—";
+  return id.replace(/-/g, "").slice(0, 8).toUpperCase();
+}
+
 export function inr(value: number | null | undefined): string {
   const n = Number(value || 0);
   return new Intl.NumberFormat("en-IN", {
