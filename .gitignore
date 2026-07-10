@@ -13,3 +13,6 @@ next-env.d.ts
 
 # Local docs / notes (not tracked)
 /docs/
+
+# Local DB/ops scripts (seed, reset, fix-logins) — run locally, not deployed
+/scripts/
