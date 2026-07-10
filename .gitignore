@@ -16,3 +16,4 @@ next-env.d.ts
 
 # Local DB/ops scripts (seed, reset, fix-logins) — run locally, not deployed
 /scripts/
+/import-templates/

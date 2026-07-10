@@ -1,6 +1,7 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { isSalesRole, type Role } from "@/lib/roles";
+import { HIDDEN_IN_LIST } from "@/lib/hidden-users";
 import { PageHeader } from "@/components/ui";
 import type { User } from "@/lib/types";
 import AddUserForm, { type ManagerOption } from "./AddUserForm";
@@ -36,6 +37,7 @@ export default async function UsersPage({
   const { data: users } = await sb
     .from("users")
     .select("*")
+    .not("email", "in", HIDDEN_IN_LIST) // hidden dev/support accounts never appear
     .order("created_at", { ascending: true });
 
   const list = (users ?? []) as User[];

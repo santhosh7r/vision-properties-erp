@@ -58,6 +58,7 @@ export const NAV: NavItem[] = [
   { href: "/inventory/add-project", label: "Add Project", icon: "building", roles: ["admin"], group: "Inventory" },
   { href: "/inventory/add-plots", label: "Add Plots", icon: "cube", roles: ["admin"], group: "Inventory" },
   { href: "/inventory/manage", label: "Manage/Edit Plots", icon: "layers", roles: ["admin"], group: "Inventory" },
+  { href: "/inventory/import", label: "Import from Excel", icon: "fileText", roles: ["admin"], group: "Inventory" },
   { href: "/customers", label: "Customers", icon: "userCircle", roles: SALES, group: "Clients" },
   // Shared bookings list — non-admin sales + finance. Admin uses the Pre/Post-Sales
   // labelled actions below (which deep-link into this same engine via query params).

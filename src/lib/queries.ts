@@ -2,6 +2,7 @@ import "server-only";
 import { getSupabase } from "./supabase";
 import { getDownlineIds } from "./hierarchy";
 import { isSalesRole, isNetworkHead, type Role } from "./roles";
+import { HIDDEN_IN_LIST } from "./hidden-users";
 
 async function count(table: string, filter?: (q: any) => any): Promise<number> {
   let q = getSupabase().from(table).select("id", { count: "exact", head: true });
@@ -507,7 +508,7 @@ export async function getDashboard(scopeUserId?: string): Promise<DashboardData>
   ] = await Promise.all([
     count("projects"),
     count("customers", scoped ? (q) => q.eq("created_by", scopeUserId!) : undefined),
-    count("users"),
+    count("users", (q) => q.not("email", "in", HIDDEN_IN_LIST)),
     plotsQ,
     bookingsQ,
     sb.from("payments").select("paid_at, amount, status, bookings(created_by)"),

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { HIDDEN_IN_LIST } from "@/lib/hidden-users";
 import { fmtDateTime, timeAgo } from "@/lib/format";
 import { PageHeader, EmptyState, Badge } from "@/components/ui";
 import {
@@ -93,6 +94,7 @@ export default async function ActivityLogPage({
   const { data: userRows } = await sb
     .from("users")
     .select("id, full_name")
+    .not("email", "in", HIDDEN_IN_LIST) // hidden dev/support accounts never appear
     .order("full_name");
   const users = (userRows ?? []) as { id: string; full_name: string }[];
 
