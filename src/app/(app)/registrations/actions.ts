@@ -131,7 +131,9 @@ export async function createRegistration(formData: FormData): Promise<void> {
         .eq("id", booking_id)
         .maybeSingle(),
     ]);
-    const value = (rate: unknown) => Math.round(Number(rate || 0) * sqft * 100) / 100;
+    // Full precision — a rate of ₹4.589363/sq.ft must credit exactly
+    // 4.589363 × sqft, not a 2-decimal approximation of it.
+    const value = (rate: unknown) => Number(rate || 0) * sqft;
     const dir = bk?.director_id ?? null;
     const sd = bk?.senior_director_id ?? null;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import {
   ROLE_LABELS,
   SALES_HIERARCHY,
@@ -9,7 +9,7 @@ import {
   canManageRole,
   type Role,
 } from "@/lib/roles";
-import { createUser } from "./actions";
+import { createUser, type CreateUserState } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DISTRICTS } from "@/lib/options";
 
@@ -46,36 +46,88 @@ function ManagerName({ m }: { m: ManagerOption }) {
 // when there are thousands of potential managers. The user narrows with search.
 const MAX_RESULTS = 50;
 
+// Section heading inside the registration form.
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1 text-sm font-semibold">{title}</legend>
+      {children}
+    </fieldset>
+  );
+}
+
+// The declaration the partner signs — kept verbatim from the paper form.
+const DECLARATION =
+  "I hereby declare that all the information provided above is true and correct to the best of my knowledge. I agree to abide by the policies, rules, commission structure, and terms and conditions of Vision Properties. I understand that Vision Properties reserves the right to approve, suspend, or terminate my partner registration at any time.";
+
 // A member sits directly under a parent whose role is exactly one level above
 // them (managerRoleOf):
 //   Senior Director / Finance / Legal -> the company (Admin), auto-attached
 //   Director        -> a Senior Director   (searchable, required)
 //   Business Manager-> a Director           (searchable, required)
-//   Business Partner-> a Business Manager   (searchable, required)
+//   Business Partner-> typed Reference ID   (partner code, see below)
 //   Admin           -> none (top of the org)
+//
+// Business Partner is the one role onboarded through the full VISION PROPERTIES
+// registration form (personal / professional / nominee / reference +
+// declaration). Its parent is entered as a typed Reference ID rather than picked
+// from a dropdown — the list stops being usable once there are thousands of
+// partners — and its login password is generated server-side and shown once.
 export default function AddUserForm({
   managers,
+  creatableRoles = null,
 }: {
   managers: ManagerOption[];
+  /**
+   * Roles this actor may create. `null` = Admin, who gets the full picker
+   * (sales tiers + business operators + admin). A sales manager gets only the
+   * roles strictly beneath their own — a Senior Director sees Director /
+   * Business Manager / Business Partner, a Business Manager sees only Business
+   * Partner. Enforced again server-side in createUser.
+   */
+  creatableRoles?: Role[] | null;
 }) {
-  const [role, setRole] = useState<Role | "">("");
+  const [state, formAction] = useActionState<CreateUserState | undefined, FormData>(
+    createUser,
+    undefined,
+  );
+  // With exactly one creatable role (a Business Manager can only ever add a
+  // Business Partner) there is nothing to choose — preselect it so the form
+  // opens straight on the registration fields.
+  const soleRole: Role | "" = creatableRoles?.length === 1 ? creatableRoles[0] : "";
+  const [role, setRole] = useState<Role | "">(soleRole);
   const [managerId, setManagerId] = useState("");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  // Partner form: WhatsApp usually equals the mobile, so mirror it by default.
+  const [mobile, setMobile] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [sameWhatsapp, setSameWhatsapp] = useState(true);
+  // Remount key — bumped after a successful create so every uncontrolled input
+  // in the form starts blank again for the next partner.
+  const [formKey, setFormKey] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+
+  const isPartner = role === "business_partner";
+  const created = state?.created && !dismissed ? state.created : null;
+
+  useEffect(() => {
+    if (state?.created) setDismissed(false);
+  }, [state]);
 
   const need = role ? managerRoleOf(role as Role) : null;
   const admins = useMemo(() => managers.filter((m) => m.role === "admin"), [managers]);
 
-  // sd / finance / legal attach to the company (Admin); director/manager/partner
-  // need a specific searchable parent; admin has no parent.
+  // sd / finance / legal attach to the company (Admin); director/manager need a
+  // specific searchable parent; partner types a Reference ID; admin has no parent.
   const adminParent = need === "admin";
-  const needsPicker = !!need && need !== "admin";
+  const needsPicker = !!need && need !== "admin" && !isPartner;
 
   const validManagers = useMemo(() => {
     if (!need) return [];
     if (adminParent) return admins;
-    // Director / Manager / Partner may report to Admin OR any sales role above
-    // them — a higher role can place someone several rungs below directly.
+    // Director / Manager may report to Admin OR any sales role above them — a
+    // higher role can place someone several rungs below directly.
     return managers.filter((m) => canManageRole(m.role, role as Role));
   }, [need, adminParent, admins, managers, role]);
 
@@ -100,43 +152,65 @@ export default function AddUserForm({
   }, [needsPicker, query, validManagers]);
 
   const selected = managerId ? managers.find((m) => m.id === managerId) ?? null : null;
-  // The manager is optional for sales sub-roles: when left blank the new user
-  // reports to the creating Admin (handled server-side).
-  const canSubmit = true;
 
   const label = (m: ManagerOption) =>
     `${m.full_name} · ${ROLE_LABELS[m.role]}${m.code ? ` · ${m.code}` : ""}`;
 
-  return (
-    <form action={createUser} className="space-y-3">
-      <input type="hidden" name="manager_id" value={managerId} />
+  function addAnother() {
+    setDismissed(true);
+    setRole(soleRole);
+    setManagerId("");
+    setQuery("");
+    setMobile("");
+    setWhatsapp("");
+    setSameWhatsapp(true);
+    setFormKey((k) => k + 1);
+  }
 
-      <div>
-        <label className="label">Full Name *</label>
-        <input name="full_name" className="input" required />
+  // ---- Success panel: the generated password is shown ONCE, right here. ----
+  if (created) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4">
+          <h3 className="text-sm font-semibold">{created.name} created</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            {ROLE_LABELS[created.role]}
+            {created.code && (
+              <>
+                {" · "}
+                <span className="font-mono">{created.code}</span>
+              </>
+            )}
+          </p>
+          <dl className="mt-3 space-y-2 text-sm">
+            <div>
+              <dt className="text-xs text-[var(--muted)]">Email</dt>
+              <dd className="font-mono">{created.email}</dd>
+            </div>
+            {created.password && (
+              <div>
+                <dt className="text-xs text-[var(--muted)]">Temporary password</dt>
+                <dd className="font-mono text-base font-semibold">{created.password}</dd>
+              </div>
+            )}
+          </dl>
+          {created.password && (
+            <p className="mt-3 text-xs text-[var(--muted)]">
+              Share this with {created.name} now — it is generated once and cannot be shown again.
+              Ask them to change it after their first sign-in.
+            </p>
+          )}
+        </div>
+        <button type="button" className="btn-primary w-full" onClick={addAnother}>
+          Add Another Partner
+        </button>
       </div>
-      <div>
-        <label className="label">Email *</label>
-        <input name="email" type="email" className="input" required />
-      </div>
-      <div>
-        <label className="label">Temporary Password *</label>
-        <input name="password" className="input" required minLength={6} />
-      </div>
-      <div>
-        <label className="label">Mobile</label>
-        <input name="mobile" className="input" />
-      </div>
-      <div>
-        <label className="label">District</label>
-        <select name="district" className="select" defaultValue="">
-          <option value="">— Select district —</option>
-          {DISTRICTS.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-        <p className="mt-1 text-xs text-[var(--muted)]">Sales panels show this district&apos;s inventory first.</p>
-      </div>
+    );
+  }
+
+  return (
+    <form key={formKey} action={formAction} className="space-y-5">
+      <input type="hidden" name="manager_id" value={isPartner ? "" : managerId} />
 
       <div>
         <label className="label">Role *</label>
@@ -150,135 +224,309 @@ export default function AddUserForm({
           <option value="" disabled>
             Select role
           </option>
-          <optgroup label="Sales Hierarchy">
-            {SALES_HIERARCHY.map((r) => (
+          {creatableRoles ? (
+            // Sales manager: only the levels beneath them, flat (no operators/admin).
+            creatableRoles.map((r) => (
               <option key={r} value={r}>
                 {ROLE_LABELS[r]}
               </option>
-            ))}
-          </optgroup>
-          <optgroup label="Business Operators">
-            {BUSINESS_OPERATORS.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </option>
-            ))}
-          </optgroup>
-          <option value="admin">{ROLE_LABELS.admin}</option>
+            ))
+          ) : (
+            <>
+              <optgroup label="Sales Hierarchy">
+                {SALES_HIERARCHY.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Business Operators">
+                {BUSINESS_OPERATORS.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </optgroup>
+              <option value="admin">{ROLE_LABELS.admin}</option>
+            </>
+          )}
         </select>
       </div>
 
-      <div>
-        <label className="label">Reports To (Manager)</label>
-
-        {/* No role yet */}
-        {!role && (
-          <div className="input flex items-center text-[var(--muted)]">Pick a role first</div>
-        )}
-
-        {/* Admin-parent roles: fixed to the company Admin */}
-        {role && adminParent && (
-          <div className="input flex items-center text-[var(--muted)]">
-            {admins[0] ? `${label(admins[0])} (company)` : "Company (no Admin found)"}
-          </div>
-        )}
-
-        {/* Admin role: no manager */}
-        {role && !need && (
-          <div className="input flex items-center text-[var(--muted)]">— None (top of org) —</div>
-        )}
-
-        {/* Sales-parent roles: searchable picker */}
-        {role && needsPicker && (
-          <div className="relative">
-            {selected ? (
-              <div className="input flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2">
-                  <ManagerName m={selected} />
-                  <RoleTag role={selected.role} />
-                </span>
-                <button
-                  type="button"
-                  className="shrink-0 text-xs text-[var(--accent)]"
-                  onClick={() => {
-                    setManagerId("");
-                    setQuery("");
-                    setOpen(true);
-                  }}
-                >
-                  Change
-                </button>
+      {/* ================= BUSINESS PARTNER REGISTRATION FORM ================= */}
+      {isPartner ? (
+        <>
+          <Section title="Personal Details">
+            <div>
+              <label className="label">Full Name *</label>
+              <input name="full_name" className="input" required />
+            </div>
+            <div>
+              <label className="label">Date of Birth *</label>
+              <input name="date_of_birth" type="date" className="input" required />
+            </div>
+            <div>
+              <label className="label">Mobile Number *</label>
+              <input
+                name="mobile"
+                type="tel"
+                inputMode="tel"
+                className="input"
+                required
+                value={mobile}
+                onChange={(e) => setMobile(e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="label">WhatsApp Number *</label>
+                <label className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <input
+                    type="checkbox"
+                    checked={sameWhatsapp}
+                    onChange={(e) => setSameWhatsapp(e.target.checked)}
+                  />
+                  Same as mobile
+                </label>
               </div>
-            ) : (
-              <>
-                <input
-                  className="input"
-                  placeholder="Search a manager by name or ID… (optional)"
-                  value={query}
-                  autoComplete="off"
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setOpen(true);
-                  }}
-                  onFocus={() => setOpen(true)}
-                />
-                {open && (
-                  <>
-                    {/* click-away backdrop */}
+              <input
+                name="whatsapp"
+                type="tel"
+                inputMode="tel"
+                className="input"
+                required
+                readOnly={sameWhatsapp}
+                value={sameWhatsapp ? mobile : whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Email ID *</label>
+              <input name="email" type="email" className="input" required />
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                This is their sign-in ID. A temporary password is generated and shown once after
+                you create the partner.
+              </p>
+            </div>
+            <div>
+              <label className="label">Residential Address *</label>
+              <textarea name="address" className="textarea" rows={3} required />
+            </div>
+            <div>
+              <label className="label">District</label>
+              <select name="district" className="select" defaultValue="">
+                <option value="">— Select district —</option>
+                {DISTRICTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                Their sales panel shows this district&apos;s inventory first.
+              </p>
+            </div>
+          </Section>
+
+          <Section title="Professional Details">
+            <div>
+              <label className="label">Occupation</label>
+              <input name="occupation" className="input" />
+            </div>
+            <div>
+              <label className="label">RERA Registration Number</label>
+              <input name="rera_number" className="input" />
+              <p className="mt-1 text-xs text-[var(--muted)]">Optional.</p>
+            </div>
+          </Section>
+
+          <Section title="Nominee Details">
+            <div>
+              <label className="label">Nominee Name *</label>
+              <input name="nominee_name" className="input" required />
+            </div>
+            <div>
+              <label className="label">Nominee Mobile Number *</label>
+              <input name="nominee_mobile" type="tel" inputMode="tel" className="input" required />
+            </div>
+          </Section>
+
+          <Section title="Reference Details">
+            <div>
+              <label className="label">Reference ID</label>
+              <input
+                name="reference_code"
+                className="input font-mono uppercase"
+                placeholder="VPBM12"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                The partner ID of whoever referred them — this becomes the manager they report to.
+                Leave blank to place them under you.
+              </p>
+            </div>
+          </Section>
+
+          <Section title="Declaration">
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border bg-[var(--surface-2)] p-3 text-xs leading-relaxed">
+              <input
+                type="checkbox"
+                name="declaration"
+                required
+                className="mt-0.5 shrink-0"
+              />
+              <span>{DECLARATION}</span>
+            </label>
+          </Section>
+        </>
+      ) : (
+        /* ================= EVERY OTHER ROLE — short form ================= */
+        <>
+          <div>
+            <label className="label">Full Name *</label>
+            <input name="full_name" className="input" required />
+          </div>
+          <div>
+            <label className="label">Email *</label>
+            <input name="email" type="email" className="input" required />
+          </div>
+          <div>
+            <label className="label">Temporary Password *</label>
+            <input name="password" className="input" required minLength={6} />
+          </div>
+          <div>
+            <label className="label">Mobile</label>
+            <input name="mobile" className="input" />
+          </div>
+          <div>
+            <label className="label">District</label>
+            <select name="district" className="select" defaultValue="">
+              <option value="">— Select district —</option>
+              {DISTRICTS.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-[var(--muted)]">Sales panels show this district&apos;s inventory first.</p>
+          </div>
+
+          <div>
+            <label className="label">Reports To (Manager)</label>
+
+            {/* No role yet */}
+            {!role && (
+              <div className="input flex items-center text-[var(--muted)]">Pick a role first</div>
+            )}
+
+            {/* Admin-parent roles: fixed to the company Admin */}
+            {role && adminParent && (
+              <div className="input flex items-center text-[var(--muted)]">
+                {admins[0] ? `${label(admins[0])} (company)` : "Company (no Admin found)"}
+              </div>
+            )}
+
+            {/* Admin role: no manager */}
+            {role && !need && (
+              <div className="input flex items-center text-[var(--muted)]">— None (top of org) —</div>
+            )}
+
+            {/* Sales-parent roles: searchable picker */}
+            {role && needsPicker && (
+              <div className="relative">
+                {selected ? (
+                  <div className="input flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ManagerName m={selected} />
+                      <RoleTag role={selected.role} />
+                    </span>
                     <button
                       type="button"
-                      aria-hidden
-                      className="fixed inset-0 z-10 cursor-default"
-                      onClick={() => setOpen(false)}
+                      className="shrink-0 text-xs text-[var(--accent)]"
+                      onClick={() => {
+                        setManagerId("");
+                        setQuery("");
+                        setOpen(true);
+                      }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      className="input"
+                      placeholder="Search a manager by name or ID… (optional)"
+                      value={query}
+                      autoComplete="off"
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setOpen(true);
+                      }}
+                      onFocus={() => setOpen(true)}
                     />
-                    <div className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-lg border bg-[var(--surface)] shadow-lg">
-                      {filtered.length === 0 ? (
-                        <div className="px-3 py-2 text-xs text-[var(--muted)]">
-                          No manager found.
+                    {open && (
+                      <>
+                        {/* click-away backdrop */}
+                        <button
+                          type="button"
+                          aria-hidden
+                          className="fixed inset-0 z-10 cursor-default"
+                          onClick={() => setOpen(false)}
+                        />
+                        <div className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-lg border bg-[var(--surface)] shadow-lg">
+                          {filtered.length === 0 ? (
+                            <div className="px-3 py-2 text-xs text-[var(--muted)]">
+                              No manager found.
+                            </div>
+                          ) : (
+                            filtered.map((m) => (
+                              <button
+                                type="button"
+                                key={m.id}
+                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--surface-2)]"
+                                onClick={() => {
+                                  setManagerId(m.id);
+                                  setOpen(false);
+                                }}
+                              >
+                                <ManagerName m={m} />
+                                <RoleTag role={m.role} />
+                              </button>
+                            ))
+                          )}
+                          {validManagers.length > filtered.length && (
+                            <div className="px-3 py-1 text-[11px] text-[var(--muted)]">
+                              Showing {filtered.length} of {validManagers.length} — keep typing to
+                              narrow.
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        filtered.map((m) => (
-                          <button
-                            type="button"
-                            key={m.id}
-                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--surface-2)]"
-                            onClick={() => {
-                              setManagerId(m.id);
-                              setOpen(false);
-                            }}
-                          >
-                            <ManagerName m={m} />
-                            <RoleTag role={m.role} />
-                          </button>
-                        ))
-                      )}
-                      {validManagers.length > filtered.length && (
-                        <div className="px-3 py-1 text-[11px] text-[var(--muted)]">
-                          Showing {filtered.length} of {validManagers.length} — keep typing to
-                          narrow.
-                        </div>
-                      )}
-                    </div>
+                      </>
+                    )}
                   </>
                 )}
-              </>
+              </div>
             )}
+
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              {!role
+                ? "Pick a role to see who they can report to."
+                : adminParent
+                  ? "Reports directly to the company (Admin)."
+                  : needsPicker
+                    ? `Optionally pick the manager this ${ROLE_LABELS[role as Role]} reports to — any Admin or higher sales role. Leave blank to report to you.`
+                    : "Admins sit at the top of the org — no manager."}
+            </p>
           </div>
-        )}
+        </>
+      )}
 
-        <p className="mt-1 text-xs text-[var(--muted)]">
-          {!role
-            ? "Pick a role to see who they can report to."
-            : adminParent
-              ? "Reports directly to the company (Admin)."
-              : needsPicker
-                ? `Optionally pick the manager this ${ROLE_LABELS[role as Role]} reports to — any Admin or higher sales role. Leave blank to report to you.`
-                : "Admins sit at the top of the org — no manager."}
+      {state?.error && (
+        <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          {state.error}
         </p>
-      </div>
+      )}
 
-      <SubmitButton className="btn-primary w-full" disabled={!canSubmit} pendingLabel="Creating…">
-        Create User
+      <SubmitButton className="btn-primary w-full" pendingLabel="Creating…">
+        {isPartner ? "Create Partner" : "Create User"}
       </SubmitButton>
     </form>
   );

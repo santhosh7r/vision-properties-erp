@@ -10,17 +10,33 @@ export function shortRef(id: string | null | undefined): string {
   return id.replace(/-/g, "").slice(0, 8).toUpperCase();
 }
 
+// Money and rates are shown at FULL precision — never rounded to whole rupees.
+// A per-sq.ft coupon rate of 4.589363 must read back as ₹4.589363, while a flat
+// 4 still reads as ₹4 (no padded ".00"), so the fraction digits float between
+// 0 and MAX_DECIMALS.
+//
+// MAX_DECIMALS is 10 rather than unlimited purely to absorb IEEE-754 noise:
+// 4.589363 × 1200 evaluates to 5507.235599999999 in float, which would render
+// as a broken-looking amount at full width but is exactly ₹5,507.2356 here.
+// Ten digits is far beyond any figure entered in this system, so nothing a user
+// types is ever truncated.
+const MAX_DECIMALS = 10;
+
 export function inr(value: number | null | undefined): string {
   const n = Number(value || 0);
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: MAX_DECIMALS,
   }).format(n);
 }
 
 export function num(value: number | null | undefined): string {
-  return new Intl.NumberFormat("en-IN").format(Number(value || 0));
+  return new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: MAX_DECIMALS,
+  }).format(Number(value || 0));
 }
 
 export function fmtDate(value: string | null | undefined): string {
@@ -65,7 +81,7 @@ export function isExpired(deadline: string | null | undefined): boolean {
 }
 
 export function totalPlotValue(sqft: number, pricePerSqft: number): number {
-  return Math.round((sqft || 0) * (pricePerSqft || 0));
+  return (sqft || 0) * (pricePerSqft || 0);
 }
 
 // Indian-style amount in words, e.g. 125000 -> "One Lakh Twenty Five Thousand
@@ -117,7 +133,7 @@ export function inrCompact(value: number | null | undefined): string {
   if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)}Cr`;
   if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(1)}L`;
   if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
-  return `₹${n}`;
+  return inr(n);
 }
 
 // Compact area in square feet for KPI tiles / charts: 1.25M sqft, 45.0K sqft.
@@ -128,9 +144,10 @@ export function sqftCompact(value: number | null | undefined): string {
   return `${n} sqft`;
 }
 
-// Full area in square feet, e.g. "1,200 sqft". Used in table cells.
+// Full area in square feet, e.g. "1,200 sqft" / "1,200.75 sqft". Used in table
+// cells. Fractional extents are kept — they feed the ₹-per-sq.ft math.
 export function sqft(value: number | null | undefined): string {
-  return `${num(Math.round(Number(value || 0)))} sqft`;
+  return `${num(Number(value || 0))} sqft`;
 }
 
 export function timeAgo(value: string | null | undefined): string {

@@ -32,6 +32,15 @@ export interface User {
   partner_code: string | null;
   manager_id: string | null;
   city: string | null;
+  // Business Partner Registration Form — populated only for business_partner.
+  date_of_birth: string | null;
+  whatsapp: string | null;
+  address: string | null;
+  occupation: string | null;
+  rera_number: string | null;
+  nominee_name: string | null;
+  nominee_mobile: string | null;
+  declared_at: string | null;
   is_active: boolean;
   created_at: string;
 }

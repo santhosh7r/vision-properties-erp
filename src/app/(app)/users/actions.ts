@@ -1,25 +1,136 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { ROLES, managerRoleOf, canManageRole, type Role } from "@/lib/roles";
+import { getDownlineIds } from "@/lib/hierarchy";
+import {
+  ROLES,
+  ROLE_LABELS,
+  managerRoleOf,
+  canManageRole,
+  creatableRolesUnder,
+  type Role,
+} from "@/lib/roles";
 
-export async function createUser(formData: FormData): Promise<void> {
-  const actor = await requireCapability("manage_users");
+export interface CreateUserState {
+  error?: string;
+  created?: {
+    name: string;
+    email: string;
+    code: string | null;
+    role: Role;
+    /** Only set when the server generated the password (Business Partner). */
+    password?: string;
+  };
+}
+
+// Unambiguous alphabet — no 0/O/1/l/I, because the admin reads this password out
+// loud or copies it into a message for the new partner.
+const PW_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function generatePassword(len = 10): string {
+  let out = "";
+  for (let i = 0; i < len; i++) out += PW_ALPHABET[randomInt(PW_ALPHABET.length)];
+  return out;
+}
+
+function s(v: FormDataEntryValue | null): string {
+  return String(v || "").trim();
+}
+function nullable(v: FormDataEntryValue | null): string | null {
+  return s(v) || null;
+}
+
+export async function createUser(
+  _prev: CreateUserState | undefined,
+  formData: FormData,
+): Promise<CreateUserState> {
+  // Every role WITH a downline can add members — Admin plus Senior Director /
+  // Director / Business Manager. A Business Partner is a leaf and has no
+  // `manage_team`, so they never reach here.
+  const actor = await requireCapability("manage_team");
   const sb = getSupabase();
+  const isAdmin = actor.role === "admin";
 
-  const full_name = String(formData.get("full_name") || "").trim();
-  const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
-  const mobile = String(formData.get("mobile") || "").trim() || null;
-  const district = String(formData.get("district") || "").trim() || null;
-  const role = String(formData.get("role") || "") as Role;
-  const manager_id = String(formData.get("manager_id") || "") || null;
+  const full_name = s(formData.get("full_name"));
+  const email = s(formData.get("email")).toLowerCase();
+  const mobile = nullable(formData.get("mobile"));
+  const district = nullable(formData.get("district"));
+  const role = s(formData.get("role")) as Role;
+  const manager_id = s(formData.get("manager_id")) || null;
 
-  if (!full_name || !email || !password || !ROLES.includes(role)) return;
+  if (!ROLES.includes(role)) return { error: "Pick a role." };
+  if (!full_name || !email) return { error: "Full name and email are required." };
+
+  // A sales manager may only create roles strictly BELOW their own — a Senior
+  // Director can add a Director / Business Manager / Business Partner, a
+  // Business Manager only a Business Partner. Never an operator or an Admin.
+  // (Admin keeps the unrestricted picker.)
+  if (!isAdmin && !creatableRolesUnder(actor.role).includes(role)) {
+    return {
+      error: `A ${ROLE_LABELS[actor.role]} cannot create a ${ROLE_LABELS[role] ?? role}.`,
+    };
+  }
+  // Their own team, resolved once — used below to confine the placement.
+  const team = isAdmin ? null : new Set(await getDownlineIds(sb, actor.id));
+
+  // A Business Partner is onboarded through the full registration form, so the
+  // password is generated here (nothing to type) and the extra personal /
+  // nominee / declaration fields are mandatory. Every other role keeps the short
+  // form where the admin sets a temporary password themselves.
+  const isPartner = role === "business_partner";
+  let password: string;
+  let generated: string | undefined;
+  if (isPartner) {
+    generated = generatePassword();
+    password = generated;
+  } else {
+    password = String(formData.get("password") || "");
+    if (password.length < 6) return { error: "Temporary password must be at least 6 characters." };
+  }
+
+  // Registration-form fields — captured for partners only, NULL for everyone else.
+  const partnerFields: Record<string, string | null> = {
+    date_of_birth: null,
+    whatsapp: null,
+    address: null,
+    occupation: null,
+    rera_number: null,
+    nominee_name: null,
+    nominee_mobile: null,
+    declared_at: null,
+  };
+  if (isPartner) {
+    const date_of_birth = s(formData.get("date_of_birth"));
+    const whatsapp = s(formData.get("whatsapp"));
+    const address = s(formData.get("address"));
+    const nominee_name = s(formData.get("nominee_name"));
+    const nominee_mobile = s(formData.get("nominee_mobile"));
+    if (!mobile) return { error: "Mobile number is required." };
+    if (!date_of_birth) return { error: "Date of birth is required." };
+    if (!whatsapp) return { error: "WhatsApp number is required." };
+    if (!address) return { error: "Residential address is required." };
+    if (!nominee_name || !nominee_mobile) {
+      return { error: "Nominee name and nominee mobile number are required." };
+    }
+    // The declaration is a signature — never create the partner without it.
+    if (s(formData.get("declaration")) !== "on") {
+      return { error: "The declaration must be accepted before creating the partner." };
+    }
+    Object.assign(partnerFields, {
+      date_of_birth,
+      whatsapp,
+      address,
+      occupation: nullable(formData.get("occupation")),
+      rera_number: nullable(formData.get("rera_number")),
+      nominee_name,
+      nominee_mobile,
+      declared_at: new Date().toISOString(),
+    });
+  }
 
   // Placement rule: Senior Director, Finance and Legal connect DIRECTLY to the
   // company (Admin) — auto-linked here when none is supplied. Director / Manager /
@@ -28,10 +139,40 @@ export async function createUser(formData: FormData): Promise<void> {
   // is chosen they report to the creating Admin. Admin itself has no manager.
   const need = managerRoleOf(role); // admin for SD/finance/legal, role-1 for sales, null for admin
   let finalManagerId = manager_id;
-  if (need === "admin") {
+  if (isPartner) {
+    // The form's "Reference ID" IS the reporting parent, typed as a partner code
+    // (VPBM12 / VPD07 / …) rather than picked from a list — the list stops being
+    // usable once there are thousands of partners.
+    const reference_code = s(formData.get("reference_code"));
+    if (reference_code) {
+      const { data: parent } = await sb
+        .from("users")
+        .select("id, full_name, role, is_active")
+        .ilike("partner_code", reference_code)
+        .maybeSingle();
+      if (!parent) return { error: `No partner found with Reference ID "${reference_code}".` };
+      if (!parent.is_active) {
+        return { error: `Reference ID "${reference_code}" (${parent.full_name}) is blocked.` };
+      }
+      if (!canManageRole(parent.role as Role, role)) {
+        return {
+          error: `${parent.full_name} is a ${ROLE_LABELS[parent.role as Role]} — a Business Partner cannot report to them.`,
+        };
+      }
+      // A sales manager may only refer into their own team.
+      if (team && !team.has(parent.id)) {
+        return {
+          error: `Reference ID "${reference_code}" (${parent.full_name}) is not in your team.`,
+        };
+      }
+      finalManagerId = parent.id;
+    } else {
+      finalManagerId = actor.id; // no reference given → reports to whoever created them
+    }
+  } else if (need === "admin") {
     if (manager_id) {
       const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
-      if (!parent || (parent.role as Role) !== "admin") return;
+      if (!parent || (parent.role as Role) !== "admin") return { error: "Invalid manager for this role." };
     } else {
       // Attach directly to the company: the oldest Admin account.
       const { data: company } = await sb
@@ -44,27 +185,54 @@ export async function createUser(formData: FormData): Promise<void> {
       finalManagerId = company?.id ?? null;
     }
   } else if (need) {
-    // Director / Manager / Partner: validate the chosen parent can manage this
-    // role; default to the creating Admin when no parent is supplied.
+    // Director / Manager: validate the chosen parent can manage this role;
+    // default to the creating manager when no parent is supplied.
     if (manager_id) {
       const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
-      if (!parent || !canManageRole(parent.role as Role, role)) return;
+      if (!parent || !canManageRole(parent.role as Role, role)) {
+        return { error: "That manager cannot hold this role beneath them." };
+      }
+      // A sales manager may only place someone inside their own team.
+      if (team && !team.has(manager_id)) {
+        return { error: "You can only add members under yourself or your own team." };
+      }
     } else {
       finalManagerId = actor.id;
     }
   }
 
+  const { data: dupe } = await sb.from("users").select("id").eq("email", email).maybeSingle();
+  if (dupe) return { error: `An account with the email ${email} already exists.` };
+
   const password_hash = await bcrypt.hash(password, 10);
   const { data, error } = await sb
     .from("users")
-    .insert({ full_name, email, password_hash, mobile, district, role, manager_id: finalManagerId })
-    .select("id")
+    .insert({
+      full_name,
+      email,
+      password_hash,
+      mobile,
+      district,
+      role,
+      manager_id: finalManagerId,
+      ...partnerFields,
+    })
+    .select("id, partner_code")
     .single();
 
-  if (!error && data) {
-    await logAudit(actor, "user", data.id, "create", `${full_name} (${role})`);
-  }
+  if (error || !data) return { error: error?.message ?? "Could not create the account." };
+
+  await logAudit(actor, "user", data.id, "create", `${full_name} (${role})`);
   revalidatePath("/users");
+  return {
+    created: {
+      name: full_name,
+      email,
+      code: data.partner_code ?? null,
+      role,
+      password: generated,
+    },
+  };
 }
 
 // Change Team / Level (Admin panel · Partners) — reassign a user's role and/or

@@ -81,6 +81,17 @@ create table if not exists users (
   partner_code  text,                    -- sales ID: SD#/D#/BM#/BP# (auto-assigned; NULL for admin/finance/legal)
   manager_id    uuid        references users(id) on delete set null,
   city          text,                    -- home city: sales panels show this city's inventory first
+  -- Business Partner Registration Form (0025) — captured only for role
+  -- 'business_partner'; NULL for every other role. `manager_id` above doubles as
+  -- the form's "Reference ID" (the typed partner code resolved to that user).
+  date_of_birth  date,                   -- Personal · Date of Birth
+  whatsapp       text,                   -- Personal · WhatsApp Number
+  address        text,                   -- Personal · Residential Address
+  occupation     text,                   -- Professional · Occupation
+  rera_number    text,                   -- Professional · RERA Registration Number (optional)
+  nominee_name   text,                   -- Nominee · Name
+  nominee_mobile text,                   -- Nominee · Mobile Number
+  declared_at    timestamptz,            -- when the declaration was accepted (NULL = never)
   settings        jsonb     not null default '{}'::jsonb, -- per-user prefs (notifications, language)
   session_version integer   not null default 0,           -- bumped by "Sign out everywhere"
   is_active     boolean     not null default true,
@@ -177,24 +188,24 @@ create table if not exists projects (
   status         project_status not null default 'draft',
   -- Office Details (Admin panel · New Project Form) -------------------------------
   branch                      text,                            -- branch / office
-  guideline_value             numeric(14,2) not null default 0, -- ₹ per sq.ft guideline value
-  director_gold_coupon        numeric(12,2) not null default 0, -- ₹ per sq.ft
-  director_digital_coupon     numeric(12,2) not null default 0, -- ₹ per sq.ft
-  senior_director_gold_coupon numeric(12,2) not null default 0, -- ₹ per sq.ft
-  director_tools_coupon        numeric(12,2) not null default 0, -- ₹ per sq.ft (auto-issued by value to the Director on registration)
-  senior_director_tools_coupon numeric(12,2) not null default 0, -- ₹ per sq.ft (auto-issued by value to the Senior Director on registration)
+  guideline_value             numeric        not null default 0, -- ₹ per sq.ft guideline value
+  director_gold_coupon        numeric        not null default 0, -- ₹ per sq.ft
+  director_digital_coupon     numeric        not null default 0, -- ₹ per sq.ft
+  senior_director_gold_coupon numeric        not null default 0, -- ₹ per sq.ft
+  director_tools_coupon        numeric        not null default 0, -- ₹ per sq.ft (auto-issued by value to the Director on registration)
+  senior_director_tools_coupon numeric        not null default 0, -- ₹ per sq.ft (auto-issued by value to the Senior Director on registration)
   -- Reservation / booking configuration (editable per project, per the board) ----
-  blocking_amount        numeric(14,2) not null default 10000, -- §1 initial block amount (e.g. 10k)
+  blocking_amount        numeric        not null default 10000, -- §1 initial block amount (e.g. 10k)
   blocking_window_hours  integer       not null default 48,    -- §1 block -> must book within N hours
-  advance_percent        numeric(5,2)  not null default 5,     -- §2 booking advance = N% of plot value
-  advance_min_amount     numeric(14,2) not null default 50000, -- §2 advance floor: max(N%, this)
+  advance_percent        numeric         not null default 5,     -- §2 booking advance = N% of plot value
+  advance_min_amount     numeric        not null default 50000, -- §2 advance floor: max(N%, this)
   booking_window_days    integer       not null default 15,    -- booking -> full payment / else back to company
   -- §3 Cancellation & refund ------------------------------------------------------
   cancel_full_refund_days integer      not null default 3,     -- 100% refund if cancelled within N days
-  cancellation_charge    numeric(14,2) not null default 5000,  -- admin charge per plot after that window
+  cancellation_charge    numeric        not null default 5000,  -- admin charge per plot after that window
   refund_processing_days integer       not null default 5,     -- payout SLA (working days) after approval
   -- §7 Plot transfer / change ------------------------------------------------------
-  transfer_charge        numeric(14,2) not null default 5000,  -- downgrade/transfer charge per plot
+  transfer_charge        numeric        not null default 5000,  -- downgrade/transfer charge per plot
   created_by     uuid          references users(id) on delete set null,
   created_at     timestamptz   not null default now()
 );
@@ -223,8 +234,8 @@ create table if not exists plots (
   plot_category_id uuid      references plot_categories(id) on delete set null, -- group within the project
   block          text        not null,                          -- 2. block
   plot_no        text        not null,                          -- 3. plot no
-  sqft           numeric(12,2) not null,                        -- 4. plot sq.ft
-  price_per_sqft numeric(12,2) not null default 0,              -- drives total plot value / 5% advance
+  sqft           numeric        not null,                        -- 4. plot sq.ft
+  price_per_sqft numeric        not null default 0,              -- drives total plot value / 5% advance
   description    text,                                           -- 5. desc
   status         plot_status not null default 'available',       -- 6. current status
   created_at     timestamptz not null default now(),
@@ -267,8 +278,8 @@ create table if not exists bookings (
   project_id               uuid not null references projects(id) on delete restrict,
   -- snapshots (board: Project Details section) -----------------------------------
   block                    text,
-  plot_sqft                numeric(12,2),
-  total_plot_value         numeric(16,2) not null default 0,
+  plot_sqft                numeric,
+  total_plot_value         numeric        not null default 0,
   -- Nominee Details --------------------------------------------------------------
   nominee_name             text,
   nominee_mobile           text,
@@ -291,9 +302,9 @@ create table if not exists bookings (
   remarks                  text,
   book_mode                book_mode      not null,            -- blocking | booking
   -- amounts & windows ------------------------------------------------------------
-  blocking_amount          numeric(14,2) not null default 0,
-  advance_required         numeric(16,2) not null default 0,   -- §2 max(advance_percent%, advance_min_amount)
-  advance_paid             numeric(16,2) not null default 0,
+  blocking_amount          numeric        not null default 0,
+  advance_required         numeric        not null default 0,   -- §2 max(advance_percent%, advance_min_amount)
+  advance_paid             numeric        not null default 0,
   status                   booking_status not null default 'pending',
   payment_status           payment_status not null default 'pending',
   expires_at               timestamptz,                        -- block/booking window deadline
@@ -302,8 +313,8 @@ create table if not exists bookings (
   pre_expiry_status        booking_status,                     -- status before expiry, restored on admin extend
   -- §3 Cancellation & refund -----------------------------------------------------
   cancellation_reason      text,
-  cancellation_charge      numeric(14,2),
-  refund_amount            numeric(16,2),
+  cancellation_charge      numeric,
+  refund_amount            numeric,
   refund_status            text not null default 'none',       -- none | pending_approval | approved | paid
   refund_approved_by       uuid references users(id) on delete set null,
   refund_approved_at       timestamptz,
@@ -330,7 +341,7 @@ create unique index if not exists uniq_active_booking_per_plot
 create table if not exists payments (
   id          uuid primary key default gen_random_uuid(),
   booking_id  uuid not null references bookings(id) on delete cascade,
-  amount      numeric(16,2) not null,
+  amount      numeric        not null,
   kind        payment_kind  not null,
   mode        text,
   status      payment_status not null default 'completed',
@@ -349,7 +360,7 @@ create table if not exists registrations (
   plot_id            uuid not null references plots(id) on delete restrict,
   project_id         uuid not null references projects(id) on delete restrict,
   block              text,                       -- 2. Block*
-  plot_sqft          numeric(12,2),              -- 3. Plot No. - Sq.ft*
+  plot_sqft          numeric,              -- 3. Plot No. - Sq.ft*
   register_date      date not null,              -- 4. Register Date*
   register_number    text not null,              -- 5. Register Number*
   name_of_registrant text not null,              -- 6. Name of Registrant*
@@ -368,10 +379,10 @@ create table if not exists plot_transfers (
   booking_id    uuid not null references bookings(id) on delete cascade,
   from_plot_id  uuid not null references plots(id) on delete restrict,
   to_plot_id    uuid not null references plots(id) on delete restrict,
-  from_value    numeric(16,2) not null default 0,
-  to_value      numeric(16,2) not null default 0,
+  from_value    numeric        not null default 0,
+  to_value      numeric        not null default 0,
   kind          text not null,                 -- upgrade | lateral | downgrade
-  charge        numeric(14,2) not null default 0,
+  charge        numeric        not null default 0,
   remarks       text,
   approved_by   uuid references users(id) on delete set null,
   created_by    uuid references users(id) on delete set null,
@@ -497,7 +508,7 @@ create table if not exists coupons (
   user_id     uuid not null references users(id) on delete cascade,
   type        text not null,                  -- cab | tools | digital | gold
   quantity    integer not null default 0,
-  value       numeric(14,2) not null default 0,
+  value       numeric        not null default 0,
   source      text not null default 'admin',  -- admin | auto
   note        text,
   issued_by   uuid references users(id) on delete set null,

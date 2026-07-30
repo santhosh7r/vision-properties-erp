@@ -756,7 +756,7 @@ export async function getAdminInsights(): Promise<AdminInsights> {
     bookedValue,
     collected,
     outstanding: Math.max(0, bookedValue - collected),
-    avgDealSize: activeBookings > 0 ? Math.round(bookedValue / activeBookings) : 0,
+    avgDealSize: activeBookings > 0 ? bookedValue / activeBookings : 0,
     collectionRate: bookedValue > 0 ? Math.round((collected / bookedValue) * 100) : 0,
     refundsPending,
     refundsPendingCount,

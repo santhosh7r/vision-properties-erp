@@ -13,15 +13,51 @@ import {
   normProjectType,
   normProjectStatus,
   normPlotStatus,
-  num,
 } from "@/lib/import-spec";
 
-export type ImportResult =
-  | { ok: true; created: number; skipped: number; errors: string[] }
-  | { ok: false; error: string }
-  | null;
+// ============================================================================
+// Bulk import — STRICT, ALL-OR-NOTHING.
+//
+// The file is never partially imported. Every upload is analysed first and the
+// result is returned as a report; only a file with ZERO problems can be
+// committed, and the commit re-runs the exact same analysis server-side before
+// writing anything. A file with one bad row saves nothing at all — the user
+// fixes the sheet and uploads again.
+//
+// Re-uploading an already-imported file is therefore safe: every row collides
+// with an existing record, the file is reported as duplicate, and nothing is
+// written a second time.
+// ============================================================================
 
 const MAX_ROWS = 5000;
+const PREVIEW_ROWS = 10;
+
+/** One problem found in the sheet, addressed to a specific row + column. */
+export interface RowIssue {
+  row: number | null; // null = whole-file problem (e.g. a missing column)
+  column: string;
+  message: string;
+}
+
+export interface ImportReport {
+  fileName: string;
+  fileSize: number;
+  totalRows: number;
+  issues: RowIssue[];
+  previewHeaders: string[];
+  previewRows: string[][];
+}
+
+export type ImportState =
+  | null
+  /** File could not even be read / is not the template. Nothing was saved. */
+  | { phase: "rejected"; error: string }
+  /** File was analysed. `report.issues` empty ⇒ safe to commit. Nothing saved. */
+  | { phase: "checked"; report: ImportReport }
+  /** Commit ran and every row was written. */
+  | { phase: "imported"; created: number; fileName: string };
+
+// ── Cell helpers ────────────────────────────────────────────────────────────
 
 function str(v: unknown): string {
   if (v == null) return "";
@@ -34,9 +70,27 @@ function str(v: unknown): string {
   return String(v).trim();
 }
 
-// Turn an uploaded .xlsx/.csv File into an array of row objects keyed by the
-// header row, tagged with the source spreadsheet row number for error messages.
-async function readRows(file: File): Promise<Array<Record<string, unknown> & { __row: number }>> {
+/**
+ * Strict numeric cell. Unlike a silent fallback, a cell that holds something
+ * unparseable ("1,2OO") is reported rather than quietly becoming 0 — a typo in
+ * a price must never be imported as free.
+ */
+function numCell(v: unknown, fallback: number): { ok: boolean; value: number } {
+  const s = str(v);
+  if (s === "") return { ok: true, value: fallback };
+  const n = Number(s.replace(/[₹,\s]/g, ""));
+  return Number.isFinite(n) ? { ok: true, value: n } : { ok: false, value: fallback };
+}
+
+type SheetRow = Record<string, unknown> & { __row: number };
+
+/** Parsed sheet: header names actually present + the data rows. */
+interface Sheet {
+  headers: string[];
+  rows: SheetRow[];
+}
+
+async function readSheet(file: File): Promise<Sheet> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const buf: any = Buffer.from(await file.arrayBuffer());
   const wb = new ExcelJS.Workbook();
@@ -46,14 +100,14 @@ async function readRows(file: File): Promise<Array<Record<string, unknown> & { _
     await wb.xlsx.load(buf);
   }
   const ws = wb.worksheets[0];
-  if (!ws) return [];
+  if (!ws) return { headers: [], rows: [] };
 
   const headers: string[] = [];
   ws.getRow(1).eachCell((cell, col) => {
     headers[col] = str(cell.value).toLowerCase();
   });
 
-  const rows: Array<Record<string, unknown> & { __row: number }> = [];
+  const rows: SheetRow[] = [];
   ws.eachRow((row, rowNum) => {
     if (rowNum === 1) return;
     const obj: Record<string, unknown> = {};
@@ -61,10 +115,9 @@ async function readRows(file: File): Promise<Array<Record<string, unknown> & { _
       const h = headers[col];
       if (h) obj[h] = cell.value;
     });
-    // skip fully blank rows
     if (Object.values(obj).some((v) => str(v) !== "")) rows.push({ __row: rowNum, ...obj });
   });
-  return rows;
+  return { headers: headers.filter(Boolean), rows };
 }
 
 function getFile(formData: FormData): File | null {
@@ -73,169 +126,429 @@ function getFile(formData: FormData): File | null {
   return null;
 }
 
-// ── Projects ────────────────────────────────────────────────────────────────
-export async function importProjects(_prev: ImportResult, formData: FormData): Promise<ImportResult> {
-  const actor = await requireDevUser(); // hidden dev account only
-  const file = getFile(formData);
-  if (!file) return { ok: false, error: "Please choose an .xlsx or .csv file." };
-
-  let rows: Array<Record<string, unknown> & { __row: number }>;
-  try {
-    rows = await readRows(file);
-  } catch {
-    return { ok: false, error: "Could not read that file. Use the provided template (.xlsx or .csv)." };
+/** Guard the upload before any per-row work. Returns a message, or null if fine. */
+function checkShape(sheet: Sheet, required: string[]): string | null {
+  if (sheet.rows.length === 0) {
+    return "No data rows found. Fill the template in below the header row, then upload again.";
   }
-  if (rows.length === 0) return { ok: false, error: "No data rows found. Fill in the template below the header row." };
-  if (rows.length > MAX_ROWS) return { ok: false, error: `Too many rows (${rows.length}). Limit is ${MAX_ROWS} per upload.` };
+  if (sheet.rows.length > MAX_ROWS) {
+    return `Too many rows (${sheet.rows.length}). The limit is ${MAX_ROWS} per upload — split the file.`;
+  }
+  const missing = required.filter((h) => !sheet.headers.includes(h));
+  if (missing.length) {
+    return `This file does not match the template — missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. Download the template and use it as-is.`;
+  }
+  return null;
+}
 
+// ── Projects: analysis ──────────────────────────────────────────────────────
+
+interface ProjectRecord {
+  __row: number;
+  name: string;
+  district: string;
+  city: string;
+  pincode: string | null;
+  area: string;
+  approval_type: string;
+  project_type: string;
+  status: string;
+  branch: string | null;
+  [key: string]: unknown;
+}
+
+const PROJECT_NUMERIC: Array<[string, number]> = [
+  ["guideline_value", 0],
+  ["director_gold_coupon", 0],
+  ["director_digital_coupon", 0],
+  ["senior_director_gold_coupon", 0],
+  ["director_tools_coupon", 0],
+  ["blocking_amount", 10000],
+  ["blocking_window_hours", 48],
+  ["advance_percent", 5],
+  ["advance_min_amount", 50000],
+  ["booking_window_days", 15],
+  ["cancel_full_refund_days", 3],
+  ["cancellation_charge", 5000],
+  ["refund_processing_days", 5],
+  ["transfer_charge", 5000],
+];
+
+const PROJECT_STATUSES = ["draft", "active", "on_hold", "closed"];
+
+async function analyseProjects(sheet: Sheet): Promise<{ issues: RowIssue[]; records: ProjectRecord[] }> {
   const sb = getSupabase();
-  // Existing names + in-file names to prevent duplicate projects.
   const { data: existing } = await sb.from("projects").select("name");
-  const seen = new Set((existing ?? []).map((p) => str(p.name).toLowerCase()));
+  const inDb = new Set((existing ?? []).map((p) => str(p.name).toLowerCase()));
 
-  const errors: string[] = [];
-  let created = 0;
+  const issues: RowIssue[] = [];
+  const records: ProjectRecord[] = [];
+  const seenInFile = new Map<string, number>(); // lower name -> first row it appeared on
 
-  for (const r of rows) {
+  for (const r of sheet.rows) {
+    const row = r.__row;
+    const before = issues.length;
+
     const name = str(r.name);
     const district = str(r.district);
     const city = str(r.city);
     const area = str(r.area);
+
+    if (!name) issues.push({ row, column: "name", message: "Project name is required" });
+    if (!district) issues.push({ row, column: "district", message: "District is required" });
+    if (!city) issues.push({ row, column: "city", message: "City is required" });
+    if (!area) issues.push({ row, column: "area", message: "Area / extent is required" });
+
     const approval_type = normApprovalType(r.approval_type);
+    if (!approval_type) {
+      issues.push({
+        row,
+        column: "approval_type",
+        message: `"${str(r.approval_type) || "(blank)"}" is not valid — use dtcp_rera or dtcp_only`,
+      });
+    }
     const project_type = normProjectType(r.project_type);
+    if (!project_type) {
+      issues.push({
+        row,
+        column: "project_type",
+        message: `"${str(r.project_type) || "(blank)"}" is not valid — use affordable or luxury`,
+      });
+    }
 
-    const missing = [
-      !name && "name",
-      !district && "district",
-      !city && "city",
-      !area && "area",
-    ].filter(Boolean);
-    if (missing.length) { errors.push(`Row ${r.__row}: missing ${missing.join(", ")}`); continue; }
-    if (!approval_type) { errors.push(`Row ${r.__row}: approval_type must be dtcp_rera or dtcp_only`); continue; }
-    if (!project_type) { errors.push(`Row ${r.__row}: project_type must be affordable or luxury`); continue; }
-    if (seen.has(name.toLowerCase())) { errors.push(`Row ${r.__row}: project "${name}" already exists — skipped`); continue; }
+    // A misspelled status must be reported, never silently defaulted to draft.
+    const rawStatus = str(r.status).toLowerCase().replace(/\s+/g, "_");
+    if (rawStatus && !PROJECT_STATUSES.includes(rawStatus)) {
+      issues.push({
+        row,
+        column: "status",
+        message: `"${str(r.status)}" is not valid — use draft, active, on_hold or closed`,
+      });
+    }
 
-    const { error } = await sb.from("projects").insert({
-      name, district, city, area,
-      pincode: str(r.pincode) || null,
-      approval_type, project_type,
-      status: normProjectStatus(r.status),
-      branch: str(r.branch) || null,
-      guideline_value: num(r.guideline_value),
-      director_gold_coupon: num(r.director_gold_coupon),
-      director_digital_coupon: num(r.director_digital_coupon),
-      senior_director_gold_coupon: num(r.senior_director_gold_coupon),
-      director_tools_coupon: num(r.director_tools_coupon),
-      blocking_amount: num(r.blocking_amount, 10000),
-      blocking_window_hours: num(r.blocking_window_hours, 48),
-      advance_percent: num(r.advance_percent, 5),
-      advance_min_amount: num(r.advance_min_amount, 50000),
-      booking_window_days: num(r.booking_window_days, 15),
-      cancel_full_refund_days: num(r.cancel_full_refund_days, 3),
-      cancellation_charge: num(r.cancellation_charge, 5000),
-      refund_processing_days: num(r.refund_processing_days, 5),
-      transfer_charge: num(r.transfer_charge, 5000),
-      created_by: actor.id,
-    });
-    if (error) { errors.push(`Row ${r.__row}: ${error.message}`); continue; }
-    seen.add(name.toLowerCase());
-    created += 1;
+    const numbers: Record<string, number> = {};
+    for (const [key, fallback] of PROJECT_NUMERIC) {
+      const parsed = numCell(r[key], fallback);
+      if (!parsed.ok) {
+        issues.push({ row, column: key, message: `"${str(r[key])}" is not a number` });
+      } else if (parsed.value < 0) {
+        issues.push({ row, column: key, message: "Cannot be negative" });
+      } else {
+        numbers[key] = parsed.value;
+      }
+    }
+
+    // Duplicates — inside the file, and against what is already saved.
+    if (name) {
+      const key = name.toLowerCase();
+      const firstSeen = seenInFile.get(key);
+      if (firstSeen) {
+        issues.push({ row, column: "name", message: `Duplicate of row ${firstSeen} — "${name}" appears twice in this file` });
+      } else if (inDb.has(key)) {
+        issues.push({ row, column: "name", message: `"${name}" already exists in the system — remove this row or rename it` });
+      } else {
+        seenInFile.set(key, row);
+      }
+    }
+
+    if (issues.length === before) {
+      records.push({
+        __row: row,
+        name,
+        district,
+        city,
+        pincode: str(r.pincode) || null,
+        area,
+        approval_type: approval_type!,
+        project_type: project_type!,
+        status: normProjectStatus(r.status),
+        branch: str(r.branch) || null,
+        ...numbers,
+      });
+    }
   }
 
-  if (created > 0) {
-    await logAudit(actor, "project", null, "bulk_import", `${created} project(s) via Excel`);
-    revalidatePath("/projects");
-    revalidatePath("/dashboard");
-  }
-  return { ok: true, created, skipped: rows.length - created, errors };
+  return { issues, records };
 }
 
-// ── Plots ───────────────────────────────────────────────────────────────────
-export async function importPlots(_prev: ImportResult, formData: FormData): Promise<ImportResult> {
-  const actor = await requireDevUser(); // hidden dev account only
-  const file = getFile(formData);
-  if (!file) return { ok: false, error: "Please choose an .xlsx or .csv file." };
+// ── Plots: analysis ─────────────────────────────────────────────────────────
 
-  let rows: Array<Record<string, unknown> & { __row: number }>;
-  try {
-    rows = await readRows(file);
-  } catch {
-    return { ok: false, error: "Could not read that file. Use the provided template (.xlsx or .csv)." };
-  }
-  if (rows.length === 0) return { ok: false, error: "No data rows found. Fill in the template below the header row." };
-  if (rows.length > MAX_ROWS) return { ok: false, error: `Too many rows (${rows.length}). Limit is ${MAX_ROWS} per upload.` };
+interface PlotRecord {
+  __row: number;
+  project_id: string;
+  projectName: string;
+  block: string;
+  plot_no: string;
+  sqft: number;
+  price_per_sqft: number;
+  description: string | null;
+  status: string;
+}
 
+async function analysePlots(sheet: Sheet): Promise<{ issues: RowIssue[]; records: PlotRecord[] }> {
   const sb = getSupabase();
-  // Resolve projects by name.
   const { data: projects } = await sb.from("projects").select("id, name");
   const projByName = new Map((projects ?? []).map((p) => [str(p.name).toLowerCase(), p.id as string]));
   const projIds = (projects ?? []).map((p) => p.id as string);
 
-  // Existing categories (block) per project, and existing plot_nos per project.
-  const catByKey = new Map<string, string>(); // `${projectId}::${lowerName}` -> categoryId
   const takenPlotNo = new Set<string>(); // `${projectId}::${lowerPlotNo}`
   if (projIds.length) {
-    const { data: cats } = await sb.from("plot_categories").select("id, project_id, name").in("project_id", projIds);
-    for (const c of cats ?? []) catByKey.set(`${c.project_id}::${str(c.name).toLowerCase()}`, c.id as string);
     const { data: plots } = await sb.from("plots").select("project_id, plot_no").in("project_id", projIds);
     for (const p of plots ?? []) takenPlotNo.add(`${p.project_id}::${str(p.plot_no).toLowerCase()}`);
   }
 
-  const errors: string[] = [];
-  let created = 0;
+  const issues: RowIssue[] = [];
+  const records: PlotRecord[] = [];
+  const seenInFile = new Map<string, number>();
 
-  for (const r of rows) {
+  for (const r of sheet.rows) {
+    const row = r.__row;
+    const before = issues.length;
+
     const projectName = str(r.project);
     const plot_no = str(r.plot_no);
-    const sqft = num(r.sqft);
-    const status = normPlotStatus(r.status);
 
-    if (!projectName) { errors.push(`Row ${r.__row}: missing project`); continue; }
-    const project_id = projByName.get(projectName.toLowerCase());
-    if (!project_id) { errors.push(`Row ${r.__row}: project "${projectName}" not found`); continue; }
-    if (!plot_no) { errors.push(`Row ${r.__row}: missing plot_no`); continue; }
-    if (!(sqft > 0)) { errors.push(`Row ${r.__row}: sqft must be a number greater than 0`); continue; }
-    if (!status) { errors.push(`Row ${r.__row}: status must be available or blocked`); continue; }
-
-    const dupKey = `${project_id}::${plot_no.toLowerCase()}`;
-    if (takenPlotNo.has(dupKey)) { errors.push(`Row ${r.__row}: plot ${plot_no} already exists in ${projectName} — skipped`); continue; }
-
-    // Resolve / create the block (category).
-    let plot_category_id: string | null = null;
-    const block = str(r.block);
-    if (block) {
-      const key = `${project_id}::${block.toLowerCase()}`;
-      plot_category_id = catByKey.get(key) ?? null;
-      if (!plot_category_id) {
-        const { data: newCat, error: catErr } = await sb
-          .from("plot_categories")
-          .insert({ project_id, name: block })
-          .select("id")
-          .single();
-        if (catErr || !newCat) { errors.push(`Row ${r.__row}: could not create block "${block}"`); continue; }
-        plot_category_id = newCat.id as string;
-        catByKey.set(key, plot_category_id);
+    let project_id: string | undefined;
+    if (!projectName) {
+      issues.push({ row, column: "project", message: "Project name is required" });
+    } else {
+      project_id = projByName.get(projectName.toLowerCase());
+      if (!project_id) {
+        issues.push({
+          row,
+          column: "project",
+          message: `Project "${projectName}" does not exist — create it first, or fix the spelling`,
+        });
       }
     }
 
-    const { error } = await sb.from("plots").insert({
-      project_id,
-      plot_category_id,
-      plot_no,
-      sqft,
-      price_per_sqft: num(r.price_per_sqft),
-      description: str(r.description) || null,
-      status,
-    });
-    if (error) { errors.push(`Row ${r.__row}: ${error.message}`); continue; }
-    takenPlotNo.add(dupKey);
-    created += 1;
+    if (!plot_no) issues.push({ row, column: "plot_no", message: "Plot number is required" });
+
+    const sqftCell = numCell(r.sqft, 0);
+    if (!sqftCell.ok) {
+      issues.push({ row, column: "sqft", message: `"${str(r.sqft)}" is not a number` });
+    } else if (!(sqftCell.value > 0)) {
+      issues.push({ row, column: "sqft", message: "Must be a number greater than 0" });
+    }
+
+    const priceCell = numCell(r.price_per_sqft, 0);
+    if (!priceCell.ok) {
+      issues.push({ row, column: "price_per_sqft", message: `"${str(r.price_per_sqft)}" is not a number` });
+    } else if (priceCell.value < 0) {
+      issues.push({ row, column: "price_per_sqft", message: "Cannot be negative" });
+    }
+
+    const status = normPlotStatus(r.status);
+    if (!status) {
+      issues.push({ row, column: "status", message: `"${str(r.status)}" is not valid — use available or blocked` });
+    }
+
+    if (project_id && plot_no) {
+      const key = `${project_id}::${plot_no.toLowerCase()}`;
+      const firstSeen = seenInFile.get(key);
+      if (firstSeen) {
+        issues.push({
+          row,
+          column: "plot_no",
+          message: `Duplicate of row ${firstSeen} — plot ${plot_no} appears twice for ${projectName}`,
+        });
+      } else if (takenPlotNo.has(key)) {
+        issues.push({
+          row,
+          column: "plot_no",
+          message: `Plot ${plot_no} already exists in ${projectName} — remove this row`,
+        });
+      } else {
+        seenInFile.set(key, row);
+      }
+    }
+
+    if (issues.length === before) {
+      records.push({
+        __row: row,
+        project_id: project_id!,
+        projectName,
+        block: str(r.block),
+        plot_no,
+        sqft: sqftCell.value,
+        price_per_sqft: priceCell.value,
+        description: str(r.description) || null,
+        status: status!,
+      });
+    }
   }
 
-  if (created > 0) {
-    await logAudit(actor, "plot", null, "bulk_import", `${created} plot(s) via Excel`);
-    revalidatePath("/plots");
-    revalidatePath("/dashboard");
+  return { issues, records };
+}
+
+// ── Report building ─────────────────────────────────────────────────────────
+
+function buildReport(
+  file: File,
+  sheet: Sheet,
+  issues: RowIssue[],
+  previewHeaders: string[],
+  previewRows: string[][],
+): ImportReport {
+  // Sort by row so the user works down their sheet top to bottom.
+  const sorted = [...issues].sort((a, b) => (a.row ?? 0) - (b.row ?? 0));
+  return {
+    fileName: file.name,
+    fileSize: file.size,
+    totalRows: sheet.rows.length,
+    issues: sorted,
+    previewHeaders,
+    previewRows,
+  };
+}
+
+// ── Projects: validate + commit ─────────────────────────────────────────────
+
+const PROJECT_REQUIRED_HEADERS = PROJECT_COLUMNS.filter((c) => c.required).map((c) => c.header);
+const PLOT_REQUIRED_HEADERS = PLOT_COLUMNS.filter((c) => c.required).map((c) => c.header);
+
+type Loaded = { ok: true; file: File; sheet: Sheet } | { ok: false; error: string };
+
+/** Read + shape-check an upload. Never touches the database. */
+async function loadSheet(formData: FormData, requiredHeaders: string[]): Promise<Loaded> {
+  const file = getFile(formData);
+  if (!file) return { ok: false, error: "Please choose an .xlsx or .csv file first." };
+  let sheet: Sheet;
+  try {
+    sheet = await readSheet(file);
+  } catch {
+    return { ok: false, error: "Could not read that file. Use the downloadable template (.xlsx or .csv)." };
   }
-  return { ok: true, created, skipped: rows.length - created, errors };
+  const shape = checkShape(sheet, requiredHeaders);
+  if (shape) return { ok: false, error: shape };
+  return { ok: true, file, sheet };
+}
+
+export async function importProjects(_prev: ImportState, formData: FormData): Promise<ImportState> {
+  const actor = await requireDevUser(); // hidden dev account only
+  const mode = String(formData.get("mode") || "check");
+
+  const loaded = await loadSheet(formData, PROJECT_REQUIRED_HEADERS);
+  if (!loaded.ok) return { phase: "rejected", error: loaded.error };
+  const { file, sheet } = loaded;
+
+  const { issues, records } = await analyseProjects(sheet);
+
+  const previewHeaders = ["Row", "Name", "District", "City", "Area", "Approval", "Type", "Status"];
+  const previewRows = records
+    .slice(0, PREVIEW_ROWS)
+    .map((p) => [String(p.__row), p.name, p.district, p.city, p.area, p.approval_type, p.project_type, p.status]);
+
+  // Validation pass, or a commit blocked by problems → report, save NOTHING.
+  if (mode !== "commit" || issues.length > 0) {
+    return { phase: "checked", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
+  }
+
+  // Clean file → write every row in a single statement so it lands all-or-nothing.
+  const payload = records.map(({ __row, ...rest }) => ({ ...rest, created_by: actor.id }));
+  const { error } = await getSupabase().from("projects").insert(payload);
+  if (error) {
+    return {
+      phase: "checked",
+      report: buildReport(file, sheet, [{ row: null, column: "—", message: `Nothing was saved — the database rejected the file: ${error.message}` }], previewHeaders, previewRows),
+    };
+  }
+
+  await logAudit(actor, "project", null, "bulk_import", `${payload.length} project(s) via Excel (${file.name})`);
+  revalidatePath("/projects");
+  revalidatePath("/inventory");
+  revalidatePath("/dashboard");
+  return { phase: "imported", created: payload.length, fileName: file.name };
+}
+
+// ── Plots: validate + commit ────────────────────────────────────────────────
+
+export async function importPlots(_prev: ImportState, formData: FormData): Promise<ImportState> {
+  const actor = await requireDevUser(); // hidden dev account only
+  const mode = String(formData.get("mode") || "check");
+
+  const loaded = await loadSheet(formData, PLOT_REQUIRED_HEADERS);
+  if (!loaded.ok) return { phase: "rejected", error: loaded.error };
+  const { file, sheet } = loaded;
+
+  const { issues, records } = await analysePlots(sheet);
+
+  const previewHeaders = ["Row", "Project", "Block", "Plot No", "Sq.ft", "₹ / sq.ft", "Status"];
+  const previewRows = records
+    .slice(0, PREVIEW_ROWS)
+    .map((p) => [
+      String(p.__row),
+      p.projectName,
+      p.block || "—",
+      p.plot_no,
+      String(p.sqft),
+      String(p.price_per_sqft),
+      p.status,
+    ]);
+
+  if (mode !== "commit" || issues.length > 0) {
+    return { phase: "checked", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
+  }
+
+  const sb = getSupabase();
+
+  // Blocks (categories) referenced by the file must exist before the plots do.
+  // Track the ones we create so they can be rolled back if the plot insert fails.
+  const catByKey = new Map<string, string>();
+  const neededProjectIds = [...new Set(records.map((r) => r.project_id))];
+  if (neededProjectIds.length) {
+    const { data: cats } = await sb.from("plot_categories").select("id, project_id, name").in("project_id", neededProjectIds);
+    for (const c of cats ?? []) catByKey.set(`${c.project_id}::${str(c.name).toLowerCase()}`, c.id as string);
+  }
+
+  const toCreate = new Map<string, { project_id: string; name: string }>();
+  for (const r of records) {
+    if (!r.block) continue;
+    const key = `${r.project_id}::${r.block.toLowerCase()}`;
+    if (!catByKey.has(key) && !toCreate.has(key)) toCreate.set(key, { project_id: r.project_id, name: r.block });
+  }
+
+  const createdCatIds: string[] = [];
+  if (toCreate.size) {
+    const { data: newCats, error: catErr } = await sb
+      .from("plot_categories")
+      .insert([...toCreate.values()])
+      .select("id, project_id, name");
+    if (catErr || !newCats) {
+      return {
+        phase: "checked",
+        report: buildReport(file, sheet, [{ row: null, column: "block", message: `Nothing was saved — could not create the blocks: ${catErr?.message ?? "unknown error"}` }], previewHeaders, previewRows),
+      };
+    }
+    for (const c of newCats) {
+      catByKey.set(`${c.project_id}::${str(c.name).toLowerCase()}`, c.id as string);
+      createdCatIds.push(c.id as string);
+    }
+  }
+
+  const payload = records.map((r) => ({
+    project_id: r.project_id,
+    plot_category_id: r.block ? (catByKey.get(`${r.project_id}::${r.block.toLowerCase()}`) ?? null) : null,
+    plot_no: r.plot_no,
+    sqft: r.sqft,
+    price_per_sqft: r.price_per_sqft,
+    description: r.description,
+    status: r.status,
+  }));
+
+  const { error } = await sb.from("plots").insert(payload);
+  if (error) {
+    // Undo the blocks we just made so a failed upload leaves no trace.
+    if (createdCatIds.length) await sb.from("plot_categories").delete().in("id", createdCatIds);
+    return {
+      phase: "checked",
+      report: buildReport(file, sheet, [{ row: null, column: "—", message: `Nothing was saved — the database rejected the file: ${error.message}` }], previewHeaders, previewRows),
+    };
+  }
+
+  await logAudit(actor, "plot", null, "bulk_import", `${payload.length} plot(s) via Excel (${file.name})`);
+  revalidatePath("/plots");
+  revalidatePath("/inventory");
+  revalidatePath("/dashboard");
+  return { phase: "imported", created: payload.length, fileName: file.name };
 }

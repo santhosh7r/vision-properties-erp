@@ -1,17 +1,39 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui";
-import type { ImportResult } from "./actions";
+import type { ImportState } from "./actions";
 
-function SubmitButton({ label }: { label: string }) {
+// Two-step import. Step 1 checks the file and saves nothing; step 2 only exists
+// once the check came back clean. A file with any problem can never be
+// committed — the user fixes their sheet and checks it again.
+
+function Buttons({ canImport }: { canImport: boolean }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className="btn-primary" disabled={pending} aria-busy={pending}>
-      {pending ? "Importing…" : label}
-    </button>
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="submit" name="mode" value="check" className="btn-ghost" disabled={pending} aria-busy={pending}>
+        {pending ? "Checking…" : "Check file"}
+      </button>
+      {canImport && (
+        <button type="submit" name="mode" value="commit" className="btn-primary" disabled={pending} aria-busy={pending}>
+          {pending ? "Importing…" : "Confirm & import"}
+        </button>
+      )}
+    </div>
   );
+}
+
+// Same palette the Badge tones use, so notices sit with the rest of the UI.
+const NOTICE_TONE = {
+  red: "bg-red-500/15 text-red-400 border-red-500/30",
+  green: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  amber: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+};
+
+function Notice({ tone, children }: { tone: keyof typeof NOTICE_TONE; children: React.ReactNode }) {
+  return <div className={`rounded-lg border px-3 py-2 text-sm ${NOTICE_TONE[tone]}`}>{children}</div>;
 }
 
 export default function ImportCard({
@@ -23,9 +45,17 @@ export default function ImportCard({
   title: string;
   description: string;
   templateType: "project" | "plot";
-  action: (prev: ImportResult, formData: FormData) => Promise<ImportResult>;
+  action: (prev: ImportState, formData: FormData) => Promise<ImportState>;
 }) {
-  const [state, formAction] = useActionState<ImportResult, FormData>(action, null);
+  const [state, formAction] = useActionState<ImportState, FormData>(action, null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // Picking a different file invalidates the last check — you must re-check
+  // before the import button comes back.
+  const [staleCheck, setStaleCheck] = useState(false);
+
+  const report = state?.phase === "checked" ? state.report : null;
+  const clean = !!report && report.issues.length === 0;
+  const canImport = clean && !staleCheck;
 
   return (
     <div className="rounded-2xl border bg-[var(--surface)] p-6" style={{ borderColor: "var(--border)" }}>
@@ -36,57 +66,111 @@ export default function ImportCard({
           className="btn-ghost shrink-0"
           style={{ padding: "5px 12px", fontSize: 12 }}
         >
-          ↓ Download template
+          ↓ Download Excel template
         </a>
       </div>
       <p className="mb-4 text-sm text-[var(--muted)]">{description}</p>
 
       <form action={formAction} className="flex flex-wrap items-center gap-3">
         <input
+          ref={fileRef}
           type="file"
           name="file"
           accept=".xlsx,.csv"
           required
+          onChange={() => setStaleCheck(true)}
           className="text-sm text-[var(--muted)] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[var(--accent-soft)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-[var(--accent)]"
         />
-        <SubmitButton label={`Import ${title}`} />
+        <Buttons canImport={canImport} />
       </form>
 
-      {state && (
-        <div className="mt-4">
-          {state.ok === false ? (
-            <p
-              className="rounded-lg px-3 py-2 text-sm"
-              style={{
-                border: "1px solid color-mix(in srgb, var(--brand-red) 35%, transparent)",
-                background: "var(--brand-red-soft)",
-                color: "var(--brand-red)",
-              }}
+      <div className="mt-4 space-y-3">
+        {state?.phase === "rejected" && <Notice tone="red">{state.error}</Notice>}
+
+        {state?.phase === "imported" && (
+          <Notice tone="green">
+            Imported {state.created} {state.created === 1 ? "row" : "rows"} from {state.fileName}. Uploading the same
+            file again will be rejected as duplicate, so it is safe to keep.
+          </Notice>
+        )}
+
+        {report && report.issues.length > 0 && (
+          <>
+            <Notice tone="red">
+              <strong>Nothing was saved.</strong> This file has {report.issues.length}{" "}
+              {report.issues.length === 1 ? "problem" : "problems"} across {report.totalRows}{" "}
+              {report.totalRows === 1 ? "row" : "rows"}. Correct the sheet, then check it again.
+            </Notice>
+            <div
+              className="max-h-64 overflow-y-auto rounded-lg border text-xs"
+              style={{ borderColor: "var(--border)" }}
             >
-              {state.error}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <Badge tone="green">{state.created} created</Badge>
-                {state.skipped > 0 && <Badge tone="amber">{state.skipped} skipped</Badge>}
-              </div>
-              {state.errors.length > 0 && (
-                <div
-                  className="max-h-48 overflow-y-auto rounded-lg border p-3 text-xs text-[var(--muted)]"
-                  style={{ borderColor: "var(--border)" }}
-                >
-                  <ul className="space-y-1">
-                    {state.errors.map((e, i) => (
-                      <li key={i}>• {e}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              <table className="w-full">
+                <thead className="sticky top-0 bg-[var(--surface-2)] text-[var(--muted)]">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Row</th>
+                    <th className="px-3 py-2 text-left font-medium">Column</th>
+                    <th className="px-3 py-2 text-left font-medium">Problem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.issues.map((it, i) => (
+                    <tr key={i} className="border-t" style={{ borderColor: "var(--border)" }}>
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text)]">{it.row ?? "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">{it.column}</td>
+                      <td className="px-3 py-2 text-[var(--text)]">{it.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
-      )}
+          </>
+        )}
+
+        {clean && (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Badge tone="green">{report.totalRows} ready</Badge>
+              <span className="text-[var(--muted)]">
+                No problems found in {report.fileName}. Nothing is saved yet — press{" "}
+                <strong>Confirm &amp; import</strong> to write {report.totalRows === 1 ? "this row" : "these rows"}.
+              </span>
+            </div>
+            {staleCheck && <Notice tone="amber">You picked a different file — press <strong>Check file</strong> again.</Notice>}
+            {report.previewRows.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border text-xs" style={{ borderColor: "var(--border)" }}>
+                <table className="w-full">
+                  <thead className="bg-[var(--surface-2)] text-[var(--muted)]">
+                    <tr>
+                      {report.previewHeaders.map((h) => (
+                        <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-medium">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.previewRows.map((r, i) => (
+                      <tr key={i} className="border-t" style={{ borderColor: "var(--border)" }}>
+                        {r.map((c, j) => (
+                          <td key={j} className="whitespace-nowrap px-3 py-2 text-[var(--text)]">
+                            {c}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {report.totalRows > report.previewRows.length && (
+                  <p className="px-3 py-2 text-[var(--muted)]">
+                    Showing the first {report.previewRows.length} of {report.totalRows} rows.
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

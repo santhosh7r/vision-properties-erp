@@ -90,8 +90,15 @@ export const NAV: NavItem[] = [
   { href: "/tokens", label: "Tokens", icon: "creditCard", roles: SALES_TIERS, group: "Tokens" },
   { href: "/business-operators", label: "My Team", icon: "briefcase", roles: ["senior_director", "director", "business_manager"], group: "Business Partners" },
   { href: "/reports", label: "Reports", icon: "barChart", roles: ["admin", "senior_director", "director", "business_manager", "finance", "legal"], group: "Reports" },
-  // --- Admin Partners (all backed by the existing /users page + users/actions) ---
-  { href: "/users?action=new", label: "Add New Partner", icon: "plus", roles: ["admin"], group: "Business Partners" },
+  // --- Partners (all backed by the existing /users page + users/actions) ---
+  // Add New Partner is open to every role WITH a downline — Admin plus Senior
+  // Director / Director / Business Manager (a Business Partner has nobody
+  // beneath them, so they never see it). Non-admins may only pick roles below
+  // their own and may only place the new member inside their own team; both are
+  // enforced server-side in users/actions.ts, not just here.
+  { href: "/users?action=new", label: "Add New Partner", icon: "plus", roles: ["admin", "senior_director", "director", "business_manager"], group: "Business Partners" },
+  // View Partner / Block / Change Team stay ADMIN-ONLY — sales managers see their
+  // own team through "My Team" (/business-operators) instead.
   { href: "/users", label: "View Partner", icon: "users", roles: ["admin"], group: "Business Partners" },
   { href: "/users?view=manage", label: "Block / Change Team & Level", icon: "sitemap", roles: ["admin"], group: "Business Partners" },
   { href: "/activity", label: "Activity Logs", icon: "clock", roles: ["admin"], group: "Administration" },

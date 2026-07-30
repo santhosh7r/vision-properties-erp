@@ -27,10 +27,15 @@ interface Props {
 }
 
 const inr = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 10,
+  }).format(n);
 
 export default function BookingForm({ mode, plot, project }: Props) {
-  const value = useMemo(() => Math.round(plot.sqft * plot.price_per_sqft), [plot]);
+  const value = useMemo(() => plot.sqft * plot.price_per_sqft, [plot]);
   // Mirror the server gate exactly: advance = max(percent of value, min amount).
   const defaultAdvance = useMemo(
     () => computeAdvanceRequired(value, project.advance_percent, project.advance_min_amount),
@@ -185,7 +190,7 @@ export default function BookingForm({ mode, plot, project }: Props) {
             <div>
               <label className="label">
                 Advance Required (₹) —{" "}
-                {advance > Math.round((value * project.advance_percent) / 100)
+                {advance > (value * project.advance_percent) / 100
                   ? `min ${inr(project.advance_min_amount)}`
                   : `${project.advance_percent}%`}
               </label>

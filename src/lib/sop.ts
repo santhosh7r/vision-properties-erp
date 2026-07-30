@@ -27,7 +27,7 @@ export function computeAdvanceRequired(
   advanceMinAmount: number,
 ): number {
   const pct = (Number(plotValue) || 0) * (Number(advancePercent) || 0) / 100;
-  return Math.max(Math.round(pct), Number(advanceMinAmount) || 0);
+  return Math.max(pct, Number(advanceMinAmount) || 0);
 }
 
 // ---------------------------------------------------------------------------
