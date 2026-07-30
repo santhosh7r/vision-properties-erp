@@ -323,10 +323,10 @@ export async function getReports(userId: string, role: Role): Promise<ReportsDat
     partnersRaw,
     customers,
   ] = await Promise.all([
-    count("service_requests", (q) => inRequester(q.eq("type", "site_visit"))),
-    count("service_requests", (q) => inRequester(q.eq("type", "site_visit").eq("status", "pending"))),
-    count("service_requests", (q) => inRequester(q.eq("type", "site_visit").eq("status", "approved"))),
-    count("service_requests", (q) => inRequester(q.eq("type", "site_visit").eq("status", "declined"))),
+    count("service_requests", (q) => inRequester(q.eq("type", "cab"))),
+    count("service_requests", (q) => inRequester(q.eq("type", "cab").eq("status", "pending"))),
+    count("service_requests", (q) => inRequester(q.eq("type", "cab").eq("status", "approved"))),
+    count("service_requests", (q) => inRequester(q.eq("type", "cab").eq("status", "declined"))),
     count("bookings", (q) => inBookingOwner(q.eq("book_mode", "booking"))),
     count("bookings", (q) => inBookingOwner(q.eq("book_mode", "blocking"))),
     count("registrations", (q) => inCreated(q)),
@@ -383,7 +383,7 @@ export async function getSeniorOverview(userId: string, role: Role): Promise<Sen
       .select("created_at, book_mode, status")
       .or(`created_by.in.(${list}),partner_id.in.(${list})`),
     sb.from("registrations").select("created_at").in("created_by", ids),
-    sb.from("service_requests").select("created_at").eq("type", "site_visit").in("requested_by", ids),
+    sb.from("service_requests").select("created_at").eq("type", "cab").in("requested_by", ids),
     sb.from("users").select("id, created_at, partner_code").in("id", ids),
     sb.from("customers").select("id", { count: "exact", head: true }).in("created_by", ids),
     sb

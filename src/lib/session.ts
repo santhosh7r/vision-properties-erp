@@ -2,7 +2,8 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
-import type { Role } from "./roles";
+import { ROLES, type Role } from "./roles";
+import { isHiddenUser } from "./hidden-users";
 import { getSupabase } from "./supabase";
 
 // Best-effort fetch of a user's current session_version. Fails OPEN (returns
@@ -45,7 +46,17 @@ export interface SessionUser {
   id: string;
   full_name: string;
   email: string;
+  /**
+   * The role the app should behave as. For everyone this is their real role;
+   * for the hidden dev account it is whichever role they have switched into, so
+   * every capability check, nav item and scoped query downstream follows the
+   * switch with no special-casing.
+   */
   role: Role;
+  /** What the database actually says. Differs from `role` only while switched. */
+  realRole: Role;
+  /** A hidden dev/support login — the only account allowed to switch roles. */
+  isDev: boolean;
 }
 
 function secret(): Uint8Array {
@@ -53,11 +64,25 @@ function secret(): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
-export async function createSession(user: SessionUser): Promise<void> {
+export async function createSession(
+  user: { id: string; full_name: string; email: string; role: Role },
+  devRole?: Role | null,
+): Promise<void> {
   // Stamp the token with the user's current session version so "Sign out
   // everywhere" (which bumps the version) invalidates it.
   const sv = (await currentSessionVersion(user.id)) ?? 0;
-  const token = await new SignJWT({ ...user, sv })
+  // `role` in the token is always the REAL role; `dev_role` is the temporary
+  // override, honoured on read only for a hidden dev account. Keeping both means
+  // switching never mutates the database and cannot leak into anyone else's
+  // session.
+  const token = await new SignJWT({
+    id: user.id,
+    full_name: user.full_name,
+    email: user.email,
+    role: user.role,
+    dev_role: devRole ?? undefined,
+    sv,
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
@@ -90,11 +115,20 @@ export const getSession = cache(
     if (!token) return null;
     try {
       const { payload } = await jwtVerify(token, secret());
+      const email = payload.email as string;
+      const realRole = payload.role as Role;
+      // Only a hidden dev account may run under an overridden role, and only a
+      // role that actually exists — a tampered token falls back to the real one.
+      const isDev = isHiddenUser(email);
+      const devRole = payload.dev_role as Role | undefined;
+      const effective = isDev && devRole && ROLES.includes(devRole) ? devRole : realRole;
       const sessionUser: SessionUser = {
         id: payload.id as string,
         full_name: payload.full_name as string,
-        email: payload.email as string,
-        role: payload.role as Role,
+        email,
+        role: effective,
+        realRole,
+        isDev,
       };
       // "Sign out everywhere" bumps the user's session_version; a token stamped
       // with an older version is rejected. Fail open (only reject on a definite
@@ -110,5 +144,23 @@ export const getSession = cache(
     }
   },
 );
+
+/**
+ * Re-issue the current session under a different role. Refused for anyone but a
+ * hidden dev account — the guard is here rather than only in the calling action
+ * so there is exactly one door into an overridden role.
+ *
+ * Passing `null` drops the override and restores the real role.
+ */
+export async function setDevRole(role: Role | null): Promise<boolean> {
+  const user = await getSession();
+  if (!user || !user.isDev) return false;
+  if (role !== null && !ROLES.includes(role)) return false;
+  await createSession(
+    { id: user.id, full_name: user.full_name, email: user.email, role: user.realRole },
+    role,
+  );
+  return true;
+}
 
 export const SESSION_COOKIE = COOKIE_NAME;

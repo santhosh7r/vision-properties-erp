@@ -1,27 +1,23 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { Badge } from "@/components/ui";
 import type { ImportState } from "./actions";
 
-// Two-step import. Step 1 checks the file and saves nothing; step 2 only exists
-// once the check came back clean. A file with any problem can never be
-// committed — the user fixes their sheet and checks it again.
+// ONE-STEP import. Pick the file, press Upload. The server reads the whole sheet
+// and validates every row FIRST: if anything is wrong the entire upload is
+// refused and nothing is written, so a sheet can never land half-imported. Only
+// a completely clean file is saved, and it is saved in a single statement.
+//
+// There is deliberately no separate "check" button — checking always happens, so
+// making it a button only added a step the user could skip.
 
-function Buttons({ canImport }: { canImport: boolean }) {
+function UploadButton() {
   const { pending } = useFormStatus();
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button type="submit" name="mode" value="check" className="btn-ghost" disabled={pending} aria-busy={pending}>
-        {pending ? "Checking…" : "Check file"}
-      </button>
-      {canImport && (
-        <button type="submit" name="mode" value="commit" className="btn-primary" disabled={pending} aria-busy={pending}>
-          {pending ? "Importing…" : "Confirm & import"}
-        </button>
-      )}
-    </div>
+    <button type="submit" className="btn-primary" disabled={pending} aria-busy={pending}>
+      {pending ? "Checking & importing…" : "Upload & import"}
+    </button>
   );
 }
 
@@ -48,14 +44,18 @@ export default function ImportCard({
   action: (prev: ImportState, formData: FormData) => Promise<ImportState>;
 }) {
   const [state, formAction] = useActionState<ImportState, FormData>(action, null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  // Picking a different file invalidates the last check — you must re-check
-  // before the import button comes back.
-  const [staleCheck, setStaleCheck] = useState(false);
+  // Bumped after a successful import so the file input clears — re-submitting
+  // the same file would only be refused as duplicate anyway.
+  const [formKey, setFormKey] = useState(0);
+  // Hide the previous result the moment a different file is picked, so an old
+  // error list is never read as belonging to the file now selected.
+  const [dirty, setDirty] = useState(false);
 
-  const report = state?.phase === "checked" ? state.report : null;
-  const clean = !!report && report.issues.length === 0;
-  const canImport = clean && !staleCheck;
+  useEffect(() => {
+    if (state?.phase === "imported") setFormKey((k) => k + 1);
+  }, [state]);
+
+  const report = state?.phase === "invalid" ? state.report : null;
 
   return (
     <div className="rounded-2xl border bg-[var(--surface)] p-6" style={{ borderColor: "var(--border)" }}>
@@ -71,106 +71,78 @@ export default function ImportCard({
       </div>
       <p className="mb-4 text-sm text-[var(--muted)]">{description}</p>
 
-      <form action={formAction} className="flex flex-wrap items-center gap-3">
+      <form
+        key={formKey}
+        action={formAction}
+        onSubmit={() => setDirty(false)}
+        className="flex flex-wrap items-center gap-3"
+      >
         <input
-          ref={fileRef}
           type="file"
           name="file"
           accept=".xlsx,.csv"
           required
-          onChange={() => setStaleCheck(true)}
+          onChange={() => setDirty(true)}
           className="text-sm text-[var(--muted)] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[var(--accent-soft)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-[var(--accent)]"
         />
-        <Buttons canImport={canImport} />
+        <UploadButton />
       </form>
 
-      <div className="mt-4 space-y-3">
-        {state?.phase === "rejected" && <Notice tone="red">{state.error}</Notice>}
-
-        {state?.phase === "imported" && (
-          <Notice tone="green">
-            Imported {state.created} {state.created === 1 ? "row" : "rows"} from {state.fileName}. Uploading the same
-            file again will be rejected as duplicate, so it is safe to keep.
-          </Notice>
-        )}
-
-        {report && report.issues.length > 0 && (
-          <>
+      {!dirty && (
+        <div className="mt-4 space-y-3">
+          {state?.phase === "rejected" && (
             <Notice tone="red">
-              <strong>Nothing was saved.</strong> This file has {report.issues.length}{" "}
-              {report.issues.length === 1 ? "problem" : "problems"} across {report.totalRows}{" "}
-              {report.totalRows === 1 ? "row" : "rows"}. Correct the sheet, then check it again.
+              <strong>Nothing was saved.</strong> {state.error}
             </Notice>
-            <div
-              className="max-h-64 overflow-y-auto rounded-lg border text-xs"
-              style={{ borderColor: "var(--border)" }}
-            >
-              <table className="w-full">
-                <thead className="sticky top-0 bg-[var(--surface-2)] text-[var(--muted)]">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">Row</th>
-                    <th className="px-3 py-2 text-left font-medium">Column</th>
-                    <th className="px-3 py-2 text-left font-medium">Problem</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.issues.map((it, i) => (
-                    <tr key={i} className="border-t" style={{ borderColor: "var(--border)" }}>
-                      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text)]">{it.row ?? "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">{it.column}</td>
-                      <td className="px-3 py-2 text-[var(--text)]">{it.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+          )}
 
-        {clean && (
-          <>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <Badge tone="green">{report.totalRows} ready</Badge>
-              <span className="text-[var(--muted)]">
-                No problems found in {report.fileName}. Nothing is saved yet — press{" "}
-                <strong>Confirm &amp; import</strong> to write {report.totalRows === 1 ? "this row" : "these rows"}.
-              </span>
-            </div>
-            {staleCheck && <Notice tone="amber">You picked a different file — press <strong>Check file</strong> again.</Notice>}
-            {report.previewRows.length > 0 && (
-              <div className="overflow-x-auto rounded-lg border text-xs" style={{ borderColor: "var(--border)" }}>
+          {state?.phase === "imported" && (
+            <Notice tone="green">
+              <strong>
+                Imported {state.created} {state.created === 1 ? "row" : "rows"}
+              </strong>{" "}
+              from {state.fileName}. Uploading the same file again will be refused as duplicate, so
+              it is safe to keep.
+            </Notice>
+          )}
+
+          {report && (
+            <>
+              <Notice tone="red">
+                <strong>Nothing was saved.</strong> {report.fileName} has {report.issues.length}{" "}
+                {report.issues.length === 1 ? "problem" : "problems"} across {report.totalRows}{" "}
+                {report.totalRows === 1 ? "row" : "rows"}. The whole file is refused until every
+                problem below is fixed — correct the sheet and upload it again.
+              </Notice>
+              <div
+                className="max-h-72 overflow-y-auto rounded-lg border text-xs"
+                style={{ borderColor: "var(--border)" }}
+              >
                 <table className="w-full">
-                  <thead className="bg-[var(--surface-2)] text-[var(--muted)]">
+                  <thead className="sticky top-0 bg-[var(--surface-2)] text-[var(--muted)]">
                     <tr>
-                      {report.previewHeaders.map((h) => (
-                        <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-medium">
-                          {h}
-                        </th>
-                      ))}
+                      <th className="px-3 py-2 text-left font-medium">Row</th>
+                      <th className="px-3 py-2 text-left font-medium">Column</th>
+                      <th className="px-3 py-2 text-left font-medium">What to correct</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {report.previewRows.map((r, i) => (
+                    {report.issues.map((it, i) => (
                       <tr key={i} className="border-t" style={{ borderColor: "var(--border)" }}>
-                        {r.map((c, j) => (
-                          <td key={j} className="whitespace-nowrap px-3 py-2 text-[var(--text)]">
-                            {c}
-                          </td>
-                        ))}
+                        <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text)]">
+                          {it.row ?? "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">{it.column}</td>
+                        <td className="px-3 py-2 text-[var(--text)]">{it.message}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {report.totalRows > report.previewRows.length && (
-                  <p className="px-3 py-2 text-[var(--muted)]">
-                    Showing the first {report.previewRows.length} of {report.totalRows} rows.
-                  </p>
-                )}
               </div>
-            )}
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

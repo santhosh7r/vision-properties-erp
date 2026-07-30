@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase";
 import { createSession, destroySession } from "@/lib/session";
+import { isHiddenUser } from "@/lib/hidden-users";
 import { logAudit } from "@/lib/audit";
 
 export async function login(
@@ -45,8 +46,17 @@ export async function login(
     email: user.email,
     role: user.role,
   });
+  // A fresh login always starts on the real role — any dev role override from a
+  // previous session dies with the old token. (logAudit skips hidden accounts.)
   await logAudit(
-    { id: user.id, full_name: user.full_name, email: user.email, role: user.role },
+    {
+      id: user.id,
+      full_name: user.full_name,
+      email: user.email,
+      role: user.role,
+      realRole: user.role,
+      isDev: isHiddenUser(user.email),
+    },
     "user",
     user.id,
     "login",

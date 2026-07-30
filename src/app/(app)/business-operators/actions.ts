@@ -6,12 +6,28 @@ import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { ROLE_LABELS, creatableRolesUnder, type Role } from "@/lib/roles";
+import {
+  EMPTY_PARTNER_FIELDS,
+  generatePassword,
+  readPartnerFields,
+} from "@/lib/partner-registration";
 import { isValueCoupon } from "@/lib/options";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface CreateMemberState {
   ok?: boolean;
   error?: string;
+  /**
+   * Set when a Business Partner was created — their password is generated
+   * server-side, so the modal must show it once before it is gone forever.
+   */
+  created?: {
+    name: string;
+    email: string;
+    code: string | null;
+    role: Role;
+    password?: string;
+  };
 }
 
 // True when `actorId` is `nodeId` itself or any ancestor of it — i.e. the node
@@ -47,15 +63,34 @@ export async function createTeamMember(
   const manager_id = String(formData.get("manager_id") || "").trim();
   const full_name = String(formData.get("full_name") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
   const mobile = String(formData.get("mobile") || "").trim() || null;
+  const district = String(formData.get("district") || "").trim() || null;
   const role = String(formData.get("role") || "") as Role;
 
   if (!manager_id) return { error: "Missing parent node." };
-  if (!full_name || !email || !password) {
-    return { error: "Name, email and password are required." };
+  if (!full_name || !email) return { error: "Name and email are required." };
+
+  // A Business Partner is onboarded through the full registration form (same
+  // fields, same rules as the Add New Partner page — see lib/partner-registration),
+  // so their password is generated here rather than typed. Every other role keeps
+  // the short form with a temporary password the manager sets.
+  const isPartner = role === "business_partner";
+  let password: string;
+  let generated: string | undefined;
+  if (isPartner) {
+    generated = generatePassword();
+    password = generated;
+  } else {
+    password = String(formData.get("password") || "");
+    if (password.length < 6) return { error: "Password must be at least 6 characters." };
   }
-  if (password.length < 6) return { error: "Password must be at least 6 characters." };
+
+  let partnerFields = EMPTY_PARTNER_FIELDS;
+  if (isPartner) {
+    const read = readPartnerFields(formData, mobile);
+    if ("error" in read) return { error: read.error };
+    partnerFields = read.fields;
+  }
 
   // Validate placement against the LIVE parent role (not a client-sent value).
   const { data: parent } = await sb
@@ -87,8 +122,8 @@ export async function createTeamMember(
   const password_hash = await bcrypt.hash(password, 10);
   const { data, error } = await sb
     .from("users")
-    .insert({ full_name, email, password_hash, mobile, role, manager_id })
-    .select("id")
+    .insert({ full_name, email, password_hash, mobile, district, role, manager_id, ...partnerFields })
+    .select("id, partner_code")
     .single();
   if (error || !data) return { error: "Could not create the member. Please try again." };
 
@@ -101,7 +136,16 @@ export async function createTeamMember(
   );
   revalidatePath("/business-operators");
   revalidatePath("/users");
-  return { ok: true };
+  return {
+    ok: true,
+    created: {
+      name: full_name,
+      email,
+      code: (data.partner_code as string | null) ?? null,
+      role,
+      password: generated,
+    },
+  };
 }
 
 export async function toggleMemberActive(formData: FormData): Promise<void> {

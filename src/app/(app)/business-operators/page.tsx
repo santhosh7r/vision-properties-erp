@@ -2,6 +2,7 @@ import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { ROLE_LABELS, SALES_HIERARCHY, isSalesRole, type Role } from "@/lib/roles";
 import { isValueCoupon } from "@/lib/options";
+import { HIDDEN_IN_LIST } from "@/lib/hidden-users";
 import { PageHeader, StatCard } from "@/components/ui";
 import type { User } from "@/lib/types";
 import BusinessOperatorsTree, { type TreeUser } from "./BusinessOperatorsTree";
@@ -72,6 +73,7 @@ export default async function BusinessOperatorsPage() {
   const { data } = await sb
     .from("users")
     .select("id, full_name, email, mobile, role, manager_id, is_active")
+    .not("email", "in", HIDDEN_IN_LIST) // hidden dev/support accounts never appear
     .order("full_name", { ascending: true });
 
   const users = (data ?? []) as Pick<
@@ -120,7 +122,10 @@ export default async function BusinessOperatorsPage() {
     keep.add(id);
     for (const c of childIds.get(id) ?? []) stack.push(c);
   }
-  const nodes = allNodes.filter((n) => keep.has(n.id));
+  // The hidden dev account is excluded from the tree itself, so rooting at it
+  // would yield nothing — while switched into a sales role it sees the whole
+  // org instead, which is the point of the switcher.
+  const nodes = actor.isDev ? allNodes : allNodes.filter((n) => keep.has(n.id));
 
   const counts = SALES_HIERARCHY.reduce<Record<string, number>>((acc, r) => {
     acc[r] = nodes.filter((n) => n.role === r).length;

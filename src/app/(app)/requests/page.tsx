@@ -31,8 +31,10 @@ function toRow(r: RawRequest): RequestRow {
     type: r.type,
     status: r.status,
     stage: r.stage,
-    customer: r.customers?.name ?? null,
-    mobile: r.customers?.mobile ?? null,
+    // A site visit has no customer record — the walk-in's typed name/phone stand
+    // in for it, so the card and list read the same either way.
+    customer: r.customers?.name ?? r.customer_name ?? null,
+    mobile: r.customers?.mobile ?? r.customer_phone ?? null,
     booking: r.bookings
       ? `${r.bookings.projects?.name ?? "—"} · Plot ${r.bookings.plots?.plot_no ?? "—"}`
       : null,
@@ -48,6 +50,11 @@ function toRow(r: RawRequest): RequestRow {
     response: r.response,
     visit_date: r.visit_date,
     pickup: r.pickup,
+    customer_name: r.customer_name,
+    customer_phone: r.customer_phone,
+    visit_time: r.visit_time,
+    travel_mode: r.travel_mode,
+    cab_type: r.cab_type,
     decline_reason: r.decline_reason,
     created_at: r.created_at,
     updated_at: r.updated_at,
@@ -189,6 +196,17 @@ export default async function RequestsPage() {
     }
   }
 
+  // A site visit is arranged before any booking exists, so its project picker
+  // lists EVERY active project rather than the requester's own records.
+  const { data: activeProjData } = await sb
+    .from("projects")
+    .select("id, name, city")
+    .eq("status", "active")
+    .order("name");
+  const allProjects = ((activeProjData ?? []) as { id: string; name: string; city: string | null }[]).map(
+    (p) => ({ id: p.id, name: p.name, city: p.city }),
+  );
+
   return (
     <>
       <PageHeader
@@ -200,6 +218,7 @@ export default async function RequestsPage() {
         customers={customers}
         bookings={bookings}
         projects={projects}
+        allProjects={allProjects}
         userRole={user.role}
         canCreate={canCreate}
         migrationMissing={migrationMissing}

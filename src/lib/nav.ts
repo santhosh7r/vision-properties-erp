@@ -60,7 +60,7 @@ export const NAV: NavItem[] = [
   { href: "/inventory/add-project", label: "Add Project", icon: "building", roles: ["admin"], group: "Inventory" },
   { href: "/inventory/add-plots", label: "Add Plots", icon: "cube", roles: ["admin"], group: "Inventory" },
   { href: "/inventory/manage", label: "Manage/Edit Plots", icon: "layers", roles: ["admin"], group: "Inventory" },
-  { href: "/inventory/import", label: "Import from Excel", icon: "fileText", roles: ["admin"], group: "Inventory", devOnly: true },
+  { href: "/inventory/import", label: "Import from Excel", icon: "fileText", roles: ["admin"], group: "Inventory" },
   { href: "/customers", label: "Customers", icon: "userCircle", roles: SALES, group: "Clients" },
   // Shared bookings list — non-admin sales + finance. Admin uses the Pre/Post-Sales
   // labelled actions below (which deep-link into this same engine via query params).
@@ -101,6 +101,9 @@ export const NAV: NavItem[] = [
   // own team through "My Team" (/business-operators) instead.
   { href: "/users", label: "View Partner", icon: "users", roles: ["admin"], group: "Business Partners" },
   { href: "/users?view=manage", label: "Block / Change Team & Level", icon: "sitemap", roles: ["admin"], group: "Business Partners" },
+  // Site Visit Feedback — Admin sees every response and edits the form; a Senior
+  // Director sees their own team's responses only (enforced on the page).
+  { href: "/feedback", label: "Site Visit Feedback", icon: "fileText", roles: ["admin", "senior_director"], group: "Operations" },
   { href: "/activity", label: "Activity Logs", icon: "clock", roles: ["admin"], group: "Administration" },
   { href: "/settings", label: "Settings", icon: "cog", roles: ["admin"], group: "Administration" },
   // Account — sales roles: one Profile page (details, tokens, password,

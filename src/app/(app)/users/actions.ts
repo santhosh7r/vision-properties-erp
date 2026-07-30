@@ -1,12 +1,16 @@
 "use server";
 
-import { randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getDownlineIds } from "@/lib/hierarchy";
+import {
+  EMPTY_PARTNER_FIELDS,
+  generatePassword,
+  readPartnerFields,
+} from "@/lib/partner-registration";
 import {
   ROLES,
   ROLE_LABELS,
@@ -26,15 +30,6 @@ export interface CreateUserState {
     /** Only set when the server generated the password (Business Partner). */
     password?: string;
   };
-}
-
-// Unambiguous alphabet — no 0/O/1/l/I, because the admin reads this password out
-// loud or copies it into a message for the new partner.
-const PW_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-function generatePassword(len = 10): string {
-  let out = "";
-  for (let i = 0; i < len; i++) out += PW_ALPHABET[randomInt(PW_ALPHABET.length)];
-  return out;
 }
 
 function s(v: FormDataEntryValue | null): string {
@@ -93,43 +88,11 @@ export async function createUser(
   }
 
   // Registration-form fields — captured for partners only, NULL for everyone else.
-  const partnerFields: Record<string, string | null> = {
-    date_of_birth: null,
-    whatsapp: null,
-    address: null,
-    occupation: null,
-    rera_number: null,
-    nominee_name: null,
-    nominee_mobile: null,
-    declared_at: null,
-  };
+  let partnerFields = EMPTY_PARTNER_FIELDS;
   if (isPartner) {
-    const date_of_birth = s(formData.get("date_of_birth"));
-    const whatsapp = s(formData.get("whatsapp"));
-    const address = s(formData.get("address"));
-    const nominee_name = s(formData.get("nominee_name"));
-    const nominee_mobile = s(formData.get("nominee_mobile"));
-    if (!mobile) return { error: "Mobile number is required." };
-    if (!date_of_birth) return { error: "Date of birth is required." };
-    if (!whatsapp) return { error: "WhatsApp number is required." };
-    if (!address) return { error: "Residential address is required." };
-    if (!nominee_name || !nominee_mobile) {
-      return { error: "Nominee name and nominee mobile number are required." };
-    }
-    // The declaration is a signature — never create the partner without it.
-    if (s(formData.get("declaration")) !== "on") {
-      return { error: "The declaration must be accepted before creating the partner." };
-    }
-    Object.assign(partnerFields, {
-      date_of_birth,
-      whatsapp,
-      address,
-      occupation: nullable(formData.get("occupation")),
-      rera_number: nullable(formData.get("rera_number")),
-      nominee_name,
-      nominee_mobile,
-      declared_at: new Date().toISOString(),
-    });
+    const read = readPartnerFields(formData, mobile);
+    if ("error" in read) return { error: read.error };
+    partnerFields = read.fields;
   }
 
   // Placement rule: Senior Director, Finance and Legal connect DIRECTLY to the

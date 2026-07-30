@@ -11,6 +11,9 @@ import {
 } from "@/lib/roles";
 import { createUser, type CreateUserState } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import PartnerRegistrationFields, {
+  NewPartnerCredentials,
+} from "@/components/PartnerRegistrationFields";
 import { DISTRICTS } from "@/lib/options";
 
 export interface ManagerOption {
@@ -45,20 +48,6 @@ function ManagerName({ m }: { m: ManagerOption }) {
 // Only render this many matches in the picker at once — keeps the dropdown fast
 // when there are thousands of potential managers. The user narrows with search.
 const MAX_RESULTS = 50;
-
-// Section heading inside the registration form.
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <fieldset className="space-y-3">
-      <legend className="mb-1 text-sm font-semibold">{title}</legend>
-      {children}
-    </fieldset>
-  );
-}
-
-// The declaration the partner signs — kept verbatim from the paper form.
-const DECLARATION =
-  "I hereby declare that all the information provided above is true and correct to the best of my knowledge. I agree to abide by the policies, rules, commission structure, and terms and conditions of Vision Properties. I understand that Vision Properties reserves the right to approve, suspend, or terminate my partner registration at any time.";
 
 // A member sits directly under a parent whose role is exactly one level above
 // them (managerRoleOf):
@@ -99,10 +88,6 @@ export default function AddUserForm({
   const [managerId, setManagerId] = useState("");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  // Partner form: WhatsApp usually equals the mobile, so mirror it by default.
-  const [mobile, setMobile] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
-  const [sameWhatsapp, setSameWhatsapp] = useState(true);
   // Remount key — bumped after a successful create so every uncontrolled input
   // in the form starts blank again for the next partner.
   const [formKey, setFormKey] = useState(0);
@@ -161,9 +146,6 @@ export default function AddUserForm({
     setRole(soleRole);
     setManagerId("");
     setQuery("");
-    setMobile("");
-    setWhatsapp("");
-    setSameWhatsapp(true);
     setFormKey((k) => k + 1);
   }
 
@@ -171,36 +153,13 @@ export default function AddUserForm({
   if (created) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4">
-          <h3 className="text-sm font-semibold">{created.name} created</h3>
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            {ROLE_LABELS[created.role]}
-            {created.code && (
-              <>
-                {" · "}
-                <span className="font-mono">{created.code}</span>
-              </>
-            )}
-          </p>
-          <dl className="mt-3 space-y-2 text-sm">
-            <div>
-              <dt className="text-xs text-[var(--muted)]">Email</dt>
-              <dd className="font-mono">{created.email}</dd>
-            </div>
-            {created.password && (
-              <div>
-                <dt className="text-xs text-[var(--muted)]">Temporary password</dt>
-                <dd className="font-mono text-base font-semibold">{created.password}</dd>
-              </div>
-            )}
-          </dl>
-          {created.password && (
-            <p className="mt-3 text-xs text-[var(--muted)]">
-              Share this with {created.name} now — it is generated once and cannot be shown again.
-              Ask them to change it after their first sign-in.
-            </p>
-          )}
-        </div>
+        <NewPartnerCredentials
+          name={created.name}
+          email={created.email}
+          code={created.code}
+          roleLabel={ROLE_LABELS[created.role]}
+          password={created.password}
+        />
         <button type="button" className="btn-primary w-full" onClick={addAnother}>
           Add Another Partner
         </button>
@@ -255,129 +214,7 @@ export default function AddUserForm({
 
       {/* ================= BUSINESS PARTNER REGISTRATION FORM ================= */}
       {isPartner ? (
-        <>
-          <Section title="Personal Details">
-            <div>
-              <label className="label">Full Name *</label>
-              <input name="full_name" className="input" required />
-            </div>
-            <div>
-              <label className="label">Date of Birth *</label>
-              <input name="date_of_birth" type="date" className="input" required />
-            </div>
-            <div>
-              <label className="label">Mobile Number *</label>
-              <input
-                name="mobile"
-                type="tel"
-                inputMode="tel"
-                className="input"
-                required
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <label className="label">WhatsApp Number *</label>
-                <label className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
-                  <input
-                    type="checkbox"
-                    checked={sameWhatsapp}
-                    onChange={(e) => setSameWhatsapp(e.target.checked)}
-                  />
-                  Same as mobile
-                </label>
-              </div>
-              <input
-                name="whatsapp"
-                type="tel"
-                inputMode="tel"
-                className="input"
-                required
-                readOnly={sameWhatsapp}
-                value={sameWhatsapp ? mobile : whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label">Email ID *</label>
-              <input name="email" type="email" className="input" required />
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                This is their sign-in ID. A temporary password is generated and shown once after
-                you create the partner.
-              </p>
-            </div>
-            <div>
-              <label className="label">Residential Address *</label>
-              <textarea name="address" className="textarea" rows={3} required />
-            </div>
-            <div>
-              <label className="label">District</label>
-              <select name="district" className="select" defaultValue="">
-                <option value="">— Select district —</option>
-                {DISTRICTS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                Their sales panel shows this district&apos;s inventory first.
-              </p>
-            </div>
-          </Section>
-
-          <Section title="Professional Details">
-            <div>
-              <label className="label">Occupation</label>
-              <input name="occupation" className="input" />
-            </div>
-            <div>
-              <label className="label">RERA Registration Number</label>
-              <input name="rera_number" className="input" />
-              <p className="mt-1 text-xs text-[var(--muted)]">Optional.</p>
-            </div>
-          </Section>
-
-          <Section title="Nominee Details">
-            <div>
-              <label className="label">Nominee Name *</label>
-              <input name="nominee_name" className="input" required />
-            </div>
-            <div>
-              <label className="label">Nominee Mobile Number *</label>
-              <input name="nominee_mobile" type="tel" inputMode="tel" className="input" required />
-            </div>
-          </Section>
-
-          <Section title="Reference Details">
-            <div>
-              <label className="label">Reference ID</label>
-              <input
-                name="reference_code"
-                className="input font-mono uppercase"
-                placeholder="VPBM12"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                The partner ID of whoever referred them — this becomes the manager they report to.
-                Leave blank to place them under you.
-              </p>
-            </div>
-          </Section>
-
-          <Section title="Declaration">
-            <label className="flex cursor-pointer items-start gap-2 rounded-lg border bg-[var(--surface-2)] p-3 text-xs leading-relaxed">
-              <input
-                type="checkbox"
-                name="declaration"
-                required
-                className="mt-0.5 shrink-0"
-              />
-              <span>{DECLARATION}</span>
-            </label>
-          </Section>
-        </>
+        <PartnerRegistrationFields />
       ) : (
         /* ================= EVERY OTHER ROLE — short form ================= */
         <>

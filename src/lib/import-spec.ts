@@ -75,6 +75,42 @@ export const PLOT_COLUMNS: ImportColumn[] = [
   { key: "status", header: "status", example: "available", note: "Dropdown — type exactly: available (Vacant) or blocked (Not Vacant); default available", options: PLOT_STATUS_OPTS },
 ];
 
+// ── Worked examples ─────────────────────────────────────────────────────────
+// Shown on the "Example (how to fill)" sheet of each template — a few realistic
+// rows so whoever fills the file can see the shape of every column instead of
+// reading the notes and guessing. These NEVER go on the Template sheet: the
+// importer reads the first sheet only, so an example row sitting there would be
+// imported as a real record by anyone who forgot to delete it.
+export const PROJECT_EXAMPLE_ROWS: Record<string, string | number>[] = [
+  {
+    name: "Green Valley", district: "Chennai", city: "Chennai", pincode: "600100",
+    area: "2.5 acres", approval_type: "dtcp_rera", project_type: "affordable", status: "active",
+    branch: "Main Branch", guideline_value: 1500,
+    director_gold_coupon: 2.5, director_digital_coupon: 1, senior_director_gold_coupon: 1.5,
+    director_tools_coupon: 0.75,
+    blocking_amount: 10000, blocking_window_hours: 48, advance_percent: 5, advance_min_amount: 50000,
+    booking_window_days: 15, cancel_full_refund_days: 3, cancellation_charge: 5000,
+    refund_processing_days: 5, transfer_charge: 5000,
+  },
+  {
+    name: "Riverside Enclave", district: "Trichy", city: "Trichy", pincode: "620001",
+    area: "4 acres", approval_type: "dtcp_only", project_type: "luxury", status: "draft",
+    branch: "Trichy Branch", guideline_value: 2200,
+    director_gold_coupon: 3, director_digital_coupon: 1.25, senior_director_gold_coupon: 2,
+    director_tools_coupon: 1,
+    blocking_amount: 25000, blocking_window_hours: 72, advance_percent: 10, advance_min_amount: 100000,
+    booking_window_days: 30, cancel_full_refund_days: 5, cancellation_charge: 10000,
+    refund_processing_days: 7, transfer_charge: 7500,
+  },
+];
+
+export const PLOT_EXAMPLE_ROWS: Record<string, string | number>[] = [
+  { project: "Green Valley", block: "Phase 1", plot_no: "A-101", sqft: 1200, price_per_sqft: 1500, description: "Corner plot", status: "available" },
+  { project: "Green Valley", block: "Phase 1", plot_no: "A-102", sqft: 1000, price_per_sqft: 1500, description: "", status: "available" },
+  { project: "Green Valley", block: "Phase 2", plot_no: "B-201", sqft: 1500, price_per_sqft: 1650, description: "East facing", status: "blocked" },
+  { project: "Riverside Enclave", block: "Block A", plot_no: "R-01", sqft: 2400, price_per_sqft: 2200, description: "River view", status: "available" },
+];
+
 // ── Enum normalizers (accept the code or the human label, case-insensitive) ──
 function norm(v: unknown): string {
   return String(v ?? "").trim().toLowerCase();

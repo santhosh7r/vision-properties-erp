@@ -9,6 +9,8 @@ import { logout } from "@/app/login/actions";
 import ThemeToggle from "@/components/ThemeToggle";
 import { SubmitButton } from "@/components/SubmitButton";
 import SideNav from "./SideNav";
+import DevRoleSwitcher from "./DevRoleSwitcher";
+import DevBanner from "./DevBanner";
 
 export default async function AppLayout({
   children,
@@ -19,7 +21,11 @@ export default async function AppLayout({
   // Force a password change before the app is usable when flagged (e.g. a
   // freshly-provisioned account with an admin-set temporary password).
   if (await mustChangePassword(user.id)) redirect("/change-password");
+  // Nav follows the EFFECTIVE role, so a dev switched to Business Partner sees
+  // exactly that role's menu. Dev-only items stay keyed off the account itself.
   const items = navFor(user.role, isHiddenUser(user.email));
+  // True only for the dev account while it is running as someone else's role.
+  const devSwitched = user.isDev && user.role !== user.realRole;
   const initials = user.full_name
     .split(" ")
     .map((p) => p[0])
@@ -54,11 +60,20 @@ export default async function AppLayout({
             </p>
           </div>
           <div className="flex flex-1 items-center justify-end gap-3">
+            {user.isDev && <DevRoleSwitcher active={user.role} realRole={user.realRole} />}
             <ThemeToggle />
             <div className="flex items-center gap-3 pl-1">
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-medium leading-tight">{user.full_name}</p>
-                <p className="text-[11px] text-[var(--muted)]">{ROLE_LABELS[user.role]}</p>
+                {/* While switched, name the effective role AND the real one, so
+                    the header can never imply two different identities. */}
+                <p
+                  className="text-[11px]"
+                  style={{ color: devSwitched ? "var(--brand-red)" : "var(--muted)" }}
+                >
+                  {ROLE_LABELS[user.role]}
+                  {devSwitched && ` · really ${ROLE_LABELS[user.realRole]}`}
+                </p>
               </div>
               <div
                 className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold"
@@ -74,6 +89,9 @@ export default async function AppLayout({
             </form>
           </div>
         </header>
+        {devSwitched && (
+          <DevBanner name={user.full_name} active={user.role} realRole={user.realRole} />
+        )}
         <main className="flex-1 overflow-y-auto overflow-x-hidden">
           <div className="w-full p-6 lg:p-8">{children}</div>
         </main>

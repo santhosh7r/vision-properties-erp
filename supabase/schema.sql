@@ -403,6 +403,47 @@ create table if not exists notifications (
 );
 
 -- ---------------------------------------------------------------------------
+-- SITE VISIT FEEDBACK  (see migration 0027)
+-- The questions are DATA, not code — Admin edits them in the panel, so the
+-- definition lives in feedback_forms.questions (jsonb) and each response stores
+-- answers keyed by question id. Delivery is a one-time /f/<token> link, because
+-- WhatsApp requires a pre-approved template for business-initiated messages and
+-- collecting answers in-chat would need re-approval on every question change.
+-- ---------------------------------------------------------------------------
+create table if not exists feedback_forms (
+  id         uuid primary key default gen_random_uuid(),
+  title      text not null default 'Site Visit Feedback',
+  intro      text,
+  thank_you  text,
+  questions  jsonb       not null default '[]'::jsonb,
+  is_active  boolean     not null default true,
+  updated_by uuid        references users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create unique index if not exists uniq_feedback_forms_active
+  on feedback_forms (is_active) where is_active;
+
+create table if not exists feedback_requests (
+  id             uuid primary key default gen_random_uuid(),
+  request_id     uuid references service_requests(id) on delete cascade,
+  form_id        uuid references feedback_forms(id)   on delete set null,
+  token          text not null unique,       -- the /f/<token> secret
+  customer_name  text,
+  customer_phone text,
+  scheduled_for  timestamptz,                -- visit time + 6h
+  sent_at        timestamptz,                -- set once WhatsApp goes out
+  responded_at   timestamptz,
+  answers        jsonb,
+  created_at     timestamptz not null default now()
+);
+create index if not exists idx_feedback_requests_request   on feedback_requests(request_id);
+create index if not exists idx_feedback_requests_scheduled on feedback_requests(scheduled_for) where sent_at is null;
+create index if not exists idx_feedback_requests_responded on feedback_requests(responded_at);
+create unique index if not exists uniq_feedback_requests_request
+  on feedback_requests(request_id) where request_id is not null;
+
+-- ---------------------------------------------------------------------------
 -- AUDIT LOG  (who did what — every state/money change)
 -- ---------------------------------------------------------------------------
 create table if not exists audit_log (
@@ -482,6 +523,13 @@ create table if not exists service_requests (
   response        text,
   visit_date      date,
   pickup          text,
+  -- Site Visit only (0026) — a walk-in has no customer record yet, so the name
+  -- and phone are typed straight onto the request instead of via customer_id.
+  customer_name   text,
+  customer_phone  text,
+  visit_time      time,                    -- wall-clock IST, paired with visit_date
+  travel_mode     text,                    -- 'own' | 'company' | 'red_taxi'
+  cab_type        text,                    -- '4_seater' | '7_seater' | 'van'
   requested_by    uuid references users(id) on delete set null,
   senior_decided_by uuid references users(id) on delete set null,
   senior_decided_at timestamptz,

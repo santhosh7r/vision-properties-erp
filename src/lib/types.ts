@@ -235,6 +235,12 @@ export interface ServiceRequest {
   response: string | null;
   visit_date: string | null;
   pickup: string | null;
+  // Site Visit only — see migration 0026.
+  customer_name: string | null;
+  customer_phone: string | null;
+  visit_time: string | null;
+  travel_mode: string | null;
+  cab_type: string | null;
   requested_by: string | null;
   senior_decided_by: string | null;
   senior_decided_at: string | null;

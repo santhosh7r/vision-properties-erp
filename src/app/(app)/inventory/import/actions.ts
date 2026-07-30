@@ -4,7 +4,7 @@ import { Readable } from "stream";
 import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
-import { requireDevUser } from "@/lib/auth";
+import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import {
   PROJECT_COLUMNS,
@@ -52,9 +52,13 @@ export type ImportState =
   | null
   /** File could not even be read / is not the template. Nothing was saved. */
   | { phase: "rejected"; error: string }
-  /** File was analysed. `report.issues` empty ⇒ safe to commit. Nothing saved. */
-  | { phase: "checked"; report: ImportReport }
-  /** Commit ran and every row was written. */
+  /**
+   * The file was read but did not pass validation. NOTHING was saved — the whole
+   * upload is refused so a sheet is never half-imported. `report.issues` lists
+   * every problem, row by row, for the user to correct and upload again.
+   */
+  | { phase: "invalid"; report: ImportReport }
+  /** Every row passed and was written. */
   | { phase: "imported"; created: number; fileName: string };
 
 // ── Cell helpers ────────────────────────────────────────────────────────────
@@ -425,8 +429,7 @@ async function loadSheet(formData: FormData, requiredHeaders: string[]): Promise
 }
 
 export async function importProjects(_prev: ImportState, formData: FormData): Promise<ImportState> {
-  const actor = await requireDevUser(); // hidden dev account only
-  const mode = String(formData.get("mode") || "check");
+  const actor = await requireCapability("manage_projects");
 
   const loaded = await loadSheet(formData, PROJECT_REQUIRED_HEADERS);
   if (!loaded.ok) return { phase: "rejected", error: loaded.error };
@@ -439,9 +442,10 @@ export async function importProjects(_prev: ImportState, formData: FormData): Pr
     .slice(0, PREVIEW_ROWS)
     .map((p) => [String(p.__row), p.name, p.district, p.city, p.area, p.approval_type, p.project_type, p.status]);
 
-  // Validation pass, or a commit blocked by problems → report, save NOTHING.
-  if (mode !== "commit" || issues.length > 0) {
-    return { phase: "checked", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
+  // Any problem refuses the ENTIRE upload — nothing is written, so the sheet can
+  // never land half-imported. The user corrects it and uploads again.
+  if (issues.length > 0) {
+    return { phase: "invalid", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
   }
 
   // Clean file → write every row in a single statement so it lands all-or-nothing.
@@ -449,7 +453,7 @@ export async function importProjects(_prev: ImportState, formData: FormData): Pr
   const { error } = await getSupabase().from("projects").insert(payload);
   if (error) {
     return {
-      phase: "checked",
+      phase: "invalid",
       report: buildReport(file, sheet, [{ row: null, column: "—", message: `Nothing was saved — the database rejected the file: ${error.message}` }], previewHeaders, previewRows),
     };
   }
@@ -464,8 +468,7 @@ export async function importProjects(_prev: ImportState, formData: FormData): Pr
 // ── Plots: validate + commit ────────────────────────────────────────────────
 
 export async function importPlots(_prev: ImportState, formData: FormData): Promise<ImportState> {
-  const actor = await requireDevUser(); // hidden dev account only
-  const mode = String(formData.get("mode") || "check");
+  const actor = await requireCapability("manage_projects");
 
   const loaded = await loadSheet(formData, PLOT_REQUIRED_HEADERS);
   if (!loaded.ok) return { phase: "rejected", error: loaded.error };
@@ -486,8 +489,10 @@ export async function importPlots(_prev: ImportState, formData: FormData): Promi
       p.status,
     ]);
 
-  if (mode !== "commit" || issues.length > 0) {
-    return { phase: "checked", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
+  // Any problem refuses the ENTIRE upload — nothing is written, so the sheet can
+  // never land half-imported. The user corrects it and uploads again.
+  if (issues.length > 0) {
+    return { phase: "invalid", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
   }
 
   const sb = getSupabase();
@@ -516,7 +521,7 @@ export async function importPlots(_prev: ImportState, formData: FormData): Promi
       .select("id, project_id, name");
     if (catErr || !newCats) {
       return {
-        phase: "checked",
+        phase: "invalid",
         report: buildReport(file, sheet, [{ row: null, column: "block", message: `Nothing was saved — could not create the blocks: ${catErr?.message ?? "unknown error"}` }], previewHeaders, previewRows),
       };
     }
@@ -541,7 +546,7 @@ export async function importPlots(_prev: ImportState, formData: FormData): Promi
     // Undo the blocks we just made so a failed upload leaves no trace.
     if (createdCatIds.length) await sb.from("plot_categories").delete().in("id", createdCatIds);
     return {
-      phase: "checked",
+      phase: "invalid",
       report: buildReport(file, sheet, [{ row: null, column: "—", message: `Nothing was saved — the database rejected the file: ${error.message}` }], previewHeaders, previewRows),
     };
   }

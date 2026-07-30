@@ -1,22 +1,22 @@
-import { requireDevUser } from "@/lib/auth";
+import { requireCapability } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 import ImportCard from "./ImportCard";
 import { importProjects, importPlots } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-// Dev-only bulk import from Excel. Download a template, fill it in, upload it,
-// and the file is CHECKED before anything is written — a file with any problem
-// is reported row by row and saved nowhere. Only a fully clean file can be
-// committed, so re-uploading an already-imported file cannot duplicate data.
+// Bulk import from Excel (Admin). Download a template, fill it in, upload it —
+// one step. Every row is validated BEFORE anything is written: a file with any
+// problem is refused whole and reported row by row, so a sheet can never land
+// half-imported. Re-uploading an already-imported file cannot duplicate data.
 export default async function ImportPage() {
-  await requireDevUser(); // hidden dev account only
+  await requireCapability("manage_projects");
 
   return (
     <>
       <PageHeader
         title="Import from Excel"
-        subtitle="Download a template, fill it in, then check the file. Nothing is saved until the check passes with no problems."
+        subtitle="Download a template, fill it in and upload it. Every row is checked first — if anything is wrong nothing at all is saved, and each problem is listed for you to correct."
       />
       <div className="grid gap-5 lg:grid-cols-2">
         <ImportCard

@@ -3,6 +3,9 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import PartnerRegistrationFields, {
+  NewPartnerCredentials,
+} from "@/components/PartnerRegistrationFields";
 import {
   ROLE_LABELS,
   SALES_HIERARCHY,
@@ -405,10 +408,18 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
     undefined,
   );
   const allowed = creatableRolesUnder(parent.role);
+  // With one creatable role (a Business Manager can only add a Business Partner)
+  // there is nothing to choose — preselect it.
+  const [role, setRole] = useState<Role | "">(allowed.length === 1 ? allowed[0] : "");
+  const isPartner = role === "business_partner";
+  // A generated password must be handed over before the modal disappears, so a
+  // partner create swaps the form for the credentials panel instead of closing.
+  const credentials = state?.created?.password ? state.created : null;
 
-  // Close once the server confirms the member was created.
+  // Close once the server confirms the member was created — unless there is a
+  // one-time password still to show.
   useEffect(() => {
-    if (state?.ok) onClose();
+    if (state?.ok && !state.created?.password) onClose();
   }, [state, onClose]);
 
   // Esc to close.
@@ -427,11 +438,13 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
       onClick={onClose}
     >
       <div
-        className="card w-full max-w-md"
+        className="card max-h-[88vh] w-full max-w-md overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Add member</h2>
+          <h2 className="text-sm font-semibold">
+            {isPartner ? "Business Partner Registration" : "Add member"}
+          </h2>
           <button type="button" onClick={onClose} className="text-[var(--muted)] hover:text-[var(--text)]" aria-label="Close">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -443,52 +456,84 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
           {ROLE_LABELS[parent.role]}
         </p>
 
-        <form action={formAction} className="space-y-3">
-          <input type="hidden" name="manager_id" value={parent.id} />
-
-          <div>
-            <label className="label">Role *</label>
-            <select name="role" className="select" required defaultValue="">
-              <option value="" disabled>
-                Select role
-              </option>
-              {allowed.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Full Name *</label>
-            <input name="full_name" className="input" required />
-          </div>
-          <div>
-            <label className="label">Email *</label>
-            <input name="email" type="email" className="input" required />
-          </div>
-          <div>
-            <label className="label">Temporary Password *</label>
-            <input name="password" className="input" required minLength={6} />
-          </div>
-          <div>
-            <label className="label">Mobile</label>
-            <input name="mobile" className="input" />
-          </div>
-
-          {state?.error && (
-            <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
-              {state.error}
-            </p>
-          )}
-
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="btn-ghost">
-              Cancel
+        {credentials ? (
+          <div className="space-y-4">
+            <NewPartnerCredentials
+              name={credentials.name}
+              email={credentials.email}
+              code={credentials.code}
+              roleLabel={ROLE_LABELS[credentials.role]}
+              password={credentials.password}
+            />
+            <button type="button" onClick={onClose} className="btn-primary w-full">
+              Done
             </button>
-            <SubmitButton pendingLabel="Creating…">Create Member</SubmitButton>
           </div>
-        </form>
+        ) : (
+          <form action={formAction} className={isPartner ? "space-y-5" : "space-y-3"}>
+            <input type="hidden" name="manager_id" value={parent.id} />
+
+            <div>
+              <label className="label">Role *</label>
+              <select
+                name="role"
+                className="select"
+                required
+                value={role}
+                onChange={(e) => setRole(e.target.value as Role)}
+              >
+                <option value="" disabled>
+                  Select role
+                </option>
+                {allowed.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* A Business Partner gets the full registration form. The parent is
+                already fixed by the node being added under, so no Reference ID. */}
+            {isPartner ? (
+              <PartnerRegistrationFields showReference={false} />
+            ) : (
+              <>
+                <div>
+                  <label className="label">Full Name *</label>
+                  <input name="full_name" className="input" required />
+                </div>
+                <div>
+                  <label className="label">Email *</label>
+                  <input name="email" type="email" className="input" required />
+                </div>
+                <div>
+                  <label className="label">Temporary Password *</label>
+                  <input name="password" className="input" required minLength={6} />
+                </div>
+                <div>
+                  <label className="label">Mobile</label>
+                  <input name="mobile" className="input" />
+                </div>
+              </>
+            )}
+
+            {state?.error && (
+              <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                {state.error}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={onClose} className="btn-ghost">
+                Cancel
+              </button>
+              <SubmitButton pendingLabel="Creating…">
+                {isPartner ? "Create Partner" : "Create Member"}
+              </SubmitButton>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

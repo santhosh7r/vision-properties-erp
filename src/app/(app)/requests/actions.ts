@@ -5,13 +5,20 @@ import { getSupabase } from "@/lib/supabase";
 import { requireUser, requireCapability } from "@/lib/auth";
 import { getDownlineIds } from "@/lib/hierarchy";
 import { logAudit } from "@/lib/audit";
+import { FEEDBACK_DELAY_MS, makeFeedbackToken } from "@/lib/feedback";
 import {
   REQUEST_CHAIN,
   initialStageFor,
   nextStage,
   canActOnStage,
   requestTypeMeta,
+  canRaiseRequest,
   isRequestComplete,
+  visitLeadTimeOk,
+  needsCabType,
+  istEpoch,
+  TRAVEL_MODES,
+  CAB_TYPES,
   type ServiceRequestType,
   type RequestStage,
 } from "@/lib/requests";
@@ -48,6 +55,21 @@ interface RequestFields {
   details: string | null;
   visit_date: string | null;
   pickup: string | null;
+  // Site visit only — a walk-in typed by hand, plus the travel arrangement.
+  customer_name: string | null;
+  customer_phone: string | null;
+  visit_time: string | null;
+  travel_mode: string | null;
+  cab_type: string | null;
+}
+
+const TRAVEL_VALUES = TRAVEL_MODES.map((m) => m.value) as readonly string[];
+const CAB_VALUES = CAB_TYPES.map((c) => c.value) as readonly string[];
+
+// Only accept a value the form actually offers — a hand-crafted POST must not
+// land arbitrary text in these columns.
+function oneOf(v: string | null, allowed: readonly string[]): string | null {
+  return v && allowed.includes(v) ? v : null;
 }
 
 // Parse the form into request fields and confirm the actor OWNS every relation
@@ -95,8 +117,19 @@ async function parseRequestFields(
       (bk.partner_id && ids.includes(bk.partner_id));
     if (!owns) return null;
   }
-  // The project must be one the actor PERSONALLY blocked or booked.
-  if (project_id) {
+  // The project must be one the actor PERSONALLY blocked or booked — EXCEPT for
+  // a cab / site visit, which is exactly the case where no booking exists yet:
+  // any active project can be shown to a walk-in.
+  const isCab = s(formData.get("type")) === "cab";
+  if (project_id && isCab) {
+    const { data: proj } = await sb
+      .from("projects")
+      .select("id")
+      .eq("id", project_id)
+      .eq("status", "active")
+      .maybeSingle();
+    if (!proj) return null;
+  } else if (project_id) {
     const { data: ownProj } = await sb
       .from("bookings")
       .select("id")
@@ -112,6 +145,8 @@ async function parseRequestFields(
     project_id = bk?.project_id ?? null;
   }
 
+  const travel_mode = oneOf(nullable(formData.get("travel_mode")), TRAVEL_VALUES);
+
   return {
     customer_id,
     booking_id,
@@ -120,6 +155,16 @@ async function parseRequestFields(
     details: nullable(formData.get("details")),
     visit_date: nullable(formData.get("visit_date")),
     pickup: nullable(formData.get("pickup")),
+    customer_name: nullable(formData.get("customer_name")),
+    customer_phone: nullable(formData.get("customer_phone")),
+    visit_time: nullable(formData.get("visit_time")),
+    travel_mode,
+    // "Own" means no cab is booked, so no vehicle size is stored — dropped here
+    // rather than trusted from the form, which may still hold a stale value from
+    // before the mode was changed.
+    cab_type: needsCabType(travel_mode)
+      ? oneOf(nullable(formData.get("cab_type")), CAB_VALUES)
+      : null,
   };
 }
 
@@ -142,12 +187,21 @@ export async function createServiceRequest(formData: FormData): Promise<void> {
   const meta = requestTypeMeta(type);
   const draft_id = nullable(formData.get("draft_id"));
 
+  // Per-type gate: only Legal Query is raisable, and only by Senior Director and
+  // Director. Checked here as well as in the UI — the type arrives in the form
+  // body, so a crafted POST could otherwise raise a retired type.
+  if (!canRaiseRequest(actor.role, type)) return;
+
   if (type === "cab" && !(await cabGateOk(sb, actor.role, actor.id))) return;
 
   const fields = await parseRequestFields(sb, actor.id, formData);
   if (!fields) return;
   if (meta.needsCustomer && !fields.customer_id) return;
   if (meta.needsBooking && !fields.booking_id) return;
+  if (!isRequestComplete(type, fields)) return;
+  // A visit must be booked at least an hour ahead — re-checked here because the
+  // form's `min` attribute is only a hint and the clock moves while it is open.
+  if (type === "cab" && !visitLeadTimeOk(fields.visit_date, fields.visit_time)) return;
 
   const stage = initialStageFor(type, actor.role);
 
@@ -183,6 +237,8 @@ export async function saveDraftRequest(formData: FormData): Promise<void> {
 
   const type = s(formData.get("type")) as ServiceRequestType;
   if (!VALID_TYPES.includes(type)) return;
+  // Parking a draft of a type you could never submit is pointless — same gate.
+  if (!canRaiseRequest(actor.role, type)) return;
   const draft_id = nullable(formData.get("draft_id"));
 
   const fields = await parseRequestFields(sb, actor.id, formData);
@@ -220,13 +276,18 @@ export async function submitDraftRequest(formData: FormData): Promise<void> {
 
   const { data: draft } = await sb
     .from("service_requests")
-    .select("id, type, customer_id, booking_id, project_id, visit_date, details, status, requested_by")
+    .select(
+      "id, type, customer_id, booking_id, project_id, visit_date, details, subject, status, requested_by, customer_name, customer_phone, visit_time, travel_mode, cab_type",
+    )
     .eq("id", id)
     .maybeSingle();
   if (!draft || draft.status !== "draft" || draft.requested_by !== actor.id) return;
 
   const type = draft.type as ServiceRequestType;
+  if (!canRaiseRequest(actor.role, type)) return;
   if (!isRequestComplete(type, draft)) return;
+  // A draft saved yesterday may now be inside the one-hour window.
+  if (type === "cab" && !visitLeadTimeOk(draft.visit_date, draft.visit_time)) return;
   if (type === "cab" && !(await cabGateOk(sb, actor.role, actor.id))) return;
 
   await sb
@@ -268,7 +329,7 @@ export async function advanceServiceRequest(formData: FormData): Promise<void> {
 
   const { data: req } = await sb
     .from("service_requests")
-    .select("id, type, stage, status, booking_id, requested_by")
+    .select("id, type, stage, status, booking_id, requested_by, customer_name, customer_phone, visit_date, visit_time")
     .eq("id", id)
     .maybeSingle();
   if (!req || req.status !== "pending") return;
@@ -323,6 +384,38 @@ export async function advanceServiceRequest(formData: FormData): Promise<void> {
         note: "Cab request approved",
         issued_by: actor.id,
       });
+    }
+  }
+
+  // Side effect: a fully-approved site visit mints its feedback link, due six
+  // hours after the visit itself. Nothing is sent here — the WhatsApp step is
+  // not wired up yet — so the row simply sits with sent_at NULL until it is.
+  // A unique index on request_id means re-approval can never mint a second link.
+  if (next === "done" && type === "cab") {
+    const { data: form } = await sb
+      .from("feedback_forms")
+      .select("id")
+      .eq("is_active", true)
+      .maybeSingle();
+    const dueAt =
+      req.visit_date && req.visit_time
+        ? new Date(
+            istEpoch(req.visit_date as string, String(req.visit_time).slice(0, 5)) +
+              FEEDBACK_DELAY_MS,
+          ).toISOString()
+        : null;
+    // Best-effort: feedback must never block the approval itself.
+    try {
+      await sb.from("feedback_requests").insert({
+        request_id: id,
+        form_id: form?.id ?? null,
+        token: makeFeedbackToken(),
+        customer_name: req.customer_name ?? null,
+        customer_phone: req.customer_phone ?? null,
+        scheduled_for: dueAt,
+      });
+    } catch {
+      /* table not migrated yet, or a link already exists */
     }
   }
 

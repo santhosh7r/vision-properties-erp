@@ -1,14 +1,15 @@
-import { requireDevUser } from "@/lib/auth";
+import { requireCapability } from "@/lib/auth";
 import { buildTemplateWorkbook } from "@/lib/import-template";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Dev-only downloadable Excel templates for bulk import.
+// Downloadable Excel templates for bulk import — Admin (manage_projects), since
+// whoever loads the inventory needs the blank file to fill in.
 //   /inventory/import/template?type=project
 //   /inventory/import/template?type=plot
 export async function GET(req: Request): Promise<Response> {
-  await requireDevUser(); // hidden dev account only
+  await requireCapability("manage_projects");
 
   const type = new URL(req.url).searchParams.get("type") === "plot" ? "plot" : "project";
   const wb = buildTemplateWorkbook(type);
