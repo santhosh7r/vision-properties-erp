@@ -17,36 +17,69 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** Pre-fills used when an existing account completes its own registration. */
+export interface RegistrationDefaults {
+  full_name?: string | null;
+  mobile?: string | null;
+  whatsapp?: string | null;
+  date_of_birth?: string | null;
+  address?: string | null;
+  district?: string | null;
+  occupation?: string | null;
+  rera_number?: string | null;
+  nominee_name?: string | null;
+  nominee_mobile?: string | null;
+}
+
 /**
- * The Business Partner Registration Form body — every field of the paper form,
- * in its original order and grouping. Rendered inside whatever <form> owns it,
- * so both the "Add New Partner" page and the team tree's "Add member" modal show
- * exactly the same fields; the matching server-side validation lives in
- * lib/partner-registration.ts.
+ * The Partner Registration Form body — every field of the paper form, in its
+ * original order and grouping. Rendered inside whatever <form> owns it, so the
+ * "Add New Partner" page, the team tree's "Add member" modal and the
+ * /complete-profile screen all show exactly the same fields; the matching
+ * server-side validation lives in lib/partner-registration.ts.
  *
  * `showReference` is off when the parent is already fixed by the surrounding UI
- * (the tree modal adds beneath a specific node, so there is nothing to look up).
+ * (the tree modal adds beneath a specific node, and a Director / Manager picks a
+ * manager from a list instead, so there is nothing to look up).
+ *
+ * `showEmail` is off on /complete-profile: the person filling it in is already
+ * signed in, and their email IS their login — letting them retype it there would
+ * be an unaudited way to change the credential they are authenticated by.
  */
 export default function PartnerRegistrationFields({
   showReference = true,
+  showEmail = true,
+  defaults,
 }: {
   showReference?: boolean;
+  showEmail?: boolean;
+  defaults?: RegistrationDefaults;
 }) {
   // WhatsApp usually equals the mobile, so mirror it unless told otherwise.
-  const [mobile, setMobile] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
-  const [sameWhatsapp, setSameWhatsapp] = useState(true);
+  const [mobile, setMobile] = useState(defaults?.mobile ?? "");
+  const [whatsapp, setWhatsapp] = useState(defaults?.whatsapp ?? "");
+  // An account that already has a DIFFERENT WhatsApp number on file must not
+  // have it silently overwritten by the mirror on first render.
+  const [sameWhatsapp, setSameWhatsapp] = useState(
+    !defaults?.whatsapp || defaults.whatsapp === defaults.mobile,
+  );
 
   return (
     <>
       <Section title="Personal Details">
         <div>
           <label className="label">Full Name *</label>
-          <input name="full_name" className="input" required />
+          <input name="full_name" className="input" required defaultValue={defaults?.full_name ?? ""} />
         </div>
         <div>
           <label className="label">Date of Birth *</label>
-          <input name="date_of_birth" type="date" className="input" required />
+          <input
+            name="date_of_birth"
+            type="date"
+            className="input"
+            required
+            defaultValue={defaults?.date_of_birth ?? ""}
+          />
         </div>
         <div>
           <label className="label">Mobile Number *</label>
@@ -83,21 +116,29 @@ export default function PartnerRegistrationFields({
             onChange={(e) => setWhatsapp(e.target.value)}
           />
         </div>
-        <div>
-          <label className="label">Email ID *</label>
-          <input name="email" type="email" className="input" required />
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            This is their sign-in ID. A temporary password is generated and shown once after you
-            create the partner.
-          </p>
-        </div>
+        {showEmail && (
+          <div>
+            <label className="label">Email ID *</label>
+            <input name="email" type="email" className="input" required />
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              This is their sign-in ID. A temporary password is generated and shown once after you
+              create the account.
+            </p>
+          </div>
+        )}
         <div>
           <label className="label">Residential Address *</label>
-          <textarea name="address" className="textarea" rows={3} required />
+          <textarea
+            name="address"
+            className="textarea"
+            rows={3}
+            required
+            defaultValue={defaults?.address ?? ""}
+          />
         </div>
         <div>
           <label className="label">District</label>
-          <select name="district" className="select" defaultValue="">
+          <select name="district" className="select" defaultValue={defaults?.district ?? ""}>
             <option value="">— Select district —</option>
             {DISTRICTS.map((d) => (
               <option key={d} value={d}>{d}</option>
@@ -112,11 +153,11 @@ export default function PartnerRegistrationFields({
       <Section title="Professional Details">
         <div>
           <label className="label">Occupation</label>
-          <input name="occupation" className="input" />
+          <input name="occupation" className="input" defaultValue={defaults?.occupation ?? ""} />
         </div>
         <div>
           <label className="label">RERA Registration Number</label>
-          <input name="rera_number" className="input" />
+          <input name="rera_number" className="input" defaultValue={defaults?.rera_number ?? ""} />
           <p className="mt-1 text-xs text-[var(--muted)]">Optional.</p>
         </div>
       </Section>
@@ -124,11 +165,23 @@ export default function PartnerRegistrationFields({
       <Section title="Nominee Details">
         <div>
           <label className="label">Nominee Name *</label>
-          <input name="nominee_name" className="input" required />
+          <input
+            name="nominee_name"
+            className="input"
+            required
+            defaultValue={defaults?.nominee_name ?? ""}
+          />
         </div>
         <div>
           <label className="label">Nominee Mobile Number *</label>
-          <input name="nominee_mobile" type="tel" inputMode="tel" className="input" required />
+          <input
+            name="nominee_mobile"
+            type="tel"
+            inputMode="tel"
+            className="input"
+            required
+            defaultValue={defaults?.nominee_mobile ?? ""}
+          />
         </div>
       </Section>
 

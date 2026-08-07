@@ -16,13 +16,22 @@ import {
 } from "@/lib/import-spec";
 
 // ============================================================================
-// Bulk import — STRICT, ALL-OR-NOTHING.
+// Bulk import — STRICT, ALL-OR-NOTHING, CHECK BEFORE WRITE.
 //
-// The file is never partially imported. Every upload is analysed first and the
-// result is returned as a report; only a file with ZERO problems can be
-// committed, and the commit re-runs the exact same analysis server-side before
-// writing anything. A file with one bad row saves nothing at all — the user
-// fixes the sheet and uploads again.
+// Two intents share one action:
+//   intent=check  → read + validate only. Nothing is ever written. Returns
+//                   either the list of problems, or a preview of what would be
+//                   imported so the user can confirm what they are about to do.
+//   intent=import → re-runs the identical analysis and only then writes.
+//
+// The check is not a formality the import trusts: `import` never assumes the
+// earlier check passed (the file could have been swapped, or the database could
+// have changed underneath it), so it validates again from scratch. A file with
+// one bad row saves nothing at all.
+//
+// Only the FIRST worksheet is ever read. Any further sheets in the workbook are
+// ignored and named back to the user, so a second sheet can never be silently
+// half-imported or silently skipped.
 //
 // Re-uploading an already-imported file is therefore safe: every row collides
 // with an existing record, the file is reported as duplicate, and nothing is
@@ -31,6 +40,12 @@ import {
 
 const MAX_ROWS = 5000;
 const PREVIEW_ROWS = 10;
+
+/** Blank optional cells read as "—" so an empty column is visibly empty. */
+function cell(v: unknown): string {
+  const s = v === null || v === undefined ? "" : String(v);
+  return s === "" ? "—" : s;
+}
 
 /** One problem found in the sheet, addressed to a specific row + column. */
 export interface RowIssue {
@@ -46,6 +61,10 @@ export interface ImportReport {
   issues: RowIssue[];
   previewHeaders: string[];
   previewRows: string[][];
+  /** The one sheet that was read — always the first in the workbook. */
+  sheetName: string;
+  /** Every other sheet in the workbook. Read from none of them. */
+  ignoredSheets: string[];
 }
 
 export type ImportState =
@@ -58,6 +77,11 @@ export type ImportState =
    * every problem, row by row, for the user to correct and upload again.
    */
   | { phase: "invalid"; report: ImportReport }
+  /**
+   * Checked and clean. Still NOTHING has been written — this is the confirmation
+   * step, showing what the import would create.
+   */
+  | { phase: "checked"; report: ImportReport }
   /** Every row passed and was written. */
   | { phase: "imported"; created: number; fileName: string };
 
@@ -92,6 +116,8 @@ type SheetRow = Record<string, unknown> & { __row: number };
 interface Sheet {
   headers: string[];
   rows: SheetRow[];
+  sheetName: string;
+  ignoredSheets: string[];
 }
 
 async function readSheet(file: File): Promise<Sheet> {
@@ -103,8 +129,15 @@ async function readSheet(file: File): Promise<Sheet> {
   } else {
     await wb.xlsx.load(buf);
   }
-  const ws = wb.worksheets[0];
-  if (!ws) return { headers: [], rows: [] };
+
+  // `worksheets` is sorted by tab order, not creation order, so [0] really is
+  // the sheet the user sees first. Everything after it is ignored by design and
+  // named in the report, so a populated second tab is never silently dropped.
+  const ordered = wb.worksheets;
+  const ws = ordered[0];
+  const sheetName = ws?.name ?? "";
+  const ignoredSheets = ordered.slice(1).map((s) => s.name);
+  if (!ws) return { headers: [], rows: [], sheetName, ignoredSheets };
 
   const headers: string[] = [];
   ws.getRow(1).eachCell((cell, col) => {
@@ -121,7 +154,7 @@ async function readSheet(file: File): Promise<Sheet> {
     });
     if (Object.values(obj).some((v) => str(v) !== "")) rows.push({ __row: rowNum, ...obj });
   });
-  return { headers: headers.filter(Boolean), rows };
+  return { headers: headers.filter(Boolean), rows, sheetName, ignoredSheets };
 }
 
 function getFile(formData: FormData): File | null {
@@ -130,17 +163,27 @@ function getFile(formData: FormData): File | null {
   return null;
 }
 
+/** Names the one sheet that was read, for error messages about the wrong tab. */
+function sheetLabel(sheet: Sheet): string {
+  const which = sheet.sheetName ? `the first sheet ("${sheet.sheetName}")` : "the first sheet";
+  if (!sheet.ignoredSheets.length) return which;
+  return `${which} — the other ${sheet.ignoredSheets.length === 1 ? "sheet" : "sheets"} (${sheet.ignoredSheets.join(", ")}) ${sheet.ignoredSheets.length === 1 ? "is" : "are"} not read`;
+}
+
 /** Guard the upload before any per-row work. Returns a message, or null if fine. */
 function checkShape(sheet: Sheet, required: string[]): string | null {
+  if (!sheet.sheetName) {
+    return "That workbook has no sheets to read. Download the template and use it as-is.";
+  }
   if (sheet.rows.length === 0) {
-    return "No data rows found. Fill the template in below the header row, then upload again.";
+    return `No data rows found in ${sheetLabel(sheet)}. Only the first sheet is imported — put your rows there, below the header row.`;
   }
   if (sheet.rows.length > MAX_ROWS) {
-    return `Too many rows (${sheet.rows.length}). The limit is ${MAX_ROWS} per upload — split the file.`;
+    return `Too many rows (${sheet.rows.length}) in ${sheetLabel(sheet)}. The limit is ${MAX_ROWS} per upload — split the file.`;
   }
   const missing = required.filter((h) => !sheet.headers.includes(h));
   if (missing.length) {
-    return `This file does not match the template — missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. Download the template and use it as-is.`;
+    return `${sheetLabel(sheet)} does not match the template — missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. Only the first sheet is imported, so make sure it is the one holding your data, then download the template and use it as-is.`;
   }
   return null;
 }
@@ -403,6 +446,8 @@ function buildReport(
     issues: sorted,
     previewHeaders,
     previewRows,
+    sheetName: sheet.sheetName,
+    ignoredSheets: sheet.ignoredSheets,
   };
 }
 
@@ -412,6 +457,15 @@ const PROJECT_REQUIRED_HEADERS = PROJECT_COLUMNS.filter((c) => c.required).map((
 const PLOT_REQUIRED_HEADERS = PLOT_COLUMNS.filter((c) => c.required).map((c) => c.header);
 
 type Loaded = { ok: true; file: File; sheet: Sheet } | { ok: false; error: string };
+
+/**
+ * Writing only ever happens when the form explicitly asks for it. Anything else
+ * — including a missing or unrecognised value — is treated as a dry check, so a
+ * malformed submit can never fall through into an import.
+ */
+function wantsWrite(formData: FormData): boolean {
+  return str(formData.get("intent")) === "import";
+}
 
 /** Read + shape-check an upload. Never touches the database. */
 async function loadSheet(formData: FormData, requiredHeaders: string[]): Promise<Loaded> {
@@ -437,15 +491,24 @@ export async function importProjects(_prev: ImportState, formData: FormData): Pr
 
   const { issues, records } = await analyseProjects(sheet);
 
-  const previewHeaders = ["Row", "Name", "District", "City", "Area", "Approval", "Type", "Status"];
+  // Preview EVERY column the import writes, generated from the same spec the
+  // template is generated from. A hand-picked subset here would read as "the
+  // rest of my sheet is being dropped" — and would silently stop matching the
+  // moment a column is added to the spec.
+  const previewHeaders = ["row", ...PROJECT_COLUMNS.map((c) => c.header)];
   const previewRows = records
     .slice(0, PREVIEW_ROWS)
-    .map((p) => [String(p.__row), p.name, p.district, p.city, p.area, p.approval_type, p.project_type, p.status]);
+    .map((p) => [String(p.__row), ...PROJECT_COLUMNS.map((c) => cell(p[c.key]))]);
 
   // Any problem refuses the ENTIRE upload — nothing is written, so the sheet can
   // never land half-imported. The user corrects it and uploads again.
   if (issues.length > 0) {
     return { phase: "invalid", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
+  }
+
+  // Clean, but this submit only asked for a check — stop here, write nothing.
+  if (!wantsWrite(formData)) {
+    return { phase: "checked", report: buildReport(file, sheet, [], previewHeaders, previewRows) };
   }
 
   // Clean file → write every row in a single statement so it lands all-or-nothing.
@@ -476,23 +539,30 @@ export async function importPlots(_prev: ImportState, formData: FormData): Promi
 
   const { issues, records } = await analysePlots(sheet);
 
-  const previewHeaders = ["Row", "Project", "Block", "Plot No", "Sq.ft", "₹ / sq.ft", "Status"];
+  // Same order as PLOT_COLUMNS / the template, showing every imported column.
+  const previewHeaders = ["row", ...PLOT_COLUMNS.map((c) => c.header)];
   const previewRows = records
     .slice(0, PREVIEW_ROWS)
     .map((p) => [
       String(p.__row),
-      p.projectName,
-      p.block || "—",
-      p.plot_no,
-      String(p.sqft),
-      String(p.price_per_sqft),
-      p.status,
+      cell(p.projectName),
+      cell(p.block),
+      cell(p.plot_no),
+      cell(p.sqft),
+      cell(p.price_per_sqft),
+      cell(p.description),
+      cell(p.status),
     ]);
 
   // Any problem refuses the ENTIRE upload — nothing is written, so the sheet can
   // never land half-imported. The user corrects it and uploads again.
   if (issues.length > 0) {
     return { phase: "invalid", report: buildReport(file, sheet, issues, previewHeaders, previewRows) };
+  }
+
+  // Clean, but this submit only asked for a check — stop here, write nothing.
+  if (!wantsWrite(formData)) {
+    return { phase: "checked", report: buildReport(file, sheet, [], previewHeaders, previewRows) };
   }
 
   const sb = getSupabase();

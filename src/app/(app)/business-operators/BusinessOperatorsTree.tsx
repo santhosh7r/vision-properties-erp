@@ -10,6 +10,7 @@ import {
   ROLE_LABELS,
   SALES_HIERARCHY,
   creatableRolesUnder,
+  requiresRegistration,
   type Role,
 } from "@/lib/roles";
 import { createTeamMember, toggleMemberActive, type CreateMemberState } from "./actions";
@@ -412,8 +413,10 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
   // there is nothing to choose — preselect it.
   const [role, setRole] = useState<Role | "">(allowed.length === 1 ? allowed[0] : "");
   const isPartner = role === "business_partner";
+  // Every sales tier fills in the registration form now, not just partners.
+  const needsForm = !!role && requiresRegistration(role);
   // A generated password must be handed over before the modal disappears, so a
-  // partner create swaps the form for the credentials panel instead of closing.
+  // sales create swaps the form for the credentials panel instead of closing.
   const credentials = state?.created?.password ? state.created : null;
 
   // Close once the server confirms the member was created — unless there is a
@@ -443,7 +446,7 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
       >
         <div className="mb-1 flex items-center justify-between">
           <h2 className="text-sm font-semibold">
-            {isPartner ? "Business Partner Registration" : "Add member"}
+            {needsForm ? "Partner Registration" : "Add member"}
           </h2>
           <button type="button" onClick={onClose} className="text-[var(--muted)] hover:text-[var(--text)]" aria-label="Close">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -470,7 +473,7 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
             </button>
           </div>
         ) : (
-          <form action={formAction} className={isPartner ? "space-y-5" : "space-y-3"}>
+          <form action={formAction} className={needsForm ? "space-y-5" : "space-y-3"}>
             <input type="hidden" name="manager_id" value={parent.id} />
 
             <div>
@@ -495,7 +498,7 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
 
             {/* A Business Partner gets the full registration form. The parent is
                 already fixed by the node being added under, so no Reference ID. */}
-            {isPartner ? (
+            {needsForm ? (
               <PartnerRegistrationFields showReference={false} />
             ) : (
               <>
@@ -529,7 +532,7 @@ function AddMemberModal({ parent, onClose }: { parent: TreeUser; onClose: () => 
                 Cancel
               </button>
               <SubmitButton pendingLabel="Creating…">
-                {isPartner ? "Create Partner" : "Create Member"}
+                {needsForm ? "Create Partner" : "Create Member"}
               </SubmitButton>
             </div>
           </form>

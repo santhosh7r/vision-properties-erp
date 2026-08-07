@@ -46,6 +46,27 @@ export function isSalesRole(role: Role): boolean {
   return SALES_HIERARCHY.includes(role);
 }
 
+// Every rung of the sales hierarchy — Senior Director, Director, Business
+// Manager and Business Partner — is onboarded through the full VISION PROPERTIES
+// registration form (personal / professional / nominee / declaration), and none
+// of them may use the app until those details exist. Admin, Finance and Legal
+// are staff accounts and are exempt.
+//
+// Deliberately its own list rather than an alias of isSalesRole: "is part of the
+// sales tree" and "must sign the registration form" are different questions that
+// happen to have the same answer today, and one changing must not silently
+// change the other.
+export const REGISTRATION_ROLES: Role[] = [
+  "senior_director",
+  "director",
+  "business_manager",
+  "business_partner",
+];
+
+export function requiresRegistration(role: Role): boolean {
+  return REGISTRATION_ROLES.includes(role);
+}
+
 // The head of a sales network — the only sales role that sees aggregated TEAM /
 // network data (downline activity, downline customers). Directors and below get a
 // purely personal view of their own work, not their team's.

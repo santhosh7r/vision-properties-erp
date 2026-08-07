@@ -5,10 +5,12 @@ import { importProjects, importPlots } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-// Bulk import from Excel (Admin). Download a template, fill it in, upload it —
-// one step. Every row is validated BEFORE anything is written: a file with any
-// problem is refused whole and reported row by row, so a sheet can never land
-// half-imported. Re-uploading an already-imported file cannot duplicate data.
+// Bulk import from Excel (Admin). Download a template, fill it in, drop it in.
+// Checking and importing are separate steps: nothing is written until the file
+// has been read and every row validated, and a file with any problem is refused
+// whole and reported row by row, so a sheet can never land half-imported. Only
+// the first sheet of a workbook is read. Re-uploading an already-imported file
+// cannot duplicate data.
 export default async function ImportPage() {
   await requireCapability("manage_projects");
 
@@ -16,7 +18,7 @@ export default async function ImportPage() {
     <>
       <PageHeader
         title="Import from Excel"
-        subtitle="Download a template, fill it in and upload it. Every row is checked first — if anything is wrong nothing at all is saved, and each problem is listed for you to correct."
+        subtitle="Download a template, fill it in, then drag it in and press Check. Nothing is saved until the file passes — if anything is wrong the whole file is refused and each problem is listed for you to correct. Only the first sheet of a workbook is read."
       />
       <div className="grid gap-5 lg:grid-cols-2">
         <ImportCard

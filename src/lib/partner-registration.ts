@@ -1,20 +1,24 @@
 // ============================================================================
-// Business Partner Registration Form — shared server-side pieces.
+// Partner Registration Form — shared server-side pieces.
 //
-// A Business Partner is onboarded through the full VISION PROPERTIES paper form
-// (personal / professional / nominee / declaration), NOT the short
-// name-email-password row every other role uses. Two screens create partners —
-// the "Add New Partner" page and the "Add member" modal on the team tree — so
-// the field list, the validation and the password rule live here once instead
-// of drifting apart in two action files.
+// Every sales role — Senior Director, Director, Business Manager and Business
+// Partner (see REGISTRATION_ROLES) — is onboarded through the full VISION
+// PROPERTIES paper form (personal / professional / nominee / declaration), NOT
+// the short name-email-password row staff accounts use. Three screens now feed
+// it — the "Add New Partner" page, the "Add member" modal on the team tree, and
+// /complete-profile where an existing account fills in its own missing details —
+// so the field list, the validation and the password rule live here once
+// instead of drifting apart across three action files.
 //
 // SERVER ONLY: imports node:crypto. Never import this from a client component —
 // the matching form UI is <PartnerRegistrationFields>.
 // ============================================================================
 
 import { randomInt } from "node:crypto";
+import { getSupabase } from "./supabase";
+import { requiresRegistration, type Role } from "./roles";
 
-// Columns added by migration 0025. NULL for every non-partner role.
+// Columns added by migration 0025. NULL for every non-sales role.
 export interface PartnerFields {
   date_of_birth: string | null;
   whatsapp: string | null;
@@ -92,4 +96,56 @@ export function readPartnerFields(
       declared_at: new Date().toISOString(),
     },
   };
+}
+
+// ── Completing an account created before the form existed ───────────────────
+
+/**
+ * The details an account MUST hold before it may use the app, paired with the
+ * label shown when one is missing. Occupation and RERA number are absent on
+ * purpose — the form marks them optional, and the gate must demand exactly what
+ * the form demands or a user could be locked out with nothing left to fill in.
+ */
+const REQUIRED_FOR_ENTRY = [
+  ["mobile", "Mobile number"],
+  ["date_of_birth", "Date of birth"],
+  ["whatsapp", "WhatsApp number"],
+  ["address", "Residential address"],
+  ["nominee_name", "Nominee name"],
+  ["nominee_mobile", "Nominee mobile number"],
+  ["declared_at", "Signed declaration"],
+] as const;
+
+export type RegistrationRow = Partial<Record<(typeof REQUIRED_FOR_ENTRY)[number][0], unknown>>;
+
+/** Which required details this row is still missing, as human-readable labels. */
+export function registrationGaps(row: RegistrationRow | null): string[] {
+  if (!row) return REQUIRED_FOR_ENTRY.map(([, label]) => label);
+  return REQUIRED_FOR_ENTRY.filter(([key]) => {
+    const v = row[key];
+    return v === null || v === undefined || String(v).trim() === "";
+  }).map(([, label]) => label);
+}
+
+/**
+ * Gate for the app layout: a sales account with an incomplete registration is
+ * sent to /complete-profile and cannot reach anything else.
+ *
+ * Fails OPEN on a database error. A transient outage locking every partner out
+ * of the app would be a worse failure than briefly admitting one whose details
+ * are incomplete — and the completion form is still reachable either way.
+ */
+export async function needsRegistration(userId: string, role: Role): Promise<boolean> {
+  if (!requiresRegistration(role)) return false;
+  try {
+    const { data, error } = await getSupabase()
+      .from("users")
+      .select("mobile, date_of_birth, whatsapp, address, nominee_name, nominee_mobile, declared_at")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error) return false;
+    return registrationGaps(data as RegistrationRow | null).length > 0;
+  } catch {
+    return false;
+  }
 }

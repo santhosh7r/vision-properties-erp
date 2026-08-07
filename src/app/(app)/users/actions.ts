@@ -17,6 +17,7 @@ import {
   managerRoleOf,
   canManageRole,
   creatableRolesUnder,
+  requiresRegistration,
   type Role,
 } from "@/lib/roles";
 
@@ -72,14 +73,16 @@ export async function createUser(
   // Their own team, resolved once — used below to confine the placement.
   const team = isAdmin ? null : new Set(await getDownlineIds(sb, actor.id));
 
-  // A Business Partner is onboarded through the full registration form, so the
-  // password is generated here (nothing to type) and the extra personal /
-  // nominee / declaration fields are mandatory. Every other role keeps the short
-  // form where the admin sets a temporary password themselves.
-  const isPartner = role === "business_partner";
+  // Every sales role — Senior Director, Director, Business Manager, Business
+  // Partner — is onboarded through the full registration form, so the password is
+  // generated here (the form has no password field to type into) and the extra
+  // personal / nominee / declaration fields are mandatory. Staff accounts
+  // (Admin / Finance / Legal) keep the short form where the admin sets a
+  // temporary password themselves.
+  const needsForm = requiresRegistration(role);
   let password: string;
   let generated: string | undefined;
-  if (isPartner) {
+  if (needsForm) {
     generated = generatePassword();
     password = generated;
   } else {
@@ -87,9 +90,9 @@ export async function createUser(
     if (password.length < 6) return { error: "Temporary password must be at least 6 characters." };
   }
 
-  // Registration-form fields — captured for partners only, NULL for everyone else.
+  // Registration-form fields — captured for sales roles, NULL for staff accounts.
   let partnerFields = EMPTY_PARTNER_FIELDS;
-  if (isPartner) {
+  if (needsForm) {
     const read = readPartnerFields(formData, mobile);
     if ("error" in read) return { error: read.error };
     partnerFields = read.fields;
@@ -102,7 +105,11 @@ export async function createUser(
   // is chosen they report to the creating Admin. Admin itself has no manager.
   const need = managerRoleOf(role); // admin for SD/finance/legal, role-1 for sales, null for admin
   let finalManagerId = manager_id;
-  if (isPartner) {
+  // Only a Business Partner is placed by typed Reference ID. Senior Director /
+  // Director / Business Manager now fill in the same registration form but are
+  // still placed with the searchable manager picker below — the list of possible
+  // parents for those tiers is small enough to browse.
+  if (role === "business_partner") {
     // The form's "Reference ID" IS the reporting parent, typed as a partner code
     // (VPBM12 / VPD07 / …) rather than picked from a list — the list stops being
     // usable once there are thousands of partners.

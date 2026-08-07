@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { ROLE_LABELS, creatableRolesUnder, type Role } from "@/lib/roles";
+import { ROLE_LABELS, creatableRolesUnder, requiresRegistration, type Role } from "@/lib/roles";
 import {
   EMPTY_PARTNER_FIELDS,
   generatePassword,
@@ -70,14 +70,14 @@ export async function createTeamMember(
   if (!manager_id) return { error: "Missing parent node." };
   if (!full_name || !email) return { error: "Name and email are required." };
 
-  // A Business Partner is onboarded through the full registration form (same
+  // Every sales role is onboarded through the full registration form (same
   // fields, same rules as the Add New Partner page — see lib/partner-registration),
-  // so their password is generated here rather than typed. Every other role keeps
+  // so their password is generated here rather than typed. Staff accounts keep
   // the short form with a temporary password the manager sets.
-  const isPartner = role === "business_partner";
+  const needsForm = requiresRegistration(role);
   let password: string;
   let generated: string | undefined;
-  if (isPartner) {
+  if (needsForm) {
     generated = generatePassword();
     password = generated;
   } else {
@@ -86,7 +86,7 @@ export async function createTeamMember(
   }
 
   let partnerFields = EMPTY_PARTNER_FIELDS;
-  if (isPartner) {
+  if (needsForm) {
     const read = readPartnerFields(formData, mobile);
     if ("error" in read) return { error: read.error };
     partnerFields = read.fields;
