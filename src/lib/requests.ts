@@ -40,10 +40,12 @@ export const REQUEST_CHAIN: Record<ServiceRequestType, RequestStage[]> = {
 };
 
 // Roles allowed to act on a request sitting at a given stage. Admin can act on
-// any stage as a backstop. ('pre-sales' and 'accounts' map to existing roles.)
+// any stage as a backstop. ('accounts' maps to Finance.)
 export const STAGE_ROLES: Record<RequestStage, Role[]> = {
   senior: ["senior_director", "admin"],
-  presales: ["admin"],
+  // The Pre-Sales desk owns this stage now that the role exists; Admin stays on
+  // it as the backstop that cleared it before the desk did.
+  presales: ["pre_sales", "admin"],
   legal: ["legal", "admin"],
   accounts: ["finance", "admin"],
   done: [],

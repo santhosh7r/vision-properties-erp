@@ -22,7 +22,20 @@ export async function forceChangePassword(formData: FormData): Promise<void> {
   if (next !== confirm) redirect("/change-password?err=mismatch");
 
   const sb = getSupabase();
-  const { data } = await sb.from("users").select("settings").eq("id", user.id).maybeSingle();
+  const { data } = await sb
+    .from("users")
+    .select("settings, password_hash")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  // The whole point of this screen is that the shared/temporary password stops
+  // working. Re-typing it would clear the flag and leave the account on the
+  // password an admin (and anyone they mailed it to) already knows — so refuse.
+  const currentHash = (data as { password_hash?: string } | null)?.password_hash;
+  if (currentHash && (await bcrypt.compare(next, currentHash))) {
+    redirect("/change-password?err=reuse");
+  }
+
   const settings = { ...((data as { settings?: Record<string, unknown> } | null)?.settings ?? {}), must_change_password: false };
 
   const password_hash = await bcrypt.hash(next, 10);

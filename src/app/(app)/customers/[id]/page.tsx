@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { getDistrictScope } from "@/lib/scope";
 import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
 import { loanTokenByLabel } from "@/lib/options";
 import { PageHeader, Badge, BookingStatusBadge, PaymentBadge, EmptyState } from "@/components/ui";
@@ -24,8 +25,13 @@ export default async function CustomerDetailPage({
   const { data: c } = await sb.from("customers").select("*").eq("id", id).maybeSingle();
   if (!c) notFound();
   const customer = c as Customer;
-  // A sales user may only view a customer they created. Admin sees all.
-  if (user.role !== "admin" && customer.created_by !== user.id) notFound();
+  // A sales user may only view a customer they created. Admin sees all; a branch
+  // desk sees every client of its own district (same rule as the list).
+  const scope = await getDistrictScope(sb, user);
+  const inDistrict =
+    !!scope?.district &&
+    (customer.district ?? "").trim().toLowerCase() === scope.district.trim().toLowerCase();
+  if (user.role !== "admin" && !inDistrict && customer.created_by !== user.id) notFound();
 
   const { data: bk } = await sb
     .from("bookings")

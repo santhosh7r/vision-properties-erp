@@ -17,9 +17,11 @@ import {
   managerRoleOf,
   canManageRole,
   creatableRolesUnder,
+  isDistrictScoped,
   requiresRegistration,
   type Role,
 } from "@/lib/roles";
+import { DISTRICTS } from "@/lib/options";
 
 export interface CreateUserState {
   error?: string;
@@ -60,6 +62,13 @@ export async function createUser(
 
   if (!ROLES.includes(role)) return { error: "Pick a role." };
   if (!full_name || !email) return { error: "Full name and email are required." };
+
+  // A Pre-Sales / Post-Sales desk IS its district — every list and action it can
+  // reach is filtered by it, so an account without one would open onto empty
+  // screens. Reject that here rather than creating a login that cannot work.
+  if (isDistrictScoped(role) && (!district || !DISTRICTS.includes(district))) {
+    return { error: `Pick the district this ${ROLE_LABELS[role]} desk covers (${DISTRICTS.join(" or ")}).` };
+  }
 
   // A sales manager may only create roles strictly BELOW their own — a Senior
   // Director can add a Director / Business Manager / Business Partner, a
@@ -185,6 +194,12 @@ export async function createUser(
       district,
       role,
       manager_id: finalManagerId,
+      // A staff account is created with a password an ADMIN typed and then reads
+      // out — the form calls it "Temporary Password", so make it actually
+      // temporary: the app forces a change before the account can be used.
+      // Sales roles get a server-generated password shown once instead, and are
+      // already stopped at the registration form on first sign-in.
+      ...(needsForm ? {} : { settings: { must_change_password: true } }),
       ...partnerFields,
     })
     .select("id, partner_code")
@@ -249,6 +264,26 @@ export async function updateUserPlacement(formData: FormData): Promise<void> {
   revalidatePath("/users");
 }
 
+// Move a branch desk (Pre-Sales / Post-Sales) to a different district — the one
+// setting that decides everything that account can see. Admin-only, and refused
+// for roles where a district is only a sorting hint rather than a boundary, so
+// this page can never silently re-scope a partner's whole view.
+export async function updateUserDistrict(formData: FormData): Promise<void> {
+  const actor = await requireCapability("manage_users");
+  const id = String(formData.get("id") || "");
+  const district = String(formData.get("district") || "").trim();
+  if (!id || !DISTRICTS.includes(district)) return;
+
+  const sb = getSupabase();
+  const { data: target } = await sb.from("users").select("role").eq("id", id).maybeSingle();
+  if (!target || !isDistrictScoped(target.role as Role)) return;
+
+  await sb.from("users").update({ district }).eq("id", id);
+  await logAudit(actor, "user", id, "district_change", district);
+  revalidatePath("/in-house");
+  revalidatePath("/users");
+}
+
 export async function toggleUserActive(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_users");
   const id = String(formData.get("id") || "");
@@ -257,4 +292,5 @@ export async function toggleUserActive(formData: FormData): Promise<void> {
   await getSupabase().from("users").update({ is_active: next }).eq("id", id);
   await logAudit(actor, "user", id, next ? "activate" : "deactivate");
   revalidatePath("/users");
+  revalidatePath("/in-house");
 }

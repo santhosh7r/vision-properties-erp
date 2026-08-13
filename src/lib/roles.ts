@@ -10,7 +10,10 @@ export type Role =
   | "business_manager"
   | "business_partner"
   | "finance"
-  | "legal";
+  | "legal"
+  | "pre_sales"
+  | "post_sales"
+  | "digital";
 
 export const ROLES: Role[] = [
   "admin",
@@ -20,6 +23,9 @@ export const ROLES: Role[] = [
   "business_partner",
   "finance",
   "legal",
+  "pre_sales",
+  "post_sales",
+  "digital",
 ];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -30,6 +36,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   business_partner: "Business Partner",
   finance: "Finance / Billing",
   legal: "Legal Team",
+  pre_sales: "Pre-Sales",
+  post_sales: "Post-Sales",
+  digital: "Digital Team",
 };
 
 // Sales hierarchy, top -> bottom. Used for "who manages whom".
@@ -42,8 +51,32 @@ export const SALES_HIERARCHY: Role[] = [
 
 export const BUSINESS_OPERATORS: Role[] = ["finance", "legal"];
 
+// In-house desks — branch staff, NOT part of the partner/sales tree. A Pre-Sales
+// or Post-Sales desk belongs to one district (Chennai / Trichy) and works every
+// deal in that district; Digital is a company-wide desk. They report straight to
+// the company (Admin), carry no partner code, never appear in the hierarchy tree
+// and nobody reports to them.
+export const IN_HOUSE_ROLES: Role[] = ["pre_sales", "post_sales", "digital"];
+
+// Every non-sales account: Admin, the business operators and the in-house desks.
+// "Staff" is the opposite of "in the partner tree", and is what decides that an
+// account skips the registration form and attaches directly to the company.
+export const STAFF_ROLES: Role[] = ["admin", ...BUSINESS_OPERATORS, ...IN_HOUSE_ROLES];
+
 export function isSalesRole(role: Role): boolean {
   return SALES_HIERARCHY.includes(role);
+}
+
+export function isInHouseRole(role: Role): boolean {
+  return IN_HOUSE_ROLES.includes(role);
+}
+
+// Desks confined to ONE district. A Chennai Pre-Sales user works only Chennai
+// projects and the bookings, payments and registrations that hang off them; a
+// Trichy desk sees only Trichy. Enforced in lib/scope.ts, which every scoped page
+// and server action routes through.
+export function isDistrictScoped(role: Role): boolean {
+  return role === "pre_sales" || role === "post_sales";
 }
 
 // Every rung of the sales hierarchy — Senior Director, Director, Business
@@ -85,11 +118,12 @@ export const SALES_CODE_PREFIX: Partial<Record<Role, string>> = {
   business_partner: "VPBP",
 };
 
-// The role a manager of `role` must have (one level up). Finance & Legal are
-// operators that connect DIRECTLY to the company, so their manager is the Admin.
-// Admin itself sits at the very top and has no manager (null).
+// The role a manager of `role` must have (one level up). Finance, Legal and the
+// in-house desks (Pre-Sales / Post-Sales / Digital) connect DIRECTLY to the
+// company, so their manager is the Admin. Admin itself sits at the very top and
+// has no manager (null).
 export function managerRoleOf(role: Role): Role | null {
-  if (role === "finance" || role === "legal") return "admin";
+  if (role !== "admin" && STAFF_ROLES.includes(role)) return "admin";
   const idx = SALES_HIERARCHY.indexOf(role);
   if (idx > 0) return SALES_HIERARCHY[idx - 1];
   if (idx === 0) return "admin"; // senior_director -> admin
@@ -119,12 +153,13 @@ export function creatableRolesUnder(parentRole: Role): Role[] {
 
 // May a user whose role is `managerRole` be the manager (direct parent) of a
 // user whose role is `childRole`? Used to validate placement server-side.
-//   - Senior Director, Finance, Legal connect DIRECTLY to the company (Admin).
+//   - Senior Director and every staff account (Finance, Legal, Pre-Sales,
+//     Post-Sales, Digital) connect DIRECTLY to the company (Admin).
 //   - Admin sits at the top and has no manager.
 //   - Other sales roles may sit under Admin or ANY sales role above them.
 export function canManageRole(managerRole: Role, childRole: Role): boolean {
   if (childRole === "admin") return false;
-  if (childRole === "senior_director" || childRole === "finance" || childRole === "legal") {
+  if (childRole === "senior_director" || STAFF_ROLES.includes(childRole)) {
     return managerRole === "admin";
   }
   // director / business_manager / business_partner
@@ -156,7 +191,16 @@ export type Capability =
   | "create_request"
   | "view_finance"
   | "view_legal"
-  | "view_reports";
+  | "view_reports"
+  // Desk-level gates for the two branch workspaces. Kept separate from the
+  // fine-grained action capabilities above so "may open the Pre-Sales desk" and
+  // "may confirm a booking" stay independently grantable.
+  | "view_pre_sales"
+  | "view_post_sales"
+  // Release a cancelled plot back to the company / extend an expired hold.
+  // Deliberately NOT `manage_plots`: Post-Sales works the release queue without
+  // gaining the power to add, edit, re-price or delete inventory.
+  | "release_plot";
 
 const CAPABILITIES: Record<Role, Capability[]> = {
   admin: [
@@ -179,6 +223,9 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "view_finance",
     "view_legal",
     "view_reports",
+    "view_pre_sales",
+    "view_post_sales",
+    "release_plot",
   ],
   // Only Admin holds `cancel_booking`. Every sales role can `request_cancellation`
   // (with a reason) for an Admin to action — see Payments & Cancellation.
@@ -222,6 +269,35 @@ const CAPABILITIES: Record<Role, Capability[]> = {
   business_partner: ["manage_customers", "create_blocking", "request_cancellation", "request_cab"],
   finance: ["record_payment", "view_finance", "view_reports"],
   legal: ["manage_registration", "view_legal", "view_reports"],
+  // ── In-house branch desks (district-scoped — see isDistrictScoped) ─────────
+  // Pre-Sales: the front of the deal. Blocks and books plots for walk-in
+  // customers of their district, confirms them, and gives the "Pre-sales
+  // approval" on site-visit / cab requests (the stage that previously only an
+  // Admin could clear — see STAGE_ROLES in requests.ts). Cancelling stays with
+  // Admin / Post-Sales, so they request a cancellation like every sales role.
+  pre_sales: [
+    "manage_customers",
+    "create_blocking",
+    "create_booking",
+    "approve_booking",
+    "confirm_booking",
+    "request_cancellation",
+    "approve_cab",
+    "view_pre_sales",
+  ],
+  // Post-Sales: everything after the deal is signed — collections, receipts,
+  // cancellation + refund, releasing the freed plot, and registration.
+  post_sales: [
+    "record_payment",
+    "cancel_booking",
+    "approve_refund",
+    "manage_registration",
+    "release_plot",
+    "view_post_sales",
+  ],
+  // Digital: login only for now — the desk's scope is not defined yet, so it
+  // gets the dashboard and nothing else rather than a guessed set of powers.
+  digital: [],
 };
 
 export function can(role: Role | undefined | null, cap: Capability): boolean {

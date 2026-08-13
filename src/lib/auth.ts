@@ -1,13 +1,23 @@
 import "server-only";
 import { redirect } from "next/navigation";
-import { getSession, type SessionUser } from "./session";
+import { getSession, mustChangePassword, type SessionUser } from "./session";
 import { can, type Capability } from "./roles";
 import { isHiddenUser } from "./hidden-users";
 
 // Require an authenticated user; redirect to /login otherwise.
+//
+// A freshly-provisioned account (admin-set or seeded temporary password) is also
+// held at /change-password until it sets its own. The check lives HERE rather
+// than only in the app layout so it covers every authenticated surface — pages
+// outside the layout (e.g. a printed receipt) and every server action too, not
+// just the ones that happen to render inside the sidebar shell.
+//
+// /change-password itself reads the session directly and never calls this, so
+// there is no redirect loop.
 export async function requireUser(): Promise<SessionUser> {
   const user = await getSession();
   if (!user) redirect("/login");
+  if (await mustChangePassword(user.id)) redirect("/change-password");
   return user;
 }
 

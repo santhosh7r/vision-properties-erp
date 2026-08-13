@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit, notify } from "@/lib/audit";
+import { bookingInScope, plotInScope } from "@/lib/scope";
 import { totalPlotValue } from "@/lib/format";
 import { computeAdvanceRequired, computeRefund, addWorkingDays } from "@/lib/sop";
 import type { BookMode, LoanTokenBy } from "@/lib/types";
@@ -106,6 +107,11 @@ export async function createBooking(formData: FormData): Promise<void> {
   // Sales roles may BLOCK; only Admin may BOOK. Gate on the matching capability.
   const actor = await requireCapability(mode === "booking" ? "create_booking" : "create_blocking");
   const sb = getSupabase();
+
+  // A branch desk may only block/book inventory in its own district.
+  if (!(await plotInScope(sb, actor, plot_id))) {
+    redirect(`/plots/${plot_id}?err=unavailable`);
+  }
 
   // Load plot + project for pricing/config; verify availability.
   const { data: plot } = await sb
@@ -318,6 +324,7 @@ export async function recordPayment(formData: FormData): Promise<void> {
   const kind = s(formData.get("kind")) || "installment";
   const mode = nullable(formData.get("mode"));
   if (!booking_id || amount <= 0) return;
+  if (!(await bookingInScope(sb, actor, booking_id))) return;
 
   await sb.from("payments").insert({
     booking_id,
@@ -354,6 +361,7 @@ export async function updateBooking(formData: FormData): Promise<void> {
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   await sb
     .from("bookings")
@@ -392,6 +400,7 @@ export async function confirmBooking(formData: FormData): Promise<void> {
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -417,6 +426,7 @@ export async function cancelBooking(formData: FormData): Promise<void> {
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -500,6 +510,7 @@ export async function requestCancellation(formData: FormData): Promise<void> {
   const id = s(formData.get("id"));
   const reason = nullable(formData.get("reason"));
   if (!id || !reason) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -534,6 +545,7 @@ export async function dismissCancellationRequest(formData: FormData): Promise<vo
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   await sb
     .from("bookings")
@@ -552,6 +564,7 @@ export async function approveRefund(formData: FormData): Promise<void> {
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -584,6 +597,7 @@ export async function markRefundPaid(formData: FormData): Promise<void> {
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -692,6 +706,7 @@ export async function convertToBooking(formData: FormData): Promise<void> {
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
 
   const { data: booking } = await sb
     .from("bookings")

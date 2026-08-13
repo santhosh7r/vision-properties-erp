@@ -8,6 +8,7 @@ const ERRORS: Record<string, string> = {
   missing: "Please enter a new password.",
   short: "Password must be at least 8 characters.",
   mismatch: "The two passwords do not match.",
+  reuse: "That's your current password — choose a different one.",
 };
 
 // Forced password-change screen. Reached when a user's account is flagged

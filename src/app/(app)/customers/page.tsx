@@ -3,6 +3,7 @@ import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { ownBookedCustomerIds, ownCustomerOrFilter, networkBookedCustomerIds, networkCustomerOrFilter } from "@/lib/customers";
 import { getDownlineIds } from "@/lib/hierarchy";
+import { getDistrictScope } from "@/lib/scope";
 import { isNetworkHead } from "@/lib/roles";
 import { PageHeader } from "@/components/ui";
 import { Plus } from "@/components/icons";
@@ -19,12 +20,17 @@ export default async function CustomersPage() {
   // below) sees ONLY THEIR OWN: customers they created, or attached to a block /
   // booking they made. A customer is "theirs" when they created it OR booked with
   // it (as creator or partner). Only the network head aggregates the team.
+  // A branch desk (Pre-Sales) is the exception to the ownership rule: it works
+  // every client of its DISTRICT, whoever entered them.
   const isAdmin = user.role === "admin";
+  const scope = await getDistrictScope(sb, user);
   let query = sb
     .from("customers")
     .select("*, bookings(count)")
     .order("created_at", { ascending: false });
-  if (!isAdmin) {
+  if (scope) {
+    query = scope.district ? query.ilike("district", scope.district) : query.in("id", []);
+  } else if (!isAdmin) {
     if (isNetworkHead(user.role)) {
       const ids = await getDownlineIds(sb, user.id);
       const bookedIds = await networkBookedCustomerIds(sb, ids);
@@ -39,7 +45,7 @@ export default async function CustomersPage() {
 
   // When the list spans more than one salesperson (Admin = everyone, Senior
   // Director = their network) show whose customer each row is — i.e. who added it.
-  const showOwner = isAdmin || isNetworkHead(user.role);
+  const showOwner = isAdmin || isNetworkHead(user.role) || !!scope;
   const ownerName = new Map<string, string>();
   if (showOwner) {
     const creatorIds = [...new Set(raw.map((c) => c.created_by).filter((v): v is string => Boolean(v)))];

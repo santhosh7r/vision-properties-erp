@@ -25,19 +25,25 @@ async function currentSessionVersion(userId: string): Promise<number | null> {
 // Best-effort check of the user's "must change password on next login" flag,
 // stored on users.settings (jsonb). Fails OPEN (returns false) so a DB hiccup
 // never traps someone on the change-password screen.
-export async function mustChangePassword(userId: string): Promise<boolean> {
-  try {
-    const { data } = await getSupabase()
-      .from("users")
-      .select("settings")
-      .eq("id", userId)
-      .maybeSingle();
-    const settings = (data as { settings?: { must_change_password?: boolean } } | null)?.settings;
-    return settings?.must_change_password === true;
-  } catch {
-    return false;
-  }
-}
+//
+// cache()d because requireUser() now consults it on EVERY authenticated page and
+// server action — without this that would be one extra round-trip per call,
+// dozens per request.
+export const mustChangePassword = cache(
+  async function mustChangePassword(userId: string): Promise<boolean> {
+    try {
+      const { data } = await getSupabase()
+        .from("users")
+        .select("settings")
+        .eq("id", userId)
+        .maybeSingle();
+      const settings = (data as { settings?: { must_change_password?: boolean } } | null)?.settings;
+      return settings?.must_change_password === true;
+    } catch {
+      return false;
+    }
+  },
+);
 
 const COOKIE_NAME = "vp_session";
 const MAX_AGE = 60 * 60 * 12; // 12 hours

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { isSalesRole } from "@/lib/roles";
+import { can, isSalesRole } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { loadBookingFlow } from "../bookings/flow";
@@ -13,7 +13,9 @@ export const dynamic = "force-dynamic";
 // (the salesperson's home district first), drilling into available plots only.
 export default async function AvailablePlotsPage() {
   const user = await requireUser();
-  if (!isSalesRole(user.role)) redirect("/dashboard");
+  // Sales roles, plus the Pre-Sales desk — anyone who blocks plots browses them
+  // here. loadBookingFlow below already confines a desk to its own district.
+  if (!isSalesRole(user.role) && !can(user.role, "view_pre_sales")) redirect("/dashboard");
   await sweepExpiredBookings();
   const sb = getSupabase();
 

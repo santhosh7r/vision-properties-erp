@@ -11,10 +11,12 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:demo": "SEED_DEMO=1 tsx scripts/seed.ts",
     "db:seed:team": "tsx scripts/seed-team.ts",
+    "db:seed:inhouse": "tsx scripts/seed-inhouse.ts",
     "db:reset": "tsx scripts/reset-data.ts",
     "db:reset:keep-logins": "tsx scripts/reset-keep-logins.ts",
     "db:migrate-emails": "tsx scripts/migrate-emails.ts",
-    "db:fix-logins": "tsx scripts/fix-logins.ts"
+    "db:fix-logins": "tsx scripts/fix-logins.ts",
+    "db:fix-districts": "tsx scripts/fix-project-districts.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

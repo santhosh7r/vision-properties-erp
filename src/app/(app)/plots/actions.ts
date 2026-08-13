@@ -5,16 +5,19 @@ import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit, notify } from "@/lib/audit";
+import { bookingInScope, plotInScope } from "@/lib/scope";
 
 // Plot Release (Admin panel · Sales · Post-Sales) — free a plot back to the
 // company. Releases any active (pending/confirmed) booking WITHOUT a refund flow
 // (distinct from a cancellation) and returns the plot to 'available' for the
-// next customer. Admin-only.
+// next customer. Admin + Post-Sales (own district only).
 export async function releasePlot(formData: FormData): Promise<void> {
-  const actor = await requireCapability("manage_plots");
+  const actor = await requireCapability("release_plot");
   const sb = getSupabase();
   const plot_id = String(formData.get("plot_id") || "");
   if (!plot_id) return;
+  // A branch desk may only release plots in its own district.
+  if (!(await plotInScope(sb, actor, plot_id))) return;
 
   const nowIso = new Date().toISOString();
 
@@ -52,15 +55,19 @@ export async function releasePlot(formData: FormData): Promise<void> {
 // take it; an Admin may extend it back to that customer for a custom duration,
 // but ONLY while the plot is still free. If anyone else has since blocked/booked
 // (or it was registered), the plot is no longer 'available' and the extend is
-// refused. Admin-only.
+// refused. Admin + Post-Sales (own district only).
 export async function extendHold(formData: FormData): Promise<void> {
-  const actor = await requireCapability("manage_plots");
+  const actor = await requireCapability("release_plot");
   const sb = getSupabase();
   const booking_id = String(formData.get("booking_id") || "");
   const value = Number(formData.get("value") || 0);
   const unit = String(formData.get("unit") || "hours"); // hours | days
   if (!booking_id || !(value > 0)) {
     redirect("/inventory/release?err=extend_input");
+  }
+  // A branch desk may only extend holds in its own district.
+  if (!(await bookingInScope(sb, actor, booking_id))) {
+    redirect("/inventory/release?err=extend_gone");
   }
 
   const { data: booking } = await sb

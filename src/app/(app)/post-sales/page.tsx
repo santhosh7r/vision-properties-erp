@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can } from "@/lib/roles";
+import { getDistrictScope, withProjectScope } from "@/lib/scope";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { PageHeader } from "@/components/ui";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
@@ -45,29 +45,32 @@ interface RawRefund {
   projects: Pick<Project, "name"> | null;
 }
 
-// Admin Post-Sales desk — Part Payment, Fully Paid Receipt and Cancellation on
-// one tabbed page. Admin-only.
+// Post-Sales desk — Part Payment, Fully Paid Receipt and Cancellation on one
+// tabbed page. Admin sees the company; a Post-Sales desk sees its own district.
 export default async function PostSalesPage({
   searchParams,
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const user = await requireUser();
-  if (user.role !== "admin") redirect("/dashboard");
+  const user = await requireCapability("view_post_sales");
   await sweepExpiredBookings();
   const sb = getSupabase();
+  // Null for Admin (company-wide); a project-id filter for a branch desk.
+  const scope = await getDistrictScope(sb, user);
 
   const tabParam = (await searchParams).tab;
   const initialTab = tabParam === "receipts" || tabParam === "cancel" ? tabParam : "part";
 
   // ── Cancellation: cancelled bookings + their refund lifecycle ───────────────
-  const { data: cancelData } = await sb
-    .from("bookings")
-    .select(
-      "id, total_plot_value, cancellation_reason, cancellation_charge, refund_amount, refund_status, refund_due_date, released_at, created_at, plots(plot_no), customers(name), projects(name)",
-    )
-    .eq("status", "cancelled")
-    .order("released_at", { ascending: false });
+  const { data: cancelData } = await withProjectScope(
+    sb
+      .from("bookings")
+      .select(
+        "id, total_plot_value, cancellation_reason, cancellation_charge, refund_amount, refund_status, refund_due_date, released_at, created_at, plots(plot_no), customers(name), projects(name)",
+      )
+      .eq("status", "cancelled"),
+    scope,
+  ).order("released_at", { ascending: false });
   const cancelRaw = (cancelData ?? []) as unknown as (Pick<
     Booking,
     | "id"
@@ -99,11 +102,13 @@ export default async function PostSalesPage({
   }));
 
   // ── Deals (Part Payment) + fully-paid subset (Receipts) ─────────────────────
-  const { data: dealData } = await sb
-    .from("bookings")
-    .select("*, plots(plot_no), customers(name), projects(name)")
-    .neq("status", "cancelled")
-    .order("created_at", { ascending: false });
+  const { data: dealData } = await withProjectScope(
+    sb
+      .from("bookings")
+      .select("*, plots(plot_no), customers(name), projects(name)")
+      .neq("status", "cancelled"),
+    scope,
+  ).order("created_at", { ascending: false });
   const dealRaw = (dealData ?? []) as (Booking & {
     plots: Pick<Plot, "plot_no">;
     customers: Pick<Customer, "name">;
@@ -125,12 +130,21 @@ export default async function PostSalesPage({
     .map((r) => ({ id: r.id, project: r.project, plot: r.plot, customer: r.customer, value: r.value, paid: r.paid }));
 
   // ── Ledger (Part Payment): every payment + refund outflow ───────────────────
-  const { data: payData } = await sb
+  // A payment reaches a district only through its booking, and the nested join
+  // can't be filtered server-side — but the two queries above already hold every
+  // booking in scope (cancelled + active), so reuse those ids instead of a third
+  // round-trip. Null for Admin = no filter.
+  const scopedBookingIds = scope
+    ? [...cancelRaw.map((b) => b.id), ...dealRaw.map((b) => b.id)]
+    : null;
+
+  let payQuery = sb
     .from("payments")
     .select(
       "id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, status, paid_at, recorder:users!recorded_by(full_name), bookings(plots(plot_no), customers(name), projects(name))",
-    )
-    .order("paid_at", { ascending: false });
+    );
+  if (scopedBookingIds) payQuery = payQuery.in("booking_id", scopedBookingIds);
+  const { data: payData } = await payQuery.order("paid_at", { ascending: false });
   const payRaw = (payData ?? []) as unknown as RawPayment[];
   const payments: LedgerRow[] = payRaw.map((p) => ({
     id: p.id,
@@ -147,12 +161,15 @@ export default async function PostSalesPage({
     status: p.status,
   }));
 
-  const { data: refundData } = await sb
-    .from("bookings")
-    .select(
-      "id, refund_amount, refund_status, refund_paid_at, refund_approved_at, released_at, created_at, plots(plot_no), customers(name), projects(name)",
-    )
-    .gt("refund_amount", 0);
+  const { data: refundData } = await withProjectScope(
+    sb
+      .from("bookings")
+      .select(
+        "id, refund_amount, refund_status, refund_paid_at, refund_approved_at, released_at, created_at, plots(plot_no), customers(name), projects(name)",
+      )
+      .gt("refund_amount", 0),
+    scope,
+  );
   const refundRaw = (refundData ?? []) as unknown as RawRefund[];
   const refunds: LedgerRow[] = refundRaw.map((b) => ({
     id: `refund-${b.id}`,
@@ -188,7 +205,11 @@ export default async function PostSalesPage({
     <>
       <PageHeader
         title="Payments & Cancellation"
-        subtitle="Part payments, fully-paid receipts and cancellations — all in one place."
+        subtitle={
+          scope
+            ? `Part payments, fully-paid receipts and cancellations for ${scope.district ?? "your branch"}.`
+            : "Part payments, fully-paid receipts and cancellations — all in one place."
+        }
       />
       <PostSalesTabs
         deals={deals}

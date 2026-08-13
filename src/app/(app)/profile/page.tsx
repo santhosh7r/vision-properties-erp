@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
-import { isSalesRole, ROLE_LABELS, type Role } from "@/lib/roles";
+import { isSalesRole, isInHouseRole, ROLE_LABELS, type Role } from "@/lib/roles";
 import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
 import { inr } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
@@ -46,7 +46,11 @@ export default async function ProfilePage({
   searchParams: Promise<{ err?: string; ok?: string }>;
 }) {
   const user = await requireUser();
-  if (!isSalesRole(user.role)) redirect("/dashboard");
+  // Sales roles, plus the in-house desks — a staff login needs somewhere to
+  // change its own password. Tokens and team size are sales-only and are hidden
+  // for a desk (they have no coupons and no downline).
+  const isInHouse = isInHouseRole(user.role);
+  if (!isSalesRole(user.role) && !isInHouse) redirect("/dashboard");
   const { err, ok } = await searchParams;
   const sb = getSupabase();
 
@@ -112,8 +116,9 @@ export default async function ProfilePage({
           />
         </div>
 
-        {/* Tokens & coupons */}
+        {/* Tokens & coupons — sales roles only; desks get password + appearance. */}
         <div className="space-y-4 lg:col-span-2">
+          {!isInHouse && (
           <div className="card">
             <h2 className="mb-1 text-sm font-semibold">My Tokens &amp; Coupons</h2>
             <p className="mb-4 text-xs text-[var(--muted)]">
@@ -147,6 +152,7 @@ export default async function ProfilePage({
               </p>
             )}
           </div>
+          )}
 
           {/* Account settings */}
           <div className="grid gap-4 md:grid-cols-2">

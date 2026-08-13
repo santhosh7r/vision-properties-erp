@@ -5,6 +5,8 @@ import {
   ROLE_LABELS,
   SALES_HIERARCHY,
   BUSINESS_OPERATORS,
+  IN_HOUSE_ROLES,
+  isDistrictScoped,
   managerRoleOf,
   canManageRole,
   requiresRegistration,
@@ -99,6 +101,9 @@ export default function AddUserForm({
   // "Reports To" picker, so the two ideas are tracked separately.
   const isPartner = role === "business_partner";
   const needsForm = !!role && requiresRegistration(role as Role);
+  // A Pre-Sales / Post-Sales desk is defined BY its district — without one the
+  // account can see nothing at all, so the field stops being optional.
+  const districtRequired = !!role && isDistrictScoped(role as Role);
   const created = state?.created && !dismissed ? state.created : null;
 
   useEffect(() => {
@@ -320,6 +325,15 @@ export default function AddUserForm({
                   </option>
                 ))}
               </optgroup>
+              {/* In-house desks — staff, not partners: they sit outside the
+                  sales tree and report straight to the company. */}
+              <optgroup label="In-House Team">
+                {IN_HOUSE_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </optgroup>
               <option value="admin">{ROLE_LABELS.admin}</option>
             </>
           )}
@@ -354,14 +368,18 @@ export default function AddUserForm({
             <input name="mobile" className="input" />
           </div>
           <div>
-            <label className="label">District</label>
-            <select name="district" className="select" defaultValue="">
+            <label className="label">District {districtRequired && "*"}</label>
+            <select name="district" className="select" defaultValue="" required={districtRequired}>
               <option value="">— Select district —</option>
               {DISTRICTS.map((d) => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-[var(--muted)]">Sales panels show this district&apos;s inventory first.</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              {districtRequired
+                ? `A ${ROLE_LABELS[role as Role]} desk works ONE branch — it sees only this district's projects, deals, payments and customers.`
+                : "Sales panels show this district's inventory first."}
+            </p>
           </div>
 
           {reportsTo}

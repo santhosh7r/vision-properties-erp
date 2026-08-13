@@ -1,5 +1,6 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { getDistrictScope, withProjectScope } from "@/lib/scope";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { PageHeader } from "@/components/ui";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
@@ -15,32 +16,38 @@ const NOTICE: Record<string, { tone: "ok" | "err"; text: string }> = {
   extend_input: { tone: "err", text: "Enter a valid extension duration." },
 };
 
-// Post-Sales · Plot Release. Two queues for an Admin:
+// Post-Sales · Plot Release. Two queues, for Admin and the Post-Sales desk:
 //  1. Expired holds — the deadline passed, the plot auto-released back to
-//     'available' (anyone may re-block/book it), but the Admin can still EXTEND
-//     it back to the original customer while it stays free.
+//     'available' (anyone may re-block/book it), but it can still be EXTENDED
+//     back to the original customer while it stays free.
 //  2. Cancelled plots — a cancelled booking parks its plot as 'cancelled'; it
-//     lands here for the Admin to release back to the company. Admin-only.
+//     lands here to be released back to the company.
+// Gated on `release_plot`, not `manage_plots`: working this queue must not carry
+// the power to add, re-price or delete inventory.
 export default async function PlotReleasePage({
   searchParams,
 }: {
   searchParams: Promise<{ ok?: string; err?: string }>;
 }) {
-  await requireCapability("manage_plots");
+  const user = await requireCapability("release_plot");
   await sweepExpiredBookings();
   const sb = getSupabase();
+  // Null for Admin (company-wide); a project-id filter for a branch desk.
+  const scope = await getDistrictScope(sb, user);
 
   const { ok, err } = await searchParams;
   const notice = NOTICE[ok ?? ""] ?? NOTICE[err ?? ""];
 
   // ── 1. Expired holds whose plot is still free → extendable ────────────────
-  const { data: expData } = await sb
-    .from("bookings")
-    .select(
-      "id, plot_id, total_plot_value, book_mode, expired_at, plots!inner(plot_no, status, price_per_sqft, sqft, projects(name)), customers(name)",
-    )
-    .not("expired_at", "is", null)
-    .order("expired_at", { ascending: false });
+  const { data: expData } = await withProjectScope(
+    sb
+      .from("bookings")
+      .select(
+        "id, plot_id, total_plot_value, book_mode, expired_at, plots!inner(plot_no, status, price_per_sqft, sqft, projects(name)), customers(name)",
+      )
+      .not("expired_at", "is", null),
+    scope,
+  ).order("expired_at", { ascending: false });
 
   const seenPlots = new Set<string>();
   const extendRows: ExtendRow[] = [];
@@ -64,11 +71,13 @@ export default async function PlotReleasePage({
   }
 
   // ── 2. Cancelled plots waiting to be released back to the company ─────────
-  const { data: plotData } = await sb
-    .from("plots")
-    .select("id, plot_no, sqft, price_per_sqft, status, projects(name)")
-    .eq("status", "cancelled")
-    .order("plot_no");
+  const { data: plotData } = await withProjectScope(
+    sb
+      .from("plots")
+      .select("id, plot_no, sqft, price_per_sqft, status, projects(name)")
+      .eq("status", "cancelled"),
+    scope,
+  ).order("plot_no");
   const plots = (plotData ?? []) as unknown as (Pick<Plot, "id" | "plot_no" | "sqft" | "price_per_sqft" | "status"> & {
     projects: Pick<Project, "name"> | null;
   })[];

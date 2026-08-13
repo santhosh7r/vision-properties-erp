@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit, notify } from "@/lib/audit";
+import { getDistrictScope, projectInScope } from "@/lib/scope";
 
 function s(v: FormDataEntryValue | null): string {
   return String(v || "").trim();
@@ -25,6 +26,9 @@ export async function createRegistration(formData: FormData): Promise<void> {
   const name_of_registrant = s(formData.get("name_of_registrant"));
 
   if (!plot_id || !project_id || !register_date || !register_number || !name_of_registrant) return;
+
+  // A branch desk may only register plots in its own district.
+  if (!projectInScope(await getDistrictScope(sb, actor), project_id)) return;
 
   // A cancelled booking is dead — never register it (that would orphan a
   // registration against a cancelled booking with no sales chain, so no

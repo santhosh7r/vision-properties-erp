@@ -32,6 +32,10 @@ export interface User {
   partner_code: string | null;
   manager_id: string | null;
   city: string | null;
+  // Home district (migration 0014). A sorting hint for the sales tiers — their
+  // own district's inventory floats to the top — but a hard boundary for the
+  // Pre-Sales / Post-Sales desks, which see only this district (lib/scope.ts).
+  district: string | null;
   // Business Partner Registration Form — populated only for business_partner.
   date_of_birth: string | null;
   whatsapp: string | null;

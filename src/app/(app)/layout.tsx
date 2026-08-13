@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { mustChangePassword } from "@/lib/session";
 import { needsRegistration } from "@/lib/partner-registration";
 import { isHiddenUser } from "@/lib/hidden-users";
 import { navFor } from "@/lib/nav";
@@ -18,10 +17,9 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // requireUser already holds a flagged account at /change-password (a
+  // freshly-provisioned login with a temporary password) before anything renders.
   const user = await requireUser();
-  // Force a password change before the app is usable when flagged (e.g. a
-  // freshly-provisioned account with an admin-set temporary password).
-  if (await mustChangePassword(user.id)) redirect("/change-password");
   // Then force the registration form. Sales accounts that predate the form (or
   // arrived by import) have no date of birth, address, nominee or signed
   // declaration on file, and may not use the app until they do. Keyed off the

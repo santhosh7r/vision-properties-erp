@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import type { SessionUser } from "@/lib/session";
 import { can, isSalesRole, isNetworkHead, ROLE_LABELS } from "@/lib/roles";
-import { supabaseConfigured } from "@/lib/supabase";
+import { getSupabase, supabaseConfigured } from "@/lib/supabase";
+import { getDistrictScope } from "@/lib/scope";
 import { getDashboard, getAdminInsights, getSalesDashboard, getSeniorOverview } from "@/lib/queries";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { inr, inrCompact, sqft, sqftCompact, timeAgo } from "@/lib/format";
@@ -68,8 +69,18 @@ export default async function DashboardPage() {
     return <SalesDashboard user={user} />;
   }
 
+  // A branch desk (Pre-Sales / Post-Sales) is measured by its DISTRICT: the
+  // inventory, deals and collections of the projects it works, not the company's.
+  const scope = await getDistrictScope(getSupabase(), user);
+
   // Admin (and Finance/Legal) see company-wide figures.
-  const d = await getDashboard(user.role === "admin" ? undefined : user.id);
+  const d = await getDashboard(
+    scope
+      ? { userId: user.id, projectIds: scope.projectIds, district: scope.district }
+      : user.role === "admin"
+        ? {}
+        : { userId: user.id },
+  );
   // Extra company-wide business intelligence — ADMIN dashboard only.
   const insights = user.role === "admin" ? await getAdminInsights() : null;
 

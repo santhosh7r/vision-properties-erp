@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SessionUser } from "@/lib/session";
 import { can } from "@/lib/roles";
+import { getDistrictScope } from "@/lib/scope";
 import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
 import { type FlowData } from "./BookingsWorkspace";
 import { type FlowProject } from "./StartBookingFlow";
@@ -18,24 +19,36 @@ export async function loadBookingFlow(
   const canBook = can(user.role, "create_booking");
   if (!canBlock && !canBook) return null;
   const isAdmin = user.role === "admin";
+  // A branch desk (Pre-Sales) books for its whole district: every project there,
+  // and every customer of that district — not just the ones it typed in itself.
+  const scope = await getDistrictScope(sb, user);
 
   // Non-admins pick from their OWN clients (created by them or booked with their id).
-  const custScopeFilter = isAdmin
-    ? ""
-    : ownCustomerOrFilter(user.id, await ownBookedCustomerIds(sb, user.id));
+  const custScopeFilter =
+    isAdmin || scope ? "" : ownCustomerOrFilter(user.id, await ownBookedCustomerIds(sb, user.id));
+
+  let projQuery = sb
+    .from("projects")
+    .select(
+      "id, name, city, district, advance_percent, advance_min_amount, blocking_amount, blocking_window_hours, booking_window_days, plots(id, plot_no, sqft, price_per_sqft, status)",
+    )
+    .eq("status", "active");
+  if (scope) projQuery = projQuery.in("id", scope.projectIds);
+
+  let custQuery = sb.from("customers").select("id, name, mobile");
+  if (scope) {
+    // Customers carry their own district (see the customer form), so a desk's
+    // client list follows the same boundary as its inventory.
+    // No district on the account → the desk is unconfigured and sees nobody,
+    // matching how getDistrictScope fails closed on inventory.
+    custQuery = scope.district ? custQuery.ilike("district", scope.district) : custQuery.in("id", []);
+  } else if (!isAdmin) {
+    custQuery = custQuery.or(custScopeFilter);
+  }
 
   const [{ data: projData }, { data: custData }] = await Promise.all([
-    sb
-      .from("projects")
-      .select(
-        "id, name, city, district, advance_percent, advance_min_amount, blocking_amount, blocking_window_hours, booking_window_days, plots(id, plot_no, sqft, price_per_sqft, status)",
-      )
-      .eq("status", "active")
-      .order("name"),
-    (isAdmin
-      ? sb.from("customers").select("id, name, mobile")
-      : sb.from("customers").select("id, name, mobile").or(custScopeFilter)
-    ).order("name"),
+    projQuery.order("name"),
+    custQuery.order("name"),
   ]);
 
   // Plot groups are OPTIONAL (migration 0003): fall back to "no groups" if absent.

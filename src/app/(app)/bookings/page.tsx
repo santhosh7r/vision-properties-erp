@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can, isSalesRole } from "@/lib/roles";
 import { getDownlineIds } from "@/lib/hierarchy";
+import { getDistrictScope } from "@/lib/scope";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { PageHeader } from "@/components/ui";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
@@ -24,14 +25,27 @@ export default async function BookingsPage({
   const sp = await searchParams;
   const mode = sp.mode === "blocking" ? "blocking" : sp.mode === "booking" ? "booking" : null;
   const isAdmin = user.role === "admin";
-  const showSalesperson = isAdmin || (isSalesRole(user.role) && user.role !== "business_partner");
+  // Who sold it matters to anyone looking at other people's deals — Admin, a
+  // sales manager, and a branch desk working its whole district.
+  const showSalesperson =
+    isAdmin ||
+    (isSalesRole(user.role) && user.role !== "business_partner") ||
+    user.role === "pre_sales" ||
+    user.role === "post_sales";
+
+  // A branch desk is scoped by DISTRICT, not by downline — it has no team, so a
+  // downline filter would (correctly, but uselessly) show it only its own work.
+  const scope = await getDistrictScope(sb, user);
 
   let query = sb
     .from("bookings")
     .select("*, plots(plot_no, sqft, status), customers(name, mobile), projects(name, blocking_window_hours, booking_window_days), creator:users!created_by(full_name)")
     .order("created_at", { ascending: false });
-  // Admin sees everything; everyone else sees their own downline's records.
-  if (!isAdmin) {
+  if (scope) {
+    // Pre-Sales / Post-Sales: every deal in their district, whoever raised it.
+    query = query.in("project_id", scope.projectIds);
+  } else if (!isAdmin) {
+    // Admin sees everything; sales roles see their own downline's records.
     const ids = await getDownlineIds(sb, user.id);
     const list = ids.join(",");
     query = query.or(`created_by.in.(${list}),partner_id.in.(${list})`);
@@ -110,8 +124,9 @@ export default async function BookingsPage({
         : salesView
           ? "My Blockings & Bookings"
           : "Blockings & Bookings";
-  const subtitle =
-    mode === "blocking"
+  const subtitle = scope
+    ? `Every blocking and booking in ${scope.district ?? "your branch"} — search, confirm or cancel.`
+    : mode === "blocking"
       ? "Your team's blockings — confirm or cancel."
       : mode === "booking"
         ? "Your team's bookings — confirm or cancel."
