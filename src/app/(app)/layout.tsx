@@ -1,10 +1,12 @@
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import { navForUser, pageLevel } from "@/lib/access";
+import { pageKeyForPath } from "@/lib/pages";
 import { needsRegistration } from "@/lib/partner-registration";
 import { isHiddenUser } from "@/lib/hidden-users";
-import { navFor } from "@/lib/nav";
-import { ROLE_LABELS } from "@/lib/roles";
+import { ROLE_LABELS, type Role } from "@/lib/roles";
 import { logout } from "@/app/login/actions";
 import ThemeToggle from "@/components/ThemeToggle";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -26,9 +28,19 @@ export default async function AppLayout({
   // REAL role so a dev switched into Business Partner is not asked to complete a
   // registration for an admin account.
   if (await needsRegistration(user.id, user.realRole)) redirect("/complete-profile");
+  // PAGE CONFIG, enforced in ONE place for every route under (app). A layout is
+  // not told which URL it is rendering, so middleware forwards it as a header.
+  // Doing it here rather than page by page means a page an Admin has switched off
+  // cannot be reached by typing its URL, and no future page can forget the check.
+  const pathname = (await headers()).get("x-pathname") ?? "";
+  const pageKey = pageKeyForPath(pathname);
+  if (pageKey && (await pageLevel(user.role as Role, pageKey)) === "none") {
+    redirect("/dashboard");
+  }
   // Nav follows the EFFECTIVE role, so a dev switched to Business Partner sees
-  // exactly that role's menu. Dev-only items stay keyed off the account itself.
-  const items = navFor(user.role, isHiddenUser(user.email));
+  // exactly that role's menu, minus anything Page Config has hidden. Dev-only
+  // items stay keyed off the account itself.
+  const items = await navForUser(user, isHiddenUser(user.email));
   // True only for the dev account while it is running as someone else's role.
   const devSwitched = user.isDev && user.role !== user.realRole;
   const initials = user.full_name

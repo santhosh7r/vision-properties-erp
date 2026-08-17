@@ -39,7 +39,7 @@ const REFUND: Record<string, { label: string; tone: "gray" | "amber" | "blue" | 
 //   · expired   → Extend (more time, same plot, same customer) or Release
 //   · cancelled → Release only; the deal is already over, so there is no hold to
 //                 extend. Its refund is handled on Payments & Cancellation.
-export default function PendingReleaseTable({ rows }: { rows: PendingRow[] }) {
+export default function PendingReleaseTable({ rows, canAct }: { rows: PendingRow[]; canAct: boolean }) {
   const columns: Column<PendingRow>[] = [
     { id: "project", header: "Project", sort: (r) => r.project.toLowerCase(), cell: (r) => <span className="font-medium text-[var(--text)]">{r.project}</span> },
     { id: "plot", header: "Plot", sort: (r) => r.plot, cell: (r) => <span className="font-medium">{r.plot}</span> },
@@ -70,24 +70,27 @@ export default function PendingReleaseTable({ rows }: { rows: PendingRow[] }) {
     { id: "since", header: "Since", hideBelow: "lg", sort: (r) => r.since ?? "", cell: (r) => <span className="whitespace-nowrap text-[var(--muted)]">{fmtDateTime(r.since)}</span> },
     {
       id: "action",
-      header: "Extend or release",
+      header: canAct ? "Extend or release" : "",
       align: "right",
-      cell: (r) => (
-        <div className="flex items-center justify-end gap-2">
-          {/* A cancelled deal has no live hold to give more time to. */}
-          {r.kind === "expired" && r.bookingId && <ExtendForm bookingId={r.bookingId} />}
-          <form action={releasePlot} onClick={(e) => e.stopPropagation()}>
-            <input type="hidden" name="plot_id" value={r.plotId} />
-            <SubmitButton
-              className="btn-ghost text-[var(--brand-red)]"
-              style={{ padding: "5px 12px", fontSize: 12 }}
-              pendingLabel="Releasing…"
-            >
-              Release
-            </SubmitButton>
-          </form>
-        </div>
-      ),
+      cell: (r) =>
+        !canAct ? (
+          <span className="text-xs text-[var(--muted)]">Awaiting Admin</span>
+        ) : (
+          <div className="flex items-center justify-end gap-2">
+            {/* A cancelled deal has no live hold to give more time to. */}
+            {r.kind === "expired" && r.bookingId && <ExtendForm bookingId={r.bookingId} />}
+            <form action={releasePlot} onClick={(e) => e.stopPropagation()}>
+              <input type="hidden" name="plot_id" value={r.plotId} />
+              <SubmitButton
+                className="btn-ghost text-[var(--brand-red)]"
+                style={{ padding: "5px 12px", fontSize: 12 }}
+                pendingLabel="Releasing…"
+              >
+                Release
+              </SubmitButton>
+            </form>
+          </div>
+        ),
     },
   ];
 

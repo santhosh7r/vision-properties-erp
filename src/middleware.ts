@@ -17,7 +17,21 @@ const PROTECTED_PREFIXES = [
   "/registrations",
   "/users",
   "/settings",
+  "/available-plots",
+  "/business-operators",
+  "/tokens",
+  "/reports",
+  "/requests",
+  "/feedback",
+  "/in-house",
+  "/activity",
+  "/page-config",
+  "/profile",
 ];
+
+// The app layout enforces Page Config on every route, and a layout is not told
+// which URL it is rendering — so the path is forwarded to it as a header.
+const PATH_HEADER = "x-pathname";
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -32,7 +46,9 @@ export function middleware(req: NextRequest) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
-  return NextResponse.next();
+  const headers = new Headers(req.headers);
+  headers.set(PATH_HEADER, pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {
@@ -49,5 +65,15 @@ export const config = {
     "/registrations/:path*",
     "/users/:path*",
     "/settings/:path*",
+    "/available-plots/:path*",
+    "/business-operators/:path*",
+    "/tokens/:path*",
+    "/reports/:path*",
+    "/requests/:path*",
+    "/feedback/:path*",
+    "/in-house/:path*",
+    "/activity/:path*",
+    "/page-config/:path*",
+    "/profile/:path*",
   ],
 };

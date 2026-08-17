@@ -46,9 +46,12 @@ function TabButton({
 export default function ReleaseTabs({
   pendingRows,
   historyRows,
+  canAct,
 }: {
   pendingRows: PendingRow[];
   historyRows: ReleasedRow[];
+  // False for the Post-Sales desk: it watches the queue, the Admin clears it.
+  canAct: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("pending");
 
@@ -68,11 +71,13 @@ export default function ReleaseTabs({
 
       <p className="text-xs text-[var(--muted)]">
         {tab === "pending"
-          ? "Everything waiting on you. A hold that ran past its deadline still owns its plot — extend it for the customer, or release it. A cancelled booking has no hold left to extend, so it can only be released. Nothing here goes back on the market until you say so."
+          ? canAct
+            ? "Everything waiting on you. A hold that ran past its deadline still owns its plot — extend it for the customer, or release it. A cancelled booking has no hold left to extend, so it can only be released. Nothing here goes back on the market until you say so."
+            : "Everything waiting on an Admin decision. A hold that ran past its deadline still owns its plot; a cancelled booking has left its plot parked. Nothing here goes back on the market until an Admin extends or releases it — this list is yours to watch and chase."
           : "Plots that have already gone back to the company — a record of what you released. Releasing is final: nothing here can be extended, released again or reinstated. The plot is plain inventory now, and the next customer takes it through the normal blocking or booking flow."}
       </p>
 
-      {tab === "pending" ? <PendingReleaseTable rows={pendingRows} /> : <ReleasedHistory rows={historyRows} />}
+      {tab === "pending" ? <PendingReleaseTable rows={pendingRows} canAct={canAct} /> : <ReleasedHistory rows={historyRows} />}
     </div>
   );
 }

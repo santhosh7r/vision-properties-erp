@@ -121,6 +121,18 @@ export const Cog = (p: P) => (
   </Base>
 );
 
+// Access control — a shield with a keyhole. Page Config decides who may open
+// what, and nothing else in the set says "permissions"; sitemap was already the
+// hierarchy icon on Block / Change Team & Level, so the two read as the same
+// thing in the sidebar.
+export const ShieldLock = (p: P) => (
+  <Base {...p}>
+    <path d="M12 3l7 3v5.5c0 4.2-2.8 7.9-7 9.5-4.2-1.6-7-5.3-7-9.5V6l7-3z" />
+    <circle cx="12" cy="11" r="1.6" />
+    <path d="M12 12.6V15" />
+  </Base>
+);
+
 export const Trash = (p: P) => (
   <Base {...p}>
     <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6M10 11v6M14 11v6" />
@@ -198,6 +210,7 @@ export const Icons = {
   layers: Layers,
   cog: Cog,
   sitemap: Sitemap,
+  shieldLock: ShieldLock,
   briefcase: Briefcase,
   clock: Clock,
   barChart: BarChart,

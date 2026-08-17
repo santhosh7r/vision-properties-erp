@@ -6,6 +6,8 @@ import { getSupabase, supabaseConfigured } from "@/lib/supabase";
 import { createSession, destroySession } from "@/lib/session";
 import { isHiddenUser } from "@/lib/hidden-users";
 import { logAudit } from "@/lib/audit";
+import { roleCanLogin } from "@/lib/access";
+import type { Role } from "@/lib/roles";
 
 export async function login(
   _prev: { error?: string } | undefined,
@@ -39,6 +41,12 @@ export async function login(
 
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return { error: "Invalid login or password." };
+  // PAGE CONFIG · "Can log in". Checked AFTER the password so a wrong password
+  // and a switched-off role are indistinguishable to someone guessing. Admin is
+  // never blocked, so this can't lock everyone out of the app.
+  if (!(await roleCanLogin(user.role as Role))) {
+    return { error: "Logins are currently switched off for your role. Contact the Admin." };
+  }
 
   await createSession({
     id: user.id,

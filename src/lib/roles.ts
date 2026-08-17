@@ -223,7 +223,11 @@ export type Capability =
   // and cancelled plots queue up on Plot Release and stay held until an Admin
   // releases (or extends) them there. Deliberately NOT `manage_plots`: working
   // that queue must not carry the power to add, re-price or delete inventory.
-  | "release_plot";
+  | "release_plot"
+  // OPEN the Plot Release page without being able to act on it. The Post-Sales
+  // desk works the queue day to day and needs to see what is waiting and chase
+  // it, but the release itself stays the Admin's call.
+  | "view_plot_release";
 
 // ── In-house branch desks (district-scoped — see isDistrictScoped) ───────────
 // Pre-Sales: the front of the deal. Blocks and books plots for walk-in
@@ -261,6 +265,8 @@ const POST_SALES_CAPS: Capability[] = [
   "cancel_booking",
   "approve_refund",
   "manage_registration",
+  // Sees the Plot Release queue and chases it; releasing stays with the Admin.
+  "view_plot_release",
   "view_post_sales",
 ];
 
@@ -289,6 +295,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "view_pre_sales",
     "view_post_sales",
     "release_plot",
+    "view_plot_release",
   ],
   // Only Admin holds `confirm_booking`, `cancel_booking` and `release_plot`.
   // A sales role raises a blocking/booking as 'pending' and waits for the Admin

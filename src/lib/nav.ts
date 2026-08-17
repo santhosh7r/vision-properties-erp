@@ -102,9 +102,11 @@ export const NAV: NavItem[] = [
   { href: "/bookings", label: "Blockings & Bookings", icon: "fileText", roles: ["admin", ...EITHER_DESK], group: "Post-Sales" },
   // Part Payment + Fully Paid Receipt + Cancellation share one tabbed page.
   { href: "/post-sales", label: "Payments & Cancellation", icon: "creditCard", roles: ["admin", ...POST_SALES_DESK], group: "Post-Sales" },
-  // Plot Release is ADMIN-ONLY: nothing returns to inventory automatically, and
-  // only an Admin decides whether an expired/cancelled plot goes back.
-  { href: "/inventory/release", label: "Plot Release", icon: "cube", roles: ["admin"], group: "Post-Sales" },
+  // The Post-Sales desk WORKS this queue and needs to see what is waiting, so the
+  // page is theirs too — but releasing stays the Admin's call. The desk opens it
+  // read-only (`view_plot_release`); the Extend / Release buttons need
+  // `release_plot`, which only Admin holds.
+  { href: "/inventory/release", label: "Plot Release", icon: "cube", roles: ["admin", ...POST_SALES_DESK], group: "Post-Sales" },
   // Approvals inbox — Admin, plus Pre-Sales for the "Pre-sales approval" stage of
   // site-visit / cab requests (STAGE_ROLES.presales in lib/requests.ts).
   { href: "/requests", label: "Approvals", icon: "clock", roles: ["admin", ...PRE_SALES_DESK], group: "Operations" },
@@ -140,6 +142,9 @@ export const NAV: NavItem[] = [
   // Administration, not Business Partners: these people are not in the sales tree.
   { href: "/in-house", label: "My Team", icon: "users", roles: ["admin"], group: "Administration" },
   { href: "/activity", label: "Activity Logs", icon: "clock", roles: ["admin"], group: "Administration" },
+  // Which role can open which page, and whether they may act on it. The menu
+  // itself is filtered by what is set here — see lib/access.navForUser.
+  { href: "/page-config", label: "Page Config", icon: "shieldLock", roles: ["admin"], group: "Administration" },
   { href: "/settings", label: "Settings", icon: "cog", roles: ["admin"], group: "Administration" },
   // Account — sales roles: one Profile page (details, tokens, password,
   // appearance, language, sign-out-everywhere). In-house desks get the same page

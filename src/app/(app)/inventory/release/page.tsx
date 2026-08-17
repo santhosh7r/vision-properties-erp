@@ -1,4 +1,5 @@
-import { requireCapability } from "@/lib/auth";
+import { requireAnyCapability } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import { getSupabase } from "@/lib/supabase";
 import { getDistrictScope, withProjectScope } from "@/lib/scope";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
@@ -37,7 +38,11 @@ export default async function PlotReleasePage({
 }: {
   searchParams: Promise<{ ok?: string; err?: string }>;
 }) {
-  const user = await requireCapability("release_plot");
+  // The Post-Sales desk may OPEN this page; only Admin may act on it. `canAct`
+  // drives whether the Extend / Release controls render at all — the server
+  // actions behind them re-check `release_plot` regardless.
+  const user = await requireAnyCapability(["release_plot", "view_plot_release"]);
+  const canAct = can(user.role, "release_plot");
   await sweepExpiredBookings();
   const sb = getSupabase();
   // Null for Admin (company-wide); a project-id filter for a branch desk.
@@ -215,7 +220,7 @@ export default async function PlotReleasePage({
         </div>
       )}
 
-      <ReleaseTabs pendingRows={pendingRows} historyRows={releasedRows} />
+      <ReleaseTabs pendingRows={pendingRows} historyRows={releasedRows} canAct={canAct} />
     </>
   );
 }
