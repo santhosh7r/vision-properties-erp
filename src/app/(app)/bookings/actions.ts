@@ -6,6 +6,7 @@ import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit, notify } from "@/lib/audit";
 import { bookingInScope, plotInScope } from "@/lib/scope";
+import { isFlaggedExpired } from "@/lib/holds";
 import { totalPlotValue } from "@/lib/format";
 import { computeAdvanceRequired, computeRefund, addWorkingDays } from "@/lib/sop";
 import type { BookMode, LoanTokenBy } from "@/lib/types";
@@ -21,6 +22,25 @@ function nullable(v: FormDataEntryValue | null): string | null {
 // Instrument details captured alongside a payment (cheque no / UTR / UPI txn id
 // / lender + a date). Which of these the form actually collected depends on the
 // selected Mode (see PAYMENT_MODE_FIELDS) — we just persist whatever was sent.
+// An expired hold reads as auto-released to everyone but an Admin (see
+// lib/holds), so a non-admin must not be able to act on one either — a stale tab
+// or a hand-rolled POST would otherwise quietly touch a deal the user has been
+// shown as dead. Admins are unaffected: the hold really is still live for them.
+// Returns true when the caller should stop.
+async function hiddenFromActor(
+  sb: ReturnType<typeof getSupabase>,
+  actor: { role: string },
+  bookingId: string,
+): Promise<boolean> {
+  if (actor.role === "admin") return false;
+  const { data } = await sb
+    .from("bookings")
+    .select("status, expired_at")
+    .eq("id", bookingId)
+    .maybeSingle();
+  return Boolean(data?.expired_at) && data?.status !== "cancelled";
+}
+
 function paymentDetails(f: FormData): {
   reference: string | null;
   bank_name: string | null;
@@ -123,6 +143,29 @@ export async function createBooking(formData: FormData): Promise<void> {
   if (plot.status !== "available") {
     redirect(`/plots/${plot_id}?err=unavailable`);
   }
+
+  // A plot with an UNCONFIRMED hold still reads as 'available' (that is the
+  // point — the hold does nothing to the inventory until an Admin confirms it),
+  // so availability alone does not mean it is free to take. The pending booking
+  // itself is the claim: reject the second attempt here, and again on the unique
+  // index below for anyone who races past this check.
+  const { data: held } = await sb
+    .from("bookings")
+    .select("book_mode, status, expired_at")
+    .eq("plot_id", plot_id)
+    .in("status", ["pending", "confirmed"])
+    .maybeSingle();
+  if (held) {
+    // If the claim is an EXPIRED hold, this user has been shown that plot as
+    // auto-released (lib/holds) — telling them it is "already blocked" would
+    // give the Admin's pending decision away. They get a neutral per-plot
+    // problem instead. The page re-derives both cases from live data; `err` is
+    // only the fallback for when the claim clears in between.
+    const masked = isFlaggedExpired(held) && actor.role !== "admin";
+    const err = masked ? "plot_issue" : `held&held=${held.book_mode}`;
+    redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=${err}`);
+  }
+
   const project = plot.projects;
 
   // --- Amounts & lock gate (computed BEFORE touching customer/booking) -------
@@ -233,7 +276,9 @@ export async function createBooking(formData: FormData): Promise<void> {
       director_code: nullable(formData.get("director_code")),
       director_name: nullable(formData.get("director_name")),
       tentative_registration_date: nullable(formData.get("tentative_registration_date")),
-      mode_of_payment: nullable(formData.get("mode_of_payment")),
+      // The form asks for the payment mode ONCE (beside "Amount Paid Now"); it
+      // is both how this money arrived and the booking's mode of payment.
+      mode_of_payment: paymentMode,
       loan_token_by: (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null,
       booked_date: nullable(formData.get("booked_date")) ?? new Date().toISOString().slice(0, 10),
       remarks: nullable(formData.get("remarks")),
@@ -249,16 +294,15 @@ export async function createBooking(formData: FormData): Promise<void> {
     .select("id")
     .single();
 
-  // Unique index may reject if another active booking exists for this plot.
+  // Unique index rejects if another active booking exists for this plot — i.e.
+  // someone claimed it between the check above and this insert.
   if (bookErr || !booking) {
-    redirect(`/plots/${plot_id}?err=conflict`);
+    redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=held`);
   }
 
-  // Move plot into blocked/booked.
-  await sb
-    .from("plots")
-    .update({ status: mode === "blocking" ? "blocked" : "booked" })
-    .eq("id", plot_id);
+  // The plot deliberately STAYS 'available'. A hold moves inventory only once an
+  // Admin confirms it (see confirmBooking) — until then the pending booking above
+  // is the only thing standing between this plot and the next person to try.
 
   // Optional initial payment (blocking amount or advance).
   if (amountPaidNow > 0) {
@@ -280,8 +324,8 @@ export async function createBooking(formData: FormData): Promise<void> {
     "sms",
     null,
     mode === "blocking"
-      ? `Plot ${plot.plot_no} blocked. Book within ${project.blocking_window_hours} hours to confirm.`
-      : `Booking received for plot ${plot.plot_no}. Advance ${advance_required}. Project: ${project.name}.`,
+      ? `Plot ${plot.plot_no} blocking received and awaiting approval. Once approved, book within ${project.blocking_window_hours} hours to confirm.`
+      : `Booking received for plot ${plot.plot_no} and awaiting approval. Advance ${advance_required}. Project: ${project.name}.`,
   );
 
   redirect(`/bookings/${booking.id}`);
@@ -325,6 +369,7 @@ export async function recordPayment(formData: FormData): Promise<void> {
   const mode = nullable(formData.get("mode"));
   if (!booking_id || amount <= 0) return;
   if (!(await bookingInScope(sb, actor, booking_id))) return;
+  if (await hiddenFromActor(sb, actor, booking_id)) return;
 
   await sb.from("payments").insert({
     booking_id,
@@ -362,6 +407,7 @@ export async function updateBooking(formData: FormData): Promise<void> {
   const id = s(formData.get("id"));
   if (!id) return;
   if (!(await bookingInScope(sb, actor, id))) return;
+  if (await hiddenFromActor(sb, actor, id)) return;
 
   await sb
     .from("bookings")
@@ -395,6 +441,9 @@ export async function updateBooking(formData: FormData): Promise<void> {
 // ---------------------------------------------------------------------------
 // CONFIRM / CANCEL (board: Booking List actions)
 // ---------------------------------------------------------------------------
+// ADMIN ONLY (`confirm_booking`). This is the step that makes a hold real: a
+// blocking/booking sits at 'pending' with the plot still reading 'available'
+// until an Admin lands here, and only now does the plot leave inventory.
 export async function confirmBooking(formData: FormData): Promise<void> {
   const actor = await requireCapability("confirm_booking");
   const sb = getSupabase();
@@ -404,19 +453,34 @@ export async function confirmBooking(formData: FormData): Promise<void> {
 
   const { data: booking } = await sb
     .from("bookings")
-    .select("id, plot_id, book_mode, customers(mobile)")
+    .select("id, plot_id, book_mode, status, customers(mobile)")
     .eq("id", id)
     .maybeSingle();
   if (!booking) return;
+  // Only a live, unconfirmed hold can be confirmed — never a cancelled one
+  // (whose plot may already have been released to someone else).
+  if (booking.status !== "pending") return;
 
   // Keep expires_at so the hold's deadline keeps running through 'confirmed'
   // right up until the plot is registered (registration clears it).
   await sb.from("bookings").update({ status: "confirmed" }).eq("id", id);
-  // Confirming a blocking promotes it to a booking; plot becomes booked.
-  await sb.from("plots").update({ status: "booked" }).eq("id", booking.plot_id);
+  // NOW the plot leaves inventory — as 'blocked' or 'booked' to match what was
+  // actually approved. A blocking still has to be converted (convertToBooking)
+  // and re-confirmed before it reads as 'booked'.
+  await sb
+    .from("plots")
+    .update({ status: booking.book_mode === "blocking" ? "blocked" : "booked" })
+    .eq("id", booking.plot_id);
 
-  await logAudit(actor, "booking", id, "confirm");
-  await notify(id, "sms", null, "Booking Confirmed. Plot details and registration to follow.");
+  await logAudit(actor, "booking", id, "confirm", booking.book_mode);
+  await notify(
+    id,
+    "sms",
+    null,
+    booking.book_mode === "blocking"
+      ? "Your blocking has been approved. The plot is held for you."
+      : "Booking Confirmed. Plot details and registration to follow.",
+  );
   revalidatePath(`/bookings/${id}`);
   revalidatePath("/bookings");
 }
@@ -511,6 +575,7 @@ export async function requestCancellation(formData: FormData): Promise<void> {
   const reason = nullable(formData.get("reason"));
   if (!id || !reason) return;
   if (!(await bookingInScope(sb, actor, id))) return;
+  if (await hiddenFromActor(sb, actor, id)) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -628,6 +693,7 @@ export async function transferBooking(formData: FormData): Promise<void> {
   const id = s(formData.get("id"));
   const to_plot_id = s(formData.get("to_plot_id"));
   if (!id || !to_plot_id) return;
+  if (await hiddenFromActor(sb, actor, id)) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -646,6 +712,17 @@ export async function transferBooking(formData: FormData): Promise<void> {
   if (!toPlot || toPlot.status !== "available" || toPlot.project_id !== booking.project_id) {
     redirect(`/bookings/${id}?err=transfer_unavailable`);
   }
+  // 'available' is not the same as free: a hold awaiting Admin confirmation
+  // leaves its plot available while still claiming it. Don't transfer onto one.
+  const { data: toClaim } = await sb
+    .from("bookings")
+    .select("id")
+    .eq("plot_id", to_plot_id)
+    .in("status", ["pending", "confirmed"])
+    .maybeSingle();
+  if (toClaim) {
+    redirect(`/bookings/${id}?err=transfer_unavailable`);
+  }
 
   const proj = booking.projects as unknown as {
     advance_percent: number;
@@ -658,11 +735,20 @@ export async function transferBooking(formData: FormData): Promise<void> {
   const charge = kind === "downgrade" ? Number(proj.transfer_charge || 0) : 0;
   const advance_required = computeAdvanceRequired(to_value, proj.advance_percent, proj.advance_min_amount);
 
-  // Current plot lifecycle state carries over to the new plot.
+  // Current plot lifecycle state carries over to the new plot — including
+  // 'available', which is what an Admin-unconfirmed hold leaves behind. The
+  // booking record moves with it, so the claim follows the customer either way.
   const { data: fromPlot } = await sb.from("plots").select("status").eq("id", booking.plot_id).maybeSingle();
-  const carriedStatus = fromPlot?.status === "booked" ? "booked" : "blocked";
+  const carriedStatus =
+    fromPlot?.status === "booked" ? "booked" : fromPlot?.status === "blocked" ? "blocked" : "available";
 
-  await sb.from("plots").update({ status: "available" }).eq("id", booking.plot_id);
+  // The vacated plot does NOT go straight back on the market. If it had actually
+  // left inventory (blocked/booked) it is parked as 'cancelled' and queues up on
+  // Plot Release for an Admin — the only route back to 'available'. If the hold
+  // was never confirmed the plot never left inventory, so it just stays put.
+  if (fromPlot?.status === "booked" || fromPlot?.status === "blocked") {
+    await sb.from("plots").update({ status: "cancelled" }).eq("id", booking.plot_id);
+  }
   await sb.from("plots").update({ status: carriedStatus }).eq("id", to_plot_id);
   await sb
     .from("bookings")
@@ -707,6 +793,7 @@ export async function convertToBooking(formData: FormData): Promise<void> {
   const id = s(formData.get("id"));
   if (!id) return;
   if (!(await bookingInScope(sb, actor, id))) return;
+  if (await hiddenFromActor(sb, actor, id)) return;
 
   const { data: booking } = await sb
     .from("bookings")
@@ -741,7 +828,9 @@ export async function convertToBooking(formData: FormData): Promise<void> {
       loan_token_by,
     })
     .eq("id", id);
-  await sb.from("plots").update({ status: "booked" }).eq("id", booking.plot_id);
+  // The plot is NOT flipped to 'booked' here: the converted deal is back at
+  // 'pending' and an Admin has to confirm it again (confirmBooking does the
+  // flip). The plot stays exactly as the blocking left it in the meantime.
 
   // Record the advance collected at conversion so the ledger + payment status
   // reflect it (same shape as recordPayment).
@@ -761,7 +850,7 @@ export async function convertToBooking(formData: FormData): Promise<void> {
   }
 
   await logAudit(actor, "booking", id, "convert_to_booking");
-  await notify(id, "sms", null, "Your hold has been converted to a booking.");
+  await notify(id, "sms", null, "Your hold has been converted to a booking, pending approval.");
   revalidatePath(`/bookings/${id}`);
   revalidatePath("/bookings");
   revalidatePath("/payments");

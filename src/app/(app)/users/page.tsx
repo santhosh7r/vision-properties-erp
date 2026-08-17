@@ -32,11 +32,15 @@ export default async function UsersPage({
 }) {
   const sp = await searchParams;
   const intent = sp.action === "new" ? "new" : sp.view === "manage" ? "manage" : "view";
-  // Add New Partner is open to every role with a downline (`manage_team`:
-  // Admin + Senior Director / Director / Business Manager). Viewing the full
-  // partner list, blocking and re-levelling stay Admin-only (`manage_users`) —
-  // sales managers use "My Team" for their own downline instead.
-  const actor = await requireCapability(intent === "new" ? "manage_team" : "manage_users");
+  // Three different gates, one page:
+  //   new    → `manage_team`   Admin + Senior Director / Director / Business Manager
+  //   manage → `manage_users`  Admin only — blocking and re-levelling
+  //   view   → `view_partners` read-only tree; Admin and the branch desks, who
+  //            type Partner IDs onto every booking and need to look them up.
+  // Sales managers use "My Team" for their own downline instead.
+  const actor = await requireCapability(
+    intent === "new" ? "manage_team" : intent === "manage" ? "manage_users" : "view_partners",
+  );
   const isAdmin = actor.role === "admin";
   const head = HEADERS[intent];
   const sb = getSupabase();

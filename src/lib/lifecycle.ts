@@ -6,12 +6,14 @@ import { notify } from "./audit";
 // Lazy expiry sweep (board flow):
 //   - Blocking not converted within window  -> "land will be return"
 //   - Booking advance/full not paid in time -> "land is back to company"
-// Any ACTIVE hold (blocking or booking, whether 'pending' or 'confirmed') whose
-// `expires_at` has passed and which is NOT fully paid is released: the plot goes
-// straight back to 'available' so anyone may block/book it again. We also stamp
-// `expired_at` + `pre_expiry_status` so the hold surfaces on Plot Release, where
-// an Admin can EXTEND it back to the original customer — but only while the plot
-// is still free (see extendHold). Runs cheaply on bookings/plots list loads.
+// NOTHING IS EVER RELEASED AUTOMATICALLY. Any ACTIVE hold (blocking or booking,
+// whether 'pending' or 'confirmed') whose `expires_at` has passed and which is
+// NOT fully paid is only FLAGGED as expired: the hold stays active and the plot
+// stays exactly where it is, so nobody else can take it behind the customer's
+// back. Stamping `expired_at` (+ `pre_expiry_status`) surfaces it on Plot
+// Release, where an Admin — and only an Admin — either EXTENDS it back to the
+// original customer or RELEASES the plot to the company. Runs cheaply on
+// bookings/plots list loads.
 // ---------------------------------------------------------------------------
 export async function sweepExpiredBookings(): Promise<number> {
   const sb = getSupabase();
@@ -26,36 +28,39 @@ export async function sweepExpiredBookings(): Promise<number> {
     .from("bookings")
     .select("id, plot_id, status, payment_status, customer_id")
     .in("status", ["pending", "confirmed"])
+    .is("expired_at", null) // flag once — an already-flagged hold is left alone
     .not("expires_at", "is", null)
     .lt("expires_at", nowIso);
 
   if (!expired || expired.length === 0) return 0;
 
-  // Fully paid bookings are never auto-released even if a window passed — the
-  // money is on the plot and the deadline is only the registration target.
-  const toRelease = expired.filter((b) => b.payment_status !== "completed");
-  if (toRelease.length === 0) return 0;
+  // Fully paid bookings are never flagged even if a window passed — the money is
+  // on the plot and the deadline is only the registration target.
+  const toFlag = expired.filter((b) => b.payment_status !== "completed");
+  if (toFlag.length === 0) return 0;
 
-  // Release in parallel — this sweep is awaited before several list pages
-  // render, so a serial loop would add one round-trip per expired booking to
-  // every page load.
+  // Flag in parallel — this sweep is awaited before several list pages render,
+  // so a serial loop would add one round-trip per expired booking to every page
+  // load.
   await Promise.all(
-    toRelease.map(async (b) => {
-      await sb
+    toFlag.map(async (b) => {
+      // Claim the flag first (and only if still unflagged) so two concurrent
+      // sweeps on parallel page loads can't double-notify the customer.
+      const { data: claimed } = await sb
         .from("bookings")
         .update({
-          status: "cancelled",
-          released_at: nowIso,
           expired_at: nowIso,
           pre_expiry_status: b.status, // restored verbatim if an Admin extends
         })
-        .eq("id", b.id);
+        .eq("id", b.id)
+        .is("expired_at", null)
+        .select("id")
+        .maybeSingle();
+      if (!claimed) return;
 
-      await sb
-        .from("plots")
-        .update({ status: "available" })
-        .eq("id", b.plot_id);
-
+      // Worded exactly as the old automatic release was: outside of Admin, the
+      // deadline passing must look like the plot simply went back. Whether it
+      // actually does is the Admin's call on Plot Release. See lib/holds.
       await notify(
         b.id,
         "sms",
@@ -64,7 +69,7 @@ export async function sweepExpiredBookings(): Promise<number> {
       );
     }),
   );
-  return toRelease.length;
+  return toFlag.length;
 }
 
 // ---------------------------------------------------------------------------

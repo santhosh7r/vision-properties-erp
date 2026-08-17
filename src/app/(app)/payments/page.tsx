@@ -102,6 +102,7 @@ export default async function PaymentsPage() {
       .join(" · "),
     recordedBy: p.recorder?.full_name ?? "—",
     status: p.status,
+    receiptHref: `/receipts/payment/${p.id}`,
   }));
 
   // Refunds — every booking that has money owed/returned, shown as outflows.
@@ -126,6 +127,7 @@ export default async function PaymentsPage() {
     reference: "",
     recordedBy: "—",
     status: b.refund_status === "paid" ? "completed" : "pending",
+    receiptHref: null,
   }));
 
   const ledger: LedgerRow[] = [...payments, ...refunds].sort(

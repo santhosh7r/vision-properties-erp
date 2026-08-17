@@ -45,7 +45,7 @@ export const STAGE_ROLES: Record<RequestStage, Role[]> = {
   senior: ["senior_director", "admin"],
   // The Pre-Sales desk owns this stage now that the role exists; Admin stays on
   // it as the backstop that cleared it before the desk did.
-  presales: ["pre_sales", "admin"],
+  presales: ["pre_sales", "pre_post_sales", "admin"],
   legal: ["legal", "admin"],
   accounts: ["finance", "admin"],
   done: [],

@@ -44,7 +44,10 @@ export const PAYMENT_MODES = [
   "Cheque",
   "Bank Transfer",
   "UPI",
-  "Home Loan",
+  // Plain "Loan", not "Home Loan" — a plot is bought on plot/mortgage/personal
+  // loans just as often. Choosing it reveals the lender fields AND "Loan Taken
+  // By", which is why that question no longer sits loose on the booking form.
+  "Loan",
   "Other",
 ];
 
@@ -73,9 +76,18 @@ export const PAYMENT_MODE_FIELDS: Record<string, PaymentModeField[]> = {
   UPI: [
     { name: "reference", label: "UPI Transaction ID", type: "text", required: true, placeholder: "12-digit UPI txn id" },
   ],
+  Loan: [
+    { name: "bank_name", label: "Lender / Bank", type: "text", required: true, placeholder: "e.g. SBI, LIC Housing" },
+    { name: "reference", label: "Loan Account / Sanction No.", type: "text", required: true, placeholder: "loan a/c or sanction no." },
+    { name: "instrument_date", label: "Sanction Date", type: "date" },
+  ],
+  // Legacy: rows recorded before the mode was renamed to "Loan" still carry
+  // this value, so keep the field map for them (it is NOT in PAYMENT_MODES, so
+  // it can no longer be chosen).
   "Home Loan": [
     { name: "bank_name", label: "Lender / Bank", type: "text", required: true, placeholder: "e.g. SBI Home Loans" },
-    { name: "reference", label: "Sanction / Ref No.", type: "text", placeholder: "loan account / sanction no." },
+    { name: "reference", label: "Loan Account / Sanction No.", type: "text", placeholder: "loan a/c or sanction no." },
+    { name: "instrument_date", label: "Sanction Date", type: "date" },
   ],
   Other: [
     { name: "reference", label: "Reference / Note", type: "text", placeholder: "transaction reference" },
@@ -108,8 +120,8 @@ export function isValueCoupon(type: string): boolean {
 // (bookings, customers, projects, users, profile). Add more here when needed.
 export const DISTRICTS = ["Chennai", "Trichy"];
 
-// Who took the home loan — captured only when the payment mode is a loan. The
-// customer, or (for a director-arranged loan) their Senior Director.
+// Who took the loan — asked only when the payment mode is "Loan". The customer,
+// or (for a director-arranged loan) their Senior Director.
 export const LOAN_TOKEN_BY_OPTIONS: { value: "customer" | "senior_director"; label: string }[] = [
   { value: "customer", label: "Customer" },
   { value: "senior_director", label: "Senior Director" },

@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
+import { shownStatus } from "@/lib/holds";
 import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
 import { loanTokenByLabel } from "@/lib/options";
 import Countdown from "@/components/Countdown";
@@ -70,11 +71,19 @@ export default async function BookingDetailPage({
     .eq("id", id)
     .maybeSingle();
   if (!data) notFound();
-  const b = data as Booking & {
+  const raw = data as Booking & {
     plots: Plot;
     customers: Customer;
     projects: Project;
   };
+
+  // An expired hold is still live and still holding its plot, pending an Admin's
+  // release-or-extend decision — but only the Admin may know that. For everyone
+  // else the whole page is rendered from a copy whose status reads 'cancelled',
+  // so every badge, deadline and action gate below behaves exactly as it did
+  // when expiry auto-released the plot. See lib/holds.
+  const isAdmin = user.role === "admin";
+  const b = { ...raw, status: shownStatus(raw, isAdmin) };
 
   const { data: payData } = await sb
     .from("payments")
@@ -238,6 +247,9 @@ export default async function BookingDetailPage({
                       <th className="th">Mode</th>
                       <th className="th">Reference</th>
                       <th className="th">Amount</th>
+                      {/* Every money entry keeps its own bill, printable at any
+                          time — not just when it was recorded. */}
+                      <th className="th">Receipt</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -258,6 +270,14 @@ export default async function BookingDetailPage({
                           )}
                         </td>
                         <td className="td">{inr(p.amount)}</td>
+                        <td className="td">
+                          <PrintReceiptButton
+                            href={`/receipts/payment/${p.id}`}
+                            label="Print"
+                            className="btn-ghost"
+                            style={{ padding: "4px 10px", fontSize: 12 }}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

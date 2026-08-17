@@ -33,6 +33,7 @@ export interface Branch {
 const ROLE_TONE: Record<string, "blue" | "purple" | "green" | "amber" | "gray"> = {
   pre_sales: "blue",
   post_sales: "purple",
+  pre_post_sales: "purple",
   legal: "amber",
   finance: "green",
   digital: "gray",

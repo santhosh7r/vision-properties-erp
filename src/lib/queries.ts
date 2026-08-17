@@ -2,6 +2,7 @@ import "server-only";
 import { getSupabase } from "./supabase";
 import { getDownlineIds } from "./hierarchy";
 import { isSalesRole, isNetworkHead, type Role } from "./roles";
+import { shownStatus } from "./holds";
 import { HIDDEN_IN_LIST } from "./hidden-users";
 
 async function count(table: string, filter?: (q: any) => any): Promise<number> {
@@ -115,7 +116,7 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
     sb.from("plots").select("id", { count: "exact", head: true }).eq("status", "available"),
     sb
       .from("bookings")
-      .select("id, status, book_mode, payment_status, total_plot_value, plot_sqft, created_at, customers(name), projects(name), plots(plot_no)")
+      .select("id, status, expired_at, book_mode, payment_status, total_plot_value, plot_sqft, created_at, customers(name), projects(name), plots(plot_no)")
       .or(orFilter)
       .order("created_at", { ascending: false })
       .limit(6),
@@ -161,9 +162,11 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
     }
   }
 
+  // A sales role is never an Admin, so an expired hold is always shown here as
+  // though it had auto-released. See lib/holds.
   const recentBookings: RecentBooking[] = ((recentRes.data ?? []) as any[]).map((b) => ({
     id: b.id,
-    status: b.status,
+    status: shownStatus(b, false),
     book_mode: b.book_mode,
     payment_status: b.payment_status,
     total_plot_value: b.total_plot_value,
@@ -482,11 +485,14 @@ export interface DashboardScope {
   userId?: string;
   projectIds?: string[];
   district?: string | null;
+  // Show expired holds as if they had auto-released. Set for every caller but
+  // Admin — see lib/holds for why the two views differ.
+  maskExpired?: boolean;
 }
 
 export async function getDashboard(scope: DashboardScope = {}): Promise<DashboardData> {
   const sb = getSupabase();
-  const { userId, projectIds, district } = scope;
+  const { userId, projectIds, district, maskExpired = false } = scope;
   const byDistrict = Array.isArray(projectIds);
   // Personal scope applies only when there's no district scope over the top.
   const scoped = Boolean(userId) && !byDistrict;
@@ -501,7 +507,7 @@ export async function getDashboard(scope: DashboardScope = {}): Promise<Dashboar
 
   let recentQ = sb
     .from("bookings")
-    .select("id, status, book_mode, payment_status, total_plot_value, plot_sqft, created_at, customers(name), projects(name), plots(plot_no)")
+    .select("id, status, expired_at, book_mode, payment_status, total_plot_value, plot_sqft, created_at, customers(name), projects(name), plots(plot_no)")
     .order("created_at", { ascending: false })
     .limit(6);
   if (byDistrict) recentQ = recentQ.in("project_id", projectIds!);
@@ -636,7 +642,7 @@ export async function getDashboard(scope: DashboardScope = {}): Promise<Dashboar
 
   const recentBookings: RecentBooking[] = ((recentRes.data ?? []) as any[]).map((b) => ({
     id: b.id,
-    status: b.status,
+    status: shownStatus(b, !maskExpired),
     book_mode: b.book_mode,
     payment_status: b.payment_status,
     total_plot_value: b.total_plot_value,

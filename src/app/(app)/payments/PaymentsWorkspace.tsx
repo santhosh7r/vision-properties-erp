@@ -54,8 +54,11 @@ export default function PaymentsWorkspace({
         <Tab active={view === "ledger"} onClick={() => setView("ledger")}>
           Payment Transactions
         </Tab>
+        {/* Every live deal, paid and unpaid alike — the old "Outstanding by
+            Booking" label read as a list of debts, so the fully-paid rows in it
+            looked like a mistake. Filter by Payment to narrow it. */}
         <Tab active={view === "deals"} onClick={() => setView("deals")}>
-          Deals — Outstanding by Booking
+          Deals — Payment by Booking
         </Tab>
       </div>
 

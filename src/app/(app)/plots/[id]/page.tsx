@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
+import { isFlaggedExpired } from "@/lib/holds";
 import { inr, fmtDate, fmtDateTime, timeLeft } from "@/lib/format";
 import { PageHeader, PlotStatusBadge, BookingStatusBadge, PaymentBadge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -40,13 +41,23 @@ export default async function PlotDetailPage({
     .in("status", ["pending", "confirmed"])
     .order("created_at", { ascending: false })
     .maybeSingle();
-  const booking = bk as (Booking & { customers: Pick<Customer, "name" | "mobile"> }) | null;
+  const live = bk as (Booking & { customers: Pick<Customer, "name" | "mobile"> }) | null;
+  // An expired hold reads as auto-released to everyone but an Admin (lib/holds),
+  // so its record is hidden here too — otherwise this page would show the deal a
+  // salesperson has just been told is over.
+  const isAdmin = user.role === "admin";
+  const maskedHold = Boolean(live) && !isAdmin && isFlaggedExpired(live!);
+  const booking = maskedHold ? null : live;
 
   // Sales roles may BLOCK; only Admin may BOOK.
   const canBlock = can(user.role, "create_blocking");
   const canBook = can(user.role, "create_booking");
   const canCreate = canBlock || canBook;
   const canRelease = can(user.role, "manage_plots");
+  // An unconfirmed hold leaves the plot reading 'available', so "free to take"
+  // means available AND unclaimed — the live booking is the real claim, masked
+  // or not. A masked hold still blocks the actions; it just isn't named.
+  const isFree = plot.status === "available" && !live;
   const isAvailable = plot.status === "available";
 
   return (
@@ -77,7 +88,7 @@ export default async function PlotDetailPage({
         </div>
 
         <div className="lg:col-span-2">
-          {isAvailable ? (
+          {isFree ? (
             <div className="card">
               <h2 className="text-sm font-semibold">Actions</h2>
               <p className="mt-1 text-sm text-[var(--muted)]">
@@ -116,6 +127,12 @@ export default async function PlotDetailPage({
                   <PaymentBadge status={booking.payment_status} />
                 </div>
               </div>
+              {booking.status === "pending" && (
+                <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                  Awaiting Admin confirmation. The plot still reads as available, but it is claimed — nobody else can
+                  block or book it.
+                </p>
+              )}
               <Row label="Customer">
                 {booking.customers?.name}
                 <span className="ml-2 text-xs text-[var(--muted)]">{booking.customers?.mobile}</span>
@@ -145,6 +162,19 @@ export default async function PlotDetailPage({
                   </form>
                 )}
               </div>
+            </div>
+          ) : maskedHold ? (
+            // The hold behind this plot is hidden from this viewer, so no state
+            // is described — just that the plot is out of reach and who to ask.
+            <div className="card space-y-3">
+              <h2 className="text-sm font-semibold">Not available</h2>
+              <p className="text-sm text-[var(--muted)]">
+                Plot {plot.plot_no} can&apos;t be blocked or booked right now. Please contact the Admin about this plot —
+                every other plot in {project.name} is unaffected.
+              </p>
+              <Link href={`/projects/${project.id}`} className="btn-primary inline-block">
+                Pick another plot
+              </Link>
             </div>
           ) : (
             <div className="card space-y-3">

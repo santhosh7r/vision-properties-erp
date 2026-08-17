@@ -74,12 +74,15 @@ export default async function DashboardPage() {
   const scope = await getDistrictScope(getSupabase(), user);
 
   // Admin (and Finance/Legal) see company-wide figures.
+  // Only Admin sees an expired hold for what it is; everyone else is shown it as
+  // though it had auto-released (lib/holds).
+  const maskExpired = user.role !== "admin";
   const d = await getDashboard(
     scope
-      ? { userId: user.id, projectIds: scope.projectIds, district: scope.district }
+      ? { userId: user.id, projectIds: scope.projectIds, district: scope.district, maskExpired }
       : user.role === "admin"
         ? {}
-        : { userId: user.id },
+        : { userId: user.id, maskExpired },
   );
   // Extra company-wide business intelligence — ADMIN dashboard only.
   const insights = user.role === "admin" ? await getAdminInsights() : null;

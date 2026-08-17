@@ -8,7 +8,6 @@ import { Icons } from "@/components/icons";
 
 const GROUP_ORDER: NavItem["group"][] = [
   "Overview",
-  "Inventory",
   "Pre-Sales",
   "Post-Sales",
   "Clients",

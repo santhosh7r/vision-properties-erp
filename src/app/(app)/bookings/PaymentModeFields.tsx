@@ -13,11 +13,16 @@ export default function PaymentModeFields({
   label = "Mode",
   required = false,
   defaultMode = "",
-  // When true, a "Loan Taken By" select appears once "Home Loan" is chosen so we
-  // capture whether the customer or their Senior Director arranged the loan.
+  // When true, a "Loan Taken By" select appears once "Loan" is chosen so we
+  // capture whether the customer or their Senior Director arranged it. This is
+  // the ONLY place that question is asked — it is meaningless for cash or UPI.
   loanTokenBy = false,
   loanTokenByName = "loan_token_by",
   defaultLoanTokenBy = "",
+  // The instrument inputs (cheque no / UTR / lender …) describe ONE payment, so
+  // forms that only record the booking's mode of payment turn them off and keep
+  // just the select and its conditional "Loan Taken By".
+  instrumentFields = true,
 }: {
   modeName?: string;
   label?: string;
@@ -26,10 +31,13 @@ export default function PaymentModeFields({
   loanTokenBy?: boolean;
   loanTokenByName?: string;
   defaultLoanTokenBy?: string;
+  instrumentFields?: boolean;
 }) {
   const [mode, setMode] = useState(defaultMode);
-  const fields = paymentModeFields(mode);
-  const isLoan = mode === "Home Loan";
+  const fields = instrumentFields ? paymentModeFields(mode) : [];
+  // "Home Loan" is the pre-rename value — still recognised so editing an older
+  // record keeps its loan fields.
+  const isLoan = mode === "Loan" || mode === "Home Loan";
 
   return (
     <>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
 import { PaymentBadge } from "@/components/ui";
 import { inr, fmtDateTime } from "@/lib/format";
+import PrintReceiptButton from "../bookings/[id]/PrintReceiptButton";
 
 // One row per individual payment transaction (the `payments` ledger).
 export interface LedgerRow {
@@ -19,6 +20,9 @@ export interface LedgerRow {
   reference: string;
   recordedBy: string;
   status: string;
+  // Receipt for this single money entry. Null on refund rows — a refund is not a
+  // payment and has no bill of its own.
+  receiptHref: string | null;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -88,14 +92,23 @@ export default function PaymentLedger({ rows }: { rows: LedgerRow[] }) {
       header: "",
       align: "right",
       cell: (r) => (
-        <Link
-          href={`/bookings/${r.bookingId}`}
-          onClick={(e) => e.stopPropagation()}
-          className="btn-ghost"
-          style={{ padding: "5px 12px", fontSize: 12 }}
-        >
-          Open
-        </Link>
+        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+          {r.receiptHref && (
+            <PrintReceiptButton
+              href={r.receiptHref}
+              label="Print"
+              className="btn-ghost"
+              style={{ padding: "5px 12px", fontSize: 12 }}
+            />
+          )}
+          <Link
+            href={`/bookings/${r.bookingId}`}
+            className="btn-ghost"
+            style={{ padding: "5px 12px", fontSize: 12 }}
+          >
+            Open
+          </Link>
+        </div>
       ),
     },
   ];

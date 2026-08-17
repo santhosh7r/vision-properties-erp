@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { can, isSalesRole } from "@/lib/roles";
+import { can, isSalesRole, isDistrictScoped } from "@/lib/roles";
+import { shownStatus, shownPlotStatus } from "@/lib/holds";
 import { getDownlineIds } from "@/lib/hierarchy";
 import { getDistrictScope } from "@/lib/scope";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
@@ -12,7 +13,7 @@ import BookingsWorkspace from "./BookingsWorkspace";
 export const dynamic = "force-dynamic";
 
 // The LIST of blocked/booked records. Creating is on its own page (/bookings/add
-// for sales · Pre-Sales for admin). Sales reach this as "My Blockings"
+// for sales · Post-Sales for admin and the branch desks). Sales reach this as "My Blockings"
 // (?mode=blocking) and "My Bookings" (?mode=booking); finance sees the full list.
 export default async function BookingsPage({
   searchParams,
@@ -30,8 +31,7 @@ export default async function BookingsPage({
   const showSalesperson =
     isAdmin ||
     (isSalesRole(user.role) && user.role !== "business_partner") ||
-    user.role === "pre_sales" ||
-    user.role === "post_sales";
+    isDistrictScoped(user.role);
 
   // A branch desk is scoped by DISTRICT, not by downline — it has no team, so a
   // downline filter would (correctly, but uselessly) show it only its own work.
@@ -104,8 +104,10 @@ export default async function BookingsPage({
       balance: Math.max(0, b.total_plot_value - b.advance_paid),
       booked_date: b.booked_date,
       book_mode: b.book_mode,
-      status: b.status,
-      plotStatus: b.plots?.status ?? null,
+      // Non-admins are shown an expired hold as if it had auto-released — the
+      // Admin's pending decision is invisible to them. See lib/holds.
+      status: shownStatus(b, isAdmin),
+      plotStatus: shownPlotStatus(b, b.plots?.status ?? null, isAdmin),
       payment_status: b.payment_status,
       refund_status: b.refund_status,
       expires_at: b.expires_at,

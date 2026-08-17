@@ -159,6 +159,7 @@ export default async function PostSalesPage({
     reference: [p.reference, p.bank_name, p.instrument_date].filter(Boolean).join(" · "),
     recordedBy: p.recorder?.full_name ?? "—",
     status: p.status,
+    receiptHref: `/receipts/payment/${p.id}`,
   }));
 
   const { data: refundData } = await withProjectScope(
@@ -184,19 +185,30 @@ export default async function PostSalesPage({
     reference: "",
     recordedBy: "—",
     status: b.refund_status === "paid" ? "completed" : "pending",
+    receiptHref: null,
   }));
 
   const ledger: LedgerRow[] = [...payments, ...refunds].sort(
     (a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime(),
   );
 
+  // The four tiles must describe ONE population — the live deals. `received` used
+  // to sum the whole ledger, which also carries money collected on CANCELLED
+  // bookings (₹2.1L of it here), while Deal Value and Outstanding counted only
+  // the live ones. The tiles then refused to reconcile: Deal Value − Received
+  // came out well short of Outstanding, so a fully-paid deal still looked owed.
+  // Money on a cancelled deal is not lost from view — it is what the Refunds tile
+  // and the Cancellation tab are for, and the Payment Transactions ledger below
+  // still lists every entry.
   const dealValue = deals.reduce((s, b) => s + b.value, 0);
-  const totalPaid = deals.reduce((s, b) => s + b.paid, 0);
-  const received = ledger.filter((p) => p.status === "completed").reduce((s, p) => s + p.amount, 0);
+  const liveDealIds = new Set(deals.map((d) => d.id));
+  const received = payments
+    .filter((p) => p.status === "completed" && liveDealIds.has(p.bookingId))
+    .reduce((s, p) => s + p.amount, 0);
   const totals = {
     dealValue,
     received,
-    outstanding: Math.max(0, dealValue - totalPaid),
+    outstanding: Math.max(0, dealValue - received),
     refunds: refunds.reduce((s, p) => s + Math.abs(p.amount), 0),
     collected: receipts.reduce((s, r) => s + r.value, 0),
   };

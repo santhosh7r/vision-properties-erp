@@ -3,10 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui";
-import { LOAN_TOKEN_BY_OPTIONS, NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
+import { NOMINEE_RELATIONSHIPS } from "@/lib/options";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
 import { updateBooking } from "../../actions";
 import PartnerDetailsFields from "../../PartnerDetailsFields";
+import PaymentModeFields from "../../PaymentModeFields";
 import { SubmitButton } from "@/components/SubmitButton";
 
 export const dynamic = "force-dynamic";
@@ -104,24 +105,17 @@ export default async function EditBookingPage({
                 defaultValue={b.tentative_registration_date ?? ""}
               />
             </div>
-            <div>
-              <label className="label">Mode of Payment</label>
-              <select name="mode_of_payment" className="select" defaultValue={b.mode_of_payment ?? ""}>
-                <option value="">Select</option>
-                {PAYMENT_MODES.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Loan Taken By</label>
-              <select name="loan_token_by" className="select" defaultValue={b.loan_token_by ?? ""}>
-                <option value="">Select</option>
-                {LOAN_TOKEN_BY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
+            {/* "Loan Taken By" appears only when the mode is Loan — same rule
+                as the booking form. Instrument details belong to an individual
+                payment, not to the booking, so they stay off here. */}
+            <PaymentModeFields
+              modeName="mode_of_payment"
+              label="Mode of Payment"
+              defaultMode={b.mode_of_payment ?? ""}
+              defaultLoanTokenBy={b.loan_token_by ?? ""}
+              loanTokenBy
+              instrumentFields={false}
+            />
             <div>
               <label className="label">Booked Date</label>
               <input name="booked_date" type="date" className="input" defaultValue={b.booked_date ?? ""} />

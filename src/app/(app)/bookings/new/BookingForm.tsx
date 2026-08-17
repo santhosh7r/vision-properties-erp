@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import CustomerFields from "@/components/CustomerFields";
 import { SubmitButton } from "@/components/SubmitButton";
-import { LOAN_TOKEN_BY_OPTIONS, NOMINEE_RELATIONSHIPS, PAYMENT_MODES } from "@/lib/options";
+import { NOMINEE_RELATIONSHIPS } from "@/lib/options";
 import { computeAdvanceRequired } from "@/lib/sop";
 import { createBooking } from "../actions";
 import PartnerDetailsFields from "../PartnerDetailsFields";
@@ -149,30 +149,15 @@ export default function BookingForm({ mode, plot, project }: Props) {
             <label className="label">22. Tentative Registration Date</label>
             <input name="tentative_registration_date" type="date" className="input" />
           </div>
+          {/* Mode of payment and "Loan Taken By" both live with the money, in
+              the Payment Mode block below — asking them up here meant a second
+              mode select and a loan question on every cash booking. */}
           <div>
-            <label className="label">23. Mode of Payment</label>
-            <select name="mode_of_payment" className="select" defaultValue="">
-              <option value="">Select</option>
-              {PAYMENT_MODES.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">24. Loan Taken By</label>
-            <select name="loan_token_by" className="select" defaultValue="">
-              <option value="">Select</option>
-              {LOAN_TOKEN_BY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">25. Booked Date</label>
+            <label className="label">23. Booked Date</label>
             <input name="booked_date" type="date" className="input" />
           </div>
-          <div className="sm:col-span-2">
-            <label className="label">26. Remarks</label>
+          <div className="sm:col-span-2 lg:col-span-1">
+            <label className="label">24. Remarks</label>
             <input name="remarks" className="input" />
           </div>
         </div>
@@ -211,7 +196,8 @@ export default function BookingForm({ mode, plot, project }: Props) {
               min={0}
             />
           </div>
-          <PaymentModeFields modeName="payment_mode" label="Payment Mode" />
+          {/* Choosing "Loan" reveals the lender fields plus "Loan Taken By". */}
+          <PaymentModeFields modeName="payment_mode" label="Payment Mode" loanTokenBy />
         </div>
 
         {/* Only warn when short — the full-paid "success" banner is dropped; a
