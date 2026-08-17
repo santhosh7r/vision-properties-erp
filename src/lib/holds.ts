@@ -14,6 +14,11 @@ import type { BookingStatus, PlotStatus } from "./types";
 // anything; it only changes what is rendered.
 // ---------------------------------------------------------------------------
 
+// Stamped as the cancellation reason when an Admin releases a plot from Plot
+// Release, which is what separates a release from a customer cancellation (that
+// one carries a real reason and a refund) in the release history.
+export const RELEASED_BY_ADMIN = "Released by admin";
+
 export interface HoldLike {
   status: BookingStatus | string;
   expired_at?: string | null;

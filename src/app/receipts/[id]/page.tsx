@@ -23,7 +23,12 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   if (!data) notFound();
   const b = data as Booking & { plots: Plot; customers: Customer; projects: Project };
 
+  // `advance_paid` is the running total from the ledger (see recomputePayment),
+  // so a fully-paid deal shows the whole amount here — hence the label switches
+  // rather than always claiming "Advance".
   const paid = Number(b.advance_paid || 0) || Number(b.blocking_amount || 0);
+  const fullyPaid = b.payment_status === "completed";
+  const totalValue = Number(b.total_plot_value || 0);
   const chain = salesChain(b);
 
   return (
@@ -35,12 +40,17 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
         customer: { ...customerBlock(b.customers), age: ageFrom(b.customers?.dob), nominee: b.nominee_name },
         plot: plotBlock(b),
         payment: {
-          amountLabel: "Advance Amount ₹",
+          amountLabel: fullyPaid ? "Total Received ₹" : "Advance Amount ₹",
           amount: paid,
           mode: b.mode_of_payment,
           tentativeRegDate: fmtDateOrBlank(b.tentative_registration_date),
           directorNameId: chain.director,
           partnerNameId: chain.partner,
+          // Same ledger line the per-payment receipt carries, so whichever bill
+          // the customer is handed states the position the same way.
+          totalValue,
+          paidToDate: paid,
+          balance: Math.max(0, totalValue - paid),
         },
       }}
     />

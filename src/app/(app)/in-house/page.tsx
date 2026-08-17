@@ -24,16 +24,23 @@ export default async function InHouseTeamPage() {
   const sb = getSupabase();
 
   // Every staff role except Admin — admins manage this page, they aren't on it.
-  const staffRoles = STAFF_ROLES.filter((r) => r !== "admin");
+  const staffRoles: Role[] = STAFF_ROLES.filter((r) => r !== "admin");
 
+  // Filtered in JS rather than with `.in("role", staffRoles)` ON PURPOSE. Sending
+  // the role list to Postgres means sending enum LITERALS, and if the database is
+  // missing any one of them — a role the app knows about but whose migration has
+  // not been applied yet — PostgREST rejects the entire query with
+  // `invalid input value for enum user_role`. The page then showed "No in-house
+  // team members yet" with a full roster behind it: one unapplied migration
+  // silently emptying an admin screen, with nothing on the page to say so.
+  // Reading the table and matching here cannot fail that way.
   const { data } = await sb
     .from("users")
     .select("*")
-    .in("role", staffRoles)
     .not("email", "in", HIDDEN_IN_LIST) // hidden dev/support accounts never appear
     .order("created_at", { ascending: true });
 
-  const staff = (data ?? []) as User[];
+  const staff = ((data ?? []) as User[]).filter((u) => staffRoles.includes(u.role as Role));
 
   // How many projects each branch actually has — a desk pointed at a branch with
   // no projects opens onto empty screens, and an Admin should see that here

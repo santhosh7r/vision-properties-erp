@@ -56,10 +56,10 @@ export default async function BookingDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; receipt?: string }>;
 }) {
   const { id } = await params;
-  const { error: errorKey } = await searchParams;
+  const { error: errorKey, receipt: justPaidId } = await searchParams;
   const bookingError = errorKey ? BOOKING_ERRORS[errorKey] : undefined;
   const user = await requireUser();
   await sweepExpiredBookings();
@@ -153,6 +153,20 @@ export default async function BookingDetailPage({
         back={{ href: "/bookings", label: "← Bookings" }}
         action={<PrintReceiptButton id={b.id} />}
       />
+
+      {/* A payment was just recorded — hand over its bill immediately. The same
+          receipt stays printable from the Payments table below, forever. */}
+      {justPaidId && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400">
+          <span>Payment recorded. Print the customer&apos;s receipt for it now, or any time from Payments below.</span>
+          <PrintReceiptButton
+            href={`/receipts/payment/${justPaidId}`}
+            label="Print Receipt"
+            className="btn-primary"
+            style={{ padding: "6px 14px", fontSize: 13 }}
+          />
+        </div>
+      )}
 
       {bookingError && (
         <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">

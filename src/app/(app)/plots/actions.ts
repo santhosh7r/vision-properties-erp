@@ -6,6 +6,7 @@ import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit, notify } from "@/lib/audit";
 import { bookingInScope, plotInScope } from "@/lib/scope";
+import { RELEASED_BY_ADMIN } from "@/lib/holds";
 
 // Plot Release — ADMIN ONLY, and the ONLY way a plot ever goes back to
 // 'available'. Nothing expires or cancels its way into inventory on its own:
@@ -40,7 +41,7 @@ export async function releasePlot(formData: FormData): Promise<void> {
         // not keep sitting in the "expired holds" queue after its plot is free.
         expired_at: null,
         pre_expiry_status: null,
-        cancellation_reason: "Released by admin",
+        cancellation_reason: RELEASED_BY_ADMIN,
         refund_status: "none",
       })
       .eq("id", booking.id);
@@ -80,35 +81,16 @@ export async function extendHold(formData: FormData): Promise<void> {
     .eq("id", booking_id)
     .maybeSingle();
 
-  // Must still be a flagged hold that an Admin has not already released.
+  // Must still be a flagged hold that nobody has dealt with yet.
   if (!booking || !booking.expired_at) {
     redirect("/inventory/release?err=extend_gone");
   }
-
-  // A hold that expired under the OLD auto-release behaviour was cancelled and
-  // its plot pushed back to inventory. It can still be reclaimed for the
-  // original customer, but only while nobody else has taken the plot.
-  const wasReleased = booking.status === "cancelled";
-  if (wasReleased) {
-    const { data: plot } = await sb
-      .from("plots")
-      .select("id, status")
-      .eq("id", booking.plot_id)
-      .maybeSingle();
-    if (!plot || plot.status !== "available") {
-      redirect("/inventory/release?err=extend_taken");
-    }
-    // 'available' alone is not free — an unconfirmed hold claims a plot without
-    // moving it.
-    const { data: claim } = await sb
-      .from("bookings")
-      .select("id")
-      .eq("plot_id", booking.plot_id)
-      .in("status", ["pending", "confirmed"])
-      .maybeSingle();
-    if (claim) {
-      redirect("/inventory/release?err=extend_taken");
-    }
+  // A RELEASED hold can never be extended. Its plot has gone back to the company
+  // and may already belong to someone else; reviving the hold would hand out an
+  // extension on inventory it no longer owns. Released holds are history — they
+  // are not even listed in the extend queue, so this only catches a stale page.
+  if (booking.status === "cancelled") {
+    redirect("/inventory/release?err=extend_released");
   }
 
   const ms = unit === "days" ? value * 86_400_000 : value * 3_600_000;
@@ -117,7 +99,7 @@ export async function extendHold(formData: FormData): Promise<void> {
   const { error: bookErr } = await sb
     .from("bookings")
     .update({
-      status: booking.pre_expiry_status ?? (wasReleased ? "pending" : booking.status),
+      status: booking.pre_expiry_status ?? booking.status,
       expires_at,
       expired_at: null,
       released_at: null,
@@ -125,23 +107,15 @@ export async function extendHold(formData: FormData): Promise<void> {
       cancellation_reason: null,
     })
     .eq("id", booking.id)
-    .eq("expired_at", booking.expired_at); // no-op if a concurrent extend won
+    .eq("expired_at", booking.expired_at) // no-op if a concurrent extend won
+    .in("status", ["pending", "confirmed"]); // …or if a release landed first
 
-  // The unique active-booking index rejects if a race claimed the plot first.
   if (bookErr) {
-    redirect("/inventory/release?err=extend_taken");
+    redirect("/inventory/release?err=extend_released");
   }
 
-  // For a still-held hold the plot is left exactly as it is — extending changes
-  // the deadline, not the inventory. For a reclaimed one, put the plot back the
-  // way the hold had it: out of inventory only if it had been confirmed, since
-  // an unconfirmed hold never moves a plot.
-  if (wasReleased && booking.pre_expiry_status === "confirmed") {
-    await sb
-      .from("plots")
-      .update({ status: booking.book_mode === "blocking" ? "blocked" : "booked" })
-      .eq("id", booking.plot_id);
-  }
+  // The plot is left exactly as it is — the hold never lost it, so extending
+  // changes the deadline, not the inventory.
 
   await logAudit(actor, "booking", booking.id, "extend", `${value} ${unit}`);
   await notify(

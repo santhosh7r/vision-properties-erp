@@ -4,25 +4,32 @@ import { getDistrictScope, withProjectScope } from "@/lib/scope";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { PageHeader } from "@/components/ui";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
-import ReleaseTable, { type ReleaseRow } from "./ReleaseTable";
-import ExtendTable, { type ExtendRow } from "./ExtendTable";
+import { RELEASED_BY_ADMIN } from "@/lib/holds";
+import ReleaseTabs from "./ReleaseTabs";
+import { type PendingRow } from "./PendingReleaseTable";
+import { type ReleasedRow } from "./ReleasedHistory";
 
 export const dynamic = "force-dynamic";
 
 const NOTICE: Record<string, { tone: "ok" | "err"; text: string }> = {
   extended: { tone: "ok", text: "Hold extended — the customer has more time on the same plot." },
-  extend_taken: { tone: "err", text: "Can't extend: that hold has already been released." },
+  extend_released: {
+    tone: "err",
+    text: "Can't extend: that plot has already been released back to the company, and a release is final.",
+  },
   extend_gone: { tone: "err", text: "Can't extend: that hold is no longer available to extend." },
   extend_input: { tone: "err", text: "Enter a valid extension duration." },
 };
 
 // Post-Sales · Plot Release — ADMIN ONLY, and the single place a plot ever goes
-// back to inventory. Nothing releases itself, so both queues here sit until an
-// Admin acts on them:
-//  1. Expired holds — the deadline passed, but the plot is STILL held for that
-//     customer. Extend it (new deadline, same plot) or Release it to the company.
-//  2. Cancelled plots — a cancelled booking parks its plot as 'cancelled'; it
-//     lands here to be released back to the company.
+// back to inventory. Two tabs:
+//  1. Expired holds — everything waiting on a decision, of both kinds. A hold
+//     past its deadline still owns its plot (Extend or Release); a cancelled
+//     booking has no hold left (Release only). Neither returns on its own.
+//  2. History — what has already gone back. A record, nothing more: releasing is
+//     FINAL, so nothing here can be extended, released again or reinstated. The
+//     plot is plain inventory once more and the next customer takes it through
+//     the normal blocking/booking flow.
 // Gated on `release_plot`, not `manage_plots`: working this queue must not carry
 // the power to add, re-price or delete inventory.
 export default async function PlotReleasePage({
@@ -39,22 +46,20 @@ export default async function PlotReleasePage({
   const { ok, err } = await searchParams;
   const notice = NOTICE[ok ?? ""] ?? NOTICE[err ?? ""];
 
-  // ── 1. Expired holds ──────────────────────────────────────────────────────
-  // Two shapes land here, and the row's actions differ between them:
-  //  · STILL HELD (status pending/confirmed) — the sweep only flagged it, so the
-  //    hold kept its plot. Extend it, or Release the plot to the company.
-  //  · ALREADY RELEASED (status cancelled) — a hold that expired under the OLD
-  //    auto-release behaviour: it was cancelled and its plot pushed back to
-  //    'available' before anyone could decide. There is nothing left to release,
-  //    but it can still be reclaimed for the original customer while the plot is
-  //    free — which is why these are NOT filtered out by status here.
+  // ── 1. Expired holds AWAITING A DECISION ──────────────────────────────────
+  // Only holds that are still LIVE (pending/confirmed) and therefore still own
+  // their plot. These are the ones an Admin has to act on: Extend the hold, or
+  // Release the plot back to the company. A hold that has already been released
+  // is finished — it is not actionable and never re-extendable — so it drops out
+  // of this queue and into the read-only history below.
   const { data: expData } = await withProjectScope(
     sb
       .from("bookings")
       .select(
         "id, plot_id, status, total_plot_value, book_mode, expired_at, plots!inner(plot_no, status, price_per_sqft, sqft, projects(name)), customers(name)",
       )
-      .not("expired_at", "is", null),
+      .not("expired_at", "is", null)
+      .in("status", ["pending", "confirmed"]),
     scope,
   ).order("expired_at", { ascending: false });
 
@@ -64,32 +69,14 @@ export default async function PlotReleasePage({
   };
 
   const seenPlots = new Set<string>();
-  const candidates: ExpRow[] = [];
+  const expiredPending: PendingRow[] = [];
   for (const b of (expData ?? []) as unknown as ExpRow[]) {
-    // Most recent expired hold per plot only.
+    // The unique active-booking index allows only one of these per plot, but
+    // guard anyway so a legacy double never renders two rows for one plot.
     if (seenPlots.has(b.plot_id)) continue;
     seenPlots.add(b.plot_id);
-    // An already-released hold is only reclaimable while its plot is still free.
-    if (b.status === "cancelled" && b.plots?.status !== "available") continue;
-    candidates.push(b);
-  }
-
-  // A released hold's plot can read 'available' and STILL be spoken for — an
-  // unconfirmed hold no longer moves the plot. Drop those: someone else has it.
-  const releasedPlotIds = candidates.filter((b) => b.status === "cancelled").map((b) => b.plot_id);
-  const claimedPlots = new Set<string>();
-  if (releasedPlotIds.length > 0) {
-    const { data: claims } = await sb
-      .from("bookings")
-      .select("plot_id")
-      .in("plot_id", releasedPlotIds)
-      .in("status", ["pending", "confirmed"]);
-    for (const c of (claims ?? []) as { plot_id: string }[]) claimedPlots.add(c.plot_id);
-  }
-
-  const extendRows: ExtendRow[] = candidates
-    .filter((b) => !(b.status === "cancelled" && claimedPlots.has(b.plot_id)))
-    .map((b) => ({
+    expiredPending.push({
+      key: `expired-${b.id}`,
       bookingId: b.id,
       plotId: b.plot_id,
       project: b.plots?.projects?.name ?? "—",
@@ -97,12 +84,17 @@ export default async function PlotReleasePage({
       customer: b.customers?.name ?? "—",
       value: Number(b.total_plot_value ?? 0) || (b.plots ? b.plots.sqft * b.plots.price_per_sqft : 0),
       mode: b.book_mode,
-      stillHeld: b.status !== "cancelled",
+      kind: "expired",
       confirmed: b.status === "confirmed",
-      expiredAt: b.expired_at,
-    }));
+      refundStatus: "none",
+      since: b.expired_at,
+    });
+  }
 
-  // ── 2. Cancelled plots waiting to be released back to the company ─────────
+  // ── 2. Cancelled plots — the booking is over, the plot is parked ──────────
+  // A cancellation does NOT put the plot back on the market: cancelBooking parks
+  // it as 'cancelled' so it waits here alongside the expired holds. There is no
+  // live hold left to extend, so these rows only ever offer Release.
   const { data: plotData } = await withProjectScope(
     sb
       .from("plots")
@@ -114,17 +106,23 @@ export default async function PlotReleasePage({
     projects: Pick<Project, "name"> | null;
   })[];
 
-  // The cancelled booking behind each held plot → who held it, value, refund.
+  // The cancelled booking behind each parked plot → who held it, value, refund.
   const ids = plots.map((p) => p.id);
-  const byPlot = new Map<string, { customer: string; value: number; cancelledAt: string | null; refundStatus: string }>();
+  const byPlot = new Map<
+    string,
+    { customer: string; value: number; mode: string; cancelledAt: string | null; refundStatus: string }
+  >();
   if (ids.length > 0) {
     const { data: bkData } = await sb
       .from("bookings")
-      .select("plot_id, total_plot_value, released_at, refund_status, customers(name)")
+      .select("plot_id, total_plot_value, book_mode, released_at, refund_status, customers(name)")
       .in("plot_id", ids)
       .eq("status", "cancelled")
       .order("released_at", { ascending: false });
-    for (const b of (bkData ?? []) as unknown as (Pick<Booking, "plot_id" | "total_plot_value" | "released_at" | "refund_status"> & {
+    for (const b of (bkData ?? []) as unknown as (Pick<
+      Booking,
+      "plot_id" | "total_plot_value" | "book_mode" | "released_at" | "refund_status"
+    > & {
       customers: Pick<Customer, "name"> | null;
     })[]) {
       // Keep the most recent cancelled booking per plot (rows are sorted desc).
@@ -132,6 +130,7 @@ export default async function PlotReleasePage({
         byPlot.set(b.plot_id, {
           customer: b.customers?.name ?? "—",
           value: Number(b.total_plot_value ?? 0),
+          mode: b.book_mode,
           cancelledAt: b.released_at,
           refundStatus: b.refund_status ?? "none",
         });
@@ -139,24 +138,69 @@ export default async function PlotReleasePage({
     }
   }
 
-  const rows: ReleaseRow[] = plots.map((p) => {
+  const cancelledPending: PendingRow[] = plots.map((p) => {
     const bk = byPlot.get(p.id);
     return {
-      id: p.id,
+      key: `cancelled-${p.id}`,
+      bookingId: null, // the deal is over — nothing here to extend
+      plotId: p.id,
       project: p.projects?.name ?? "—",
       plot: p.plot_no,
       customer: bk?.customer ?? "—",
       value: bk?.value ?? p.sqft * p.price_per_sqft,
-      cancelledAt: bk?.cancelledAt ?? null,
+      mode: bk?.mode ?? "booking",
+      kind: "cancelled" as const,
+      confirmed: false,
       refundStatus: bk?.refundStatus ?? "none",
+      since: bk?.cancelledAt ?? null,
     };
   });
+
+  // ONE queue: both kinds are off the market and both are settled by Release.
+  const pendingRows: PendingRow[] = [...expiredPending, ...cancelledPending].sort(
+    (a, b) => new Date(b.since ?? 0).getTime() - new Date(a.since ?? 0).getTime(),
+  );
+
+  // ── 3. HISTORY — holds whose plot has already gone back ───────────────────
+  // Two ways in:
+  //   · an Admin pressed Release   → cancellation_reason "Released by admin"
+  //   · the old automatic expiry   → no reason, released_at == expired_at
+  // A customer cancellation is a different story with its own refund and belongs
+  // on Payments & Cancellation, so it is filtered out.
+  const { data: relData } = await withProjectScope(
+    sb
+      .from("bookings")
+      .select(
+        "id, plot_id, total_plot_value, book_mode, released_at, expired_at, cancellation_reason, plots(plot_no, status, projects(name)), customers(name)",
+      )
+      .eq("status", "cancelled")
+      .not("released_at", "is", null),
+    scope,
+  ).order("released_at", { ascending: false });
+
+  const relRaw = ((relData ?? []) as unknown as (Pick<
+    Booking,
+    "id" | "plot_id" | "total_plot_value" | "book_mode" | "released_at" | "expired_at" | "cancellation_reason"
+  > & {
+    plots: (Pick<Plot, "plot_no" | "status"> & { projects: Pick<Project, "name"> | null }) | null;
+    customers: Pick<Customer, "name"> | null;
+  })[]).filter((b) => b.cancellation_reason === RELEASED_BY_ADMIN || b.cancellation_reason === null);
+
+  const releasedRows: ReleasedRow[] = relRaw.map((b) => ({
+    bookingId: b.id,
+    project: b.plots?.projects?.name ?? "—",
+    plot: b.plots?.plot_no ?? "—",
+    customer: b.customers?.name ?? "—",
+    value: Number(b.total_plot_value ?? 0),
+    mode: b.book_mode,
+    releasedAt: b.released_at,
+  }));
 
   return (
     <>
       <PageHeader
         title="Plot Release"
-        subtitle="Nothing returns to inventory on its own. Expired holds and cancelled plots wait here until you extend or release them."
+        subtitle="Nothing returns to inventory on its own. Expired holds and cancelled plots wait here until you act; History records what has already gone back."
       />
 
       {notice && (
@@ -171,21 +215,7 @@ export default async function PlotReleasePage({
         </div>
       )}
 
-      <section className="mb-8">
-        <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">Expired holds — extend or release</h2>
-        <p className="mb-3 text-xs text-[var(--muted)]">
-          Holds past their deadline. <b>Held</b> ones still own their plot — nobody else can take it — so extend to give
-          the customer more time, or release the plot back to the company. <b>Already released</b> ones expired under the
-          old automatic behaviour and their plot is back in inventory; you can still extend to reclaim it for the
-          original customer, but only until someone else takes it.
-        </p>
-        <ExtendTable rows={extendRows} />
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">Cancelled plots — release to company</h2>
-        <ReleaseTable rows={rows} />
-      </section>
+      <ReleaseTabs pendingRows={pendingRows} historyRows={releasedRows} />
     </>
   );
 }

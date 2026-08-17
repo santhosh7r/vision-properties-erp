@@ -371,15 +371,19 @@ export async function recordPayment(formData: FormData): Promise<void> {
   if (!(await bookingInScope(sb, actor, booking_id))) return;
   if (await hiddenFromActor(sb, actor, booking_id)) return;
 
-  await sb.from("payments").insert({
-    booking_id,
-    amount,
-    kind,
-    mode,
-    ...paymentDetails(formData),
-    status: "completed",
-    recorded_by: actor.id,
-  });
+  const { data: payment } = await sb
+    .from("payments")
+    .insert({
+      booking_id,
+      amount,
+      kind,
+      mode,
+      ...paymentDetails(formData),
+      status: "completed",
+      recorded_by: actor.id,
+    })
+    .select("id")
+    .single();
   // Reflect the latest mode / loan arranger on the booking too (for a home loan
   // the form captures who took it).
   const loan_token_by = (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null;
@@ -392,6 +396,11 @@ export async function recordPayment(formData: FormData): Promise<void> {
   await notify(booking_id, "sms", null, `Payment of ₹${amount} received and recorded.`);
   revalidatePath(`/bookings/${booking_id}`);
   revalidatePath("/payments");
+  // Every rupee taken gets its bill on the spot: come back to the booking with
+  // this payment's receipt offered right there, rather than making the user hunt
+  // for the new row in the Payments table. It stays printable forever from that
+  // table too — this is just the immediate hand-off.
+  if (payment) redirect(`/bookings/${booking_id}?receipt=${payment.id}`);
 }
 
 // ---------------------------------------------------------------------------
