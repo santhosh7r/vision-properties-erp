@@ -3,7 +3,7 @@ import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { ownBookedCustomerIds, ownCustomerOrFilter, networkBookedCustomerIds, networkCustomerOrFilter } from "@/lib/customers";
 import { getDownlineIds } from "@/lib/hierarchy";
-import { getDistrictScope } from "@/lib/scope";
+import { getDistrictScope, seesAllRecords } from "@/lib/scope";
 import { isNetworkHead } from "@/lib/roles";
 import { PageHeader } from "@/components/ui";
 import { Plus } from "@/components/icons";
@@ -22,7 +22,7 @@ export default async function CustomersPage() {
   // it (as creator or partner). Only the network head aggregates the team.
   // A branch desk (Pre-Sales) is the exception to the ownership rule: it works
   // every client of its DISTRICT, whoever entered them.
-  const isAdmin = user.role === "admin";
+  const isAdmin = seesAllRecords(user);
   const scope = await getDistrictScope(sb, user);
   let query = sb
     .from("customers")

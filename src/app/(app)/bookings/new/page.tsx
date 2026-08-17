@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { getDistrictScope, seesAllRecords } from "@/lib/scope";
 import { isFlaggedExpired } from "@/lib/holds";
 import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
 import { PageHeader } from "@/components/ui";
@@ -35,7 +36,7 @@ export default async function NewBookingPage({
   // not enough — check for the claim itself. Whatever is wrong, it is wrong with
   // THIS plot only: the page renders the reason in place and drops the form
   // rather than bouncing the user somewhere with nothing to read.
-  const isAdmin = user.role === "admin";
+  const isAdmin = seesAllRecords(user);
   const { data: claim } = await sb
     .from("bookings")
     .select("book_mode, status, expired_at")
@@ -56,10 +57,18 @@ export default async function NewBookingPage({
   const goneAs = !maskedIssue && !heldAs && plot.status !== "available" ? plot.status : null;
   const blocked = maskedIssue || Boolean(heldAs) || Boolean(goneAs);
 
-  // Scope the customer picker to the user's own book — a salesperson must not
-  // see (or attach a plot to) another salesperson's customer. Admin sees all.
+  // Scope the customer picker the same way loadBookingFlow does, so this route
+  // and the Add Blocking & Booking flow offer the same people:
+  //   · a branch desk → every customer of ITS district (Trichy or Chennai). It
+  //     books for whoever walks in, not only the records it typed itself.
+  //   · a salesperson → their own book; they must not attach a plot to another
+  //     salesperson's customer.
+  //   · Admin (and the dev preview) → everyone.
   let custQ = sb.from("customers").select("id, name, mobile").order("name");
-  if (user.role !== "admin") {
+  const scope = await getDistrictScope(sb, user);
+  if (scope) {
+    custQ = scope.district ? custQ.ilike("district", scope.district) : custQ.in("id", []);
+  } else if (!isAdmin) {
     const bookedIds = await ownBookedCustomerIds(sb, user.id);
     custQ = custQ.or(ownCustomerOrFilter(user.id, bookedIds));
   }

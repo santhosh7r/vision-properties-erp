@@ -38,9 +38,10 @@ export default async function PlotReleasePage({
 }: {
   searchParams: Promise<{ ok?: string; err?: string }>;
 }) {
-  // The Post-Sales desk may OPEN this page; only Admin may act on it. `canAct`
-  // drives whether the Extend / Release controls render at all — the server
-  // actions behind them re-check `release_plot` regardless.
+  // Admin and the Post-Sales desk both work this queue. `canAct` still drives
+  // whether the Extend / Release controls render, so a role that only holds
+  // `view_plot_release` (say, one an Admin has put on View only in Page Config)
+  // gets the list without the buttons. The server actions re-check regardless.
   const user = await requireAnyCapability(["release_plot", "view_plot_release"]);
   const canAct = can(user.role, "release_plot");
   await sweepExpiredBookings();

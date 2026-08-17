@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SessionUser } from "@/lib/session";
 import { can } from "@/lib/roles";
-import { getDistrictScope } from "@/lib/scope";
+import { getDistrictScope, seesAllRecords } from "@/lib/scope";
 import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
 import { type FlowData } from "./BookingsWorkspace";
 import { type FlowProject } from "./StartBookingFlow";
@@ -18,7 +18,7 @@ export async function loadBookingFlow(
   const canBlock = can(user.role, "create_blocking");
   const canBook = can(user.role, "create_booking");
   if (!canBlock && !canBook) return null;
-  const isAdmin = user.role === "admin";
+  const isAdmin = seesAllRecords(user);
   // A branch desk (Pre-Sales) books for its whole district: every project there,
   // and every customer of that district — not just the ones it typed in itself.
   const scope = await getDistrictScope(sb, user);

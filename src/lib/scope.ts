@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SessionUser } from "./session";
+import { isHiddenUser } from "./hidden-users";
 import { isDistrictScoped } from "./roles";
 
 // ============================================================================
@@ -75,9 +76,15 @@ export function projectMatchesBranch(
  */
 export async function getDistrictScope(
   sb: SupabaseClient,
-  user: Pick<SessionUser, "id" | "role">,
+  user: Pick<SessionUser, "id" | "role"> & { email?: string | null },
 ): Promise<DistrictScope | null> {
   if (!isDistrictScoped(user.role)) return null;
+  // The hidden dev/support account role-switches to PREVIEW a desk. It has no
+  // district of its own, so failing closed would show it an empty Plot Release,
+  // empty bookings and empty everything — looking like a broken page rather than
+  // an unscoped account. It sees company-wide instead, matching getDownlineIds,
+  // which likewise hands the dev account the whole picture.
+  if (isHiddenUser(user.email)) return null;
   return resolveScope(sb, user.id);
 }
 
@@ -98,6 +105,23 @@ const resolveScope = cache(
     };
   },
 );
+
+/**
+ * "Sees every record, unfiltered." True for Admin, and for the hidden dev/support
+ * account whatever role it is previewing.
+ *
+ * Pages that are neither district-scoped nor Admin normally fall back to "just my
+ * own records" (customers I created, deals I raised). For the dev account that
+ * fallback yields NOTHING — it has created nothing — so a role preview showed
+ * empty tables that looked like broken pages. getDownlineIds already hands the dev
+ * account every id for exactly this reason; this is the same idea for the
+ * ownership fallbacks that do not go through it.
+ */
+export function seesAllRecords(
+  user: Pick<SessionUser, "role"> & { email?: string | null },
+): boolean {
+  return user.role === "admin" || isHiddenUser(user.email);
+}
 
 /**
  * Apply a scope to a query on a table that has a `project_id` column

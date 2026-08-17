@@ -102,10 +102,8 @@ export const NAV: NavItem[] = [
   { href: "/bookings", label: "Blockings & Bookings", icon: "fileText", roles: ["admin", ...EITHER_DESK], group: "Post-Sales" },
   // Part Payment + Fully Paid Receipt + Cancellation share one tabbed page.
   { href: "/post-sales", label: "Payments & Cancellation", icon: "creditCard", roles: ["admin", ...POST_SALES_DESK], group: "Post-Sales" },
-  // The Post-Sales desk WORKS this queue and needs to see what is waiting, so the
-  // page is theirs too — but releasing stays the Admin's call. The desk opens it
-  // read-only (`view_plot_release`); the Extend / Release buttons need
-  // `release_plot`, which only Admin holds.
+  // Plot Release belongs to the Post-Sales desk as well as Admin: it is their
+  // queue, and they extend and release from it themselves.
   { href: "/inventory/release", label: "Plot Release", icon: "cube", roles: ["admin", ...POST_SALES_DESK], group: "Post-Sales" },
   // Approvals inbox — Admin, plus Pre-Sales for the "Pre-sales approval" stage of
   // site-visit / cab requests (STAGE_ROLES.presales in lib/requests.ts).

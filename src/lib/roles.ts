@@ -265,7 +265,10 @@ const POST_SALES_CAPS: Capability[] = [
   "cancel_booking",
   "approve_refund",
   "manage_registration",
-  // Sees the Plot Release queue and chases it; releasing stays with the Admin.
+  // Plot Release is the desk's own queue: it extends holds and releases plots
+  // back to the company itself. (`view_plot_release` alone would open the page
+  // read-only — kept in the set so the page guard is satisfied either way.)
+  "release_plot",
   "view_plot_release",
   "view_post_sales",
 ];
