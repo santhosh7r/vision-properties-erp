@@ -30,23 +30,23 @@ export default function CustomerFields({
         <input name="mobile" className="input" defaultValue={c?.mobile ?? ""} required />
       </div>
       <div>
-        <label className="label">3. Email</label>
-        <input name="email" type="email" className="input" defaultValue={c?.email ?? ""} placeholder="name@example.com" />
+        <label className="label">3. Email *</label>
+        <input name="email" type="email" className="input" defaultValue={c?.email ?? ""} placeholder="name@example.com" required />
       </div>
       <div>
         <label className="label">4. D.O.B *</label>
         <input name="dob" type="date" className="input" defaultValue={c?.dob ?? ""} required />
       </div>
       <div>
-        <label className="label">5. Street</label>
-        <input name="street" className="input" defaultValue={c?.street ?? ""} />
+        <label className="label">5. Street *</label>
+        <input name="street" className="input" defaultValue={c?.street ?? ""} required />
       </div>
       <div>
-        <label className="label">6. Area</label>
-        <input name="area" className="input" defaultValue={c?.area ?? ""} />
+        <label className="label">6. Area *</label>
+        <input name="area" className="input" defaultValue={c?.area ?? ""} required />
       </div>
       <div>
-        <label className="label">7. Pincode</label>
+        <label className="label">7. Pincode *</label>
         <input
           name="pincode"
           className="input"
@@ -55,11 +55,12 @@ export default function CustomerFields({
           value={pincode}
           onChange={(e) => onPincodeChange(e.target.value)}
           placeholder="6-digit PIN"
+          required
         />
       </div>
       <div>
-        <label className="label">8. State</label>
-        <input name="state" className="input" defaultValue={c?.state ?? ""} />
+        <label className="label">8. State *</label>
+        <input name="state" className="input" defaultValue={c?.state ?? ""} required />
       </div>
       <div>
         <label className="label">9. District *</label>
@@ -75,21 +76,21 @@ export default function CustomerFields({
         </select>
       </div>
       <div>
-        <label className="label">10. Country</label>
-        <input name="country" className="input" defaultValue={c?.country ?? "India"} />
+        <label className="label">10. Country *</label>
+        <input name="country" className="input" defaultValue={c?.country ?? "India"} required />
       </div>
       <div>
-        <label className="label">11. Occupation</label>
-        <select name="occupation" className="select" defaultValue={c?.occupation ?? ""}>
-          <option value="">Select occupation</option>
+        <label className="label">11. Occupation *</label>
+        <select name="occupation" className="select" defaultValue={c?.occupation ?? ""} required>
+          <option value="" disabled>Select occupation</option>
           {OCCUPATIONS.map((o) => (
             <option key={o} value={o}>{o}</option>
           ))}
         </select>
       </div>
       <div className="sm:col-span-2">
-        <label className="label">12. Occupation Remarks</label>
-        <input name="occupation_remarks" className="input" defaultValue={c?.occupation_remarks ?? ""} />
+        <label className="label">12. Occupation Remarks *</label>
+        <input name="occupation_remarks" className="input" defaultValue={c?.occupation_remarks ?? ""} required />
       </div>
     </div>
   );

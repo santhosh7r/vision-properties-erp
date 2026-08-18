@@ -61,9 +61,25 @@ export default async function BookingDetailPage({
   const { id } = await params;
   const { error: errorKey, receipt: justPaidId } = await searchParams;
   const bookingError = errorKey ? BOOKING_ERRORS[errorKey] : undefined;
-  const user = await requireUser();
-  await sweepExpiredBookings();
   const sb = getSupabase();
+
+  // Opening a booking used to cost five sequential Supabase round-trips, which
+  // is what made a row click feel slow. Everything keyed off the URL's booking
+  // id needs nothing from the booking row, so it is fetched in ONE wave with the
+  // session check and the expiry sweep. Only two waits remain: the booking row
+  // (read AFTER the sweep so `expired_at` is fresh for the mask below) and the
+  // transfer target list (needs the booking's project).
+  const [user, , payRes, regRes, transferRes] = await Promise.all([
+    requireUser(),
+    sweepExpiredBookings(),
+    sb.from("payments").select("*").eq("booking_id", id).order("paid_at", { ascending: false }),
+    // Is there already a registration?
+    sb.from("registrations").select("id").eq("booking_id", id).maybeSingle(),
+    sb.from("plot_transfers").select("*").eq("booking_id", id).order("created_at", { ascending: false }),
+  ]);
+  const payments = (payRes.data ?? []) as Payment[];
+  const reg = regRes.data;
+  const transfers = (transferRes.data ?? []) as PlotTransfer[];
 
   const { data } = await sb
     .from("bookings")
@@ -85,20 +101,6 @@ export default async function BookingDetailPage({
   const isAdmin = user.role === "admin";
   const b = { ...raw, status: shownStatus(raw, isAdmin) };
 
-  const { data: payData } = await sb
-    .from("payments")
-    .select("*")
-    .eq("booking_id", id)
-    .order("paid_at", { ascending: false });
-  const payments = (payData ?? []) as Payment[];
-
-  // Is there already a registration?
-  const { data: reg } = await sb
-    .from("registrations")
-    .select("id")
-    .eq("booking_id", id)
-    .maybeSingle();
-
   // Hold deadline = expires_at (kept through 'confirmed' until registration).
   // Fallback for older confirmed rows: created_at + that project's window
   // (blocking → hours, booking → days).
@@ -119,6 +121,9 @@ export default async function BookingDetailPage({
   const canRegister = can(user.role, "manage_registration");
   const canApproveRefund = can(user.role, "approve_refund");
   const canTransfer = can(user.role, "manage_transfer");
+  // Editing the captured details is open to anyone who can raise a hold — the
+  // same gate the edit page and updateBooking use.
+  const canEditDetails = can(user.role, "create_blocking");
 
   // §3 Preview: what the customer would get back if cancelled right now.
   const refundPreview =
@@ -126,7 +131,8 @@ export default async function BookingDetailPage({
       ? computeRefund(b.projects, b.booked_date ?? b.created_at, new Date(), b.advance_paid)
       : null;
 
-  // §7 Available plots in the same project to transfer to, + transfer history.
+  // §7 Available plots in the same project to transfer to (history came with the
+  // first wave above).
   const { data: availData } =
     b.status !== "cancelled"
       ? await sb
@@ -138,20 +144,24 @@ export default async function BookingDetailPage({
       : { data: [] };
   const availablePlots = (availData ?? []) as Pick<Plot, "id" | "plot_no" | "sqft" | "price_per_sqft">[];
 
-  const { data: transferData } = await sb
-    .from("plot_transfers")
-    .select("*")
-    .eq("booking_id", id)
-    .order("created_at", { ascending: false });
-  const transfers = (transferData ?? []) as PlotTransfer[];
-
   return (
     <>
       <PageHeader
         title={`${b.book_mode === "blocking" ? "Blocking" : "Booking"} — ${b.plots.plot_no}`}
         subtitle={`${b.projects.name} · ${b.customers.name} (${b.customers.mobile})`}
         back={{ href: "/bookings", label: "← Bookings" }}
-        action={<PrintReceiptButton id={b.id} />}
+        action={
+          <>
+            {/* Fill in whatever the record is still missing — nominee, partner,
+                dates. Cancelled records are read-only (the edit page redirects). */}
+            {b.status !== "cancelled" && canEditDetails && (
+              <Link href={`/bookings/${b.id}/edit`} className="btn-ghost">
+                Edit
+              </Link>
+            )}
+            <PrintReceiptButton id={b.id} />
+          </>
+        }
       />
 
       {/* A payment was just recorded — hand over its bill immediately. The same

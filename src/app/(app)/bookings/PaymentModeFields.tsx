@@ -42,7 +42,10 @@ export default function PaymentModeFields({
   return (
     <>
       <div>
-        <label className="label">{label}</label>
+        <label className="label">
+          {label}
+          {required && <span className="text-red-400"> *</span>}
+        </label>
         <select
           name={modeName}
           className="select"

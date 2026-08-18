@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { lookupSalesPerson } from "./actions";
 
 export interface PartnerInitial {
@@ -32,6 +32,17 @@ export default function PartnerDetailsFields({ initial }: { initial?: PartnerIni
     initial?.partnerName ? "ok" : "idle",
   );
   const [error, setError] = useState("");
+
+  // Partner ID is mandatory, and a typed code that never resolved is not a
+  // partner — the hidden partner_* fields would post empty. `required` alone
+  // can't see that, so the resolved state is pushed into the field's own
+  // validity and the browser blocks submit with a message the user can act on.
+  const codeRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    codeRef.current?.setCustomValidity(
+      partnerName ? "" : "Enter a valid Partner ID — it must resolve to a partner.",
+    );
+  }, [partnerName]);
 
   function reset() {
     setPartnerId("");
@@ -89,10 +100,12 @@ export default function PartnerDetailsFields({ initial }: { initial?: PartnerIni
       <div>
         <label className="label">Partner ID *</label>
         <input
+          ref={codeRef}
           className="input"
           value={code}
           placeholder="e.g. VPBP47"
           autoComplete="off"
+          required
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           onBlur={(e) => resolve(e.target.value)}
           onKeyDown={(e) => {

@@ -112,17 +112,17 @@ export default function BookingForm({ mode, plot, project }: Props) {
         <h2 className="mb-4 text-sm font-semibold">Nominee Details</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
-            <label className="label">15. Nominee Name</label>
-            <input name="nominee_name" className="input" />
+            <label className="label">15. Nominee Name *</label>
+            <input name="nominee_name" className="input" required />
           </div>
           <div>
-            <label className="label">16. Nominee Mobile</label>
-            <input name="nominee_mobile" className="input" />
+            <label className="label">16. Nominee Mobile *</label>
+            <input name="nominee_mobile" className="input" required />
           </div>
           <div>
-            <label className="label">17. Nominee Relationship</label>
-            <select name="nominee_relationship" className="select" defaultValue="">
-              <option value="">Select</option>
+            <label className="label">17. Nominee Relationship *</label>
+            <select name="nominee_relationship" className="select" defaultValue="" required>
+              <option value="" disabled>Select</option>
               {NOMINEE_RELATIONSHIPS.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
@@ -146,19 +146,19 @@ export default function BookingForm({ mode, plot, project }: Props) {
         <h2 className="mb-4 text-sm font-semibold">Payment Details</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
-            <label className="label">22. Tentative Registration Date</label>
-            <input name="tentative_registration_date" type="date" className="input" />
+            <label className="label">22. Tentative Registration Date *</label>
+            <input name="tentative_registration_date" type="date" className="input" required />
           </div>
           {/* Mode of payment and "Loan Taken By" both live with the money, in
               the Payment Mode block below — asking them up here meant a second
               mode select and a loan question on every cash booking. */}
           <div>
-            <label className="label">23. Booked Date</label>
-            <input name="booked_date" type="date" className="input" />
+            <label className="label">23. Booked Date *</label>
+            <input name="booked_date" type="date" className="input" required />
           </div>
           <div className="sm:col-span-2 lg:col-span-1">
-            <label className="label">24. Remarks</label>
-            <input name="remarks" className="input" />
+            <label className="label">24. Remarks *</label>
+            <input name="remarks" className="input" required />
           </div>
         </div>
 
@@ -197,7 +197,7 @@ export default function BookingForm({ mode, plot, project }: Props) {
             />
           </div>
           {/* Choosing "Loan" reveals the lender fields plus "Loan Taken By". */}
-          <PaymentModeFields modeName="payment_mode" label="Payment Mode" loanTokenBy />
+          <PaymentModeFields modeName="payment_mode" label="Payment Mode" loanTokenBy required />
         </div>
 
         {/* Only warn when short — the full-paid "success" banner is dropped; a

@@ -19,6 +19,41 @@ function nullable(v: FormDataEntryValue | null): string | null {
   return t === "" ? null : t;
 }
 
+// Every captured field on a blocking/booking is mandatory (the ONE exception is
+// the customer's anniversary date, which the forms no longer ask for at all).
+// The forms mark them `required`, but a stale tab or a hand-rolled POST does not
+// run HTML validation — so the same list is enforced here, and a record can
+// never be saved half-filled again.
+const BOOKING_REQUIRED = [
+  "nominee_name",
+  "nominee_mobile",
+  "nominee_relationship",
+  "partner_id",
+  "partner_name",
+  "tentative_registration_date",
+  "booked_date",
+  "remarks",
+] as const;
+const CUSTOMER_REQUIRED = [
+  "name",
+  "mobile",
+  "email",
+  "dob",
+  "street",
+  "area",
+  "pincode",
+  "state",
+  "district",
+  "country",
+  "occupation",
+  "occupation_remarks",
+] as const;
+
+// The first missing field name, or null when everything is present.
+function firstMissing(f: FormData, keys: readonly string[]): string | null {
+  return keys.find((k) => s(f.get(k)) === "") ?? null;
+}
+
 // Instrument details captured alongside a payment (cheque no / UTR / UPI txn id
 // / lender + a date). Which of these the form actually collected depends on the
 // selected Mode (see PAYMENT_MODE_FIELDS) — we just persist whatever was sent.
@@ -191,6 +226,17 @@ export async function createBooking(formData: FormData): Promise<void> {
   const requiredToLock = mode === "blocking" ? blocking_amount : advance_required;
   if (amountPaidNow < requiredToLock) {
     redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=underpaid`);
+  }
+
+  // Nothing is written until the whole record is complete — same gate as the
+  // form, applied before a customer is created so a rejected attempt leaves no
+  // orphan records behind.
+  if (
+    !paymentMode ||
+    firstMissing(formData, BOOKING_REQUIRED) ||
+    (!s(formData.get("customer_id")) && firstMissing(formData, CUSTOMER_REQUIRED))
+  ) {
+    redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=incomplete`);
   }
 
   // Resolve customer: existing id, or create new (with duplicate guard).
@@ -417,6 +463,13 @@ export async function updateBooking(formData: FormData): Promise<void> {
   if (!id) return;
   if (!(await bookingInScope(sb, actor, id))) return;
   if (await hiddenFromActor(sb, actor, id)) return;
+
+  // Every edited field is mandatory — a partial save is what left older records
+  // showing "—" everywhere. Bounce back to the form rather than writing blanks.
+  const missing = !nullable(formData.get("mode_of_payment"))
+    ? "mode_of_payment"
+    : firstMissing(formData, BOOKING_REQUIRED);
+  if (missing) redirect(`/bookings/${id}/edit?missing=${missing}`);
 
   await sb
     .from("bookings")

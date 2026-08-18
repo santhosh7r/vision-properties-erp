@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export interface Column<T> {
@@ -81,6 +81,12 @@ export default function DataTable<T>({
   emptyHint,
 }: Props<T>) {
   const router = useRouter();
+  const prefetched = useRef<Set<string>>(new Set());
+  const prefetch = (href: string) => {
+    if (prefetched.current.has(href)) return;
+    prefetched.current.add(href);
+    router.prefetch(href);
+  };
   const [query, setQuery] = useState("");
   const [filterVals, setFilterVals] = useState<Record<string, string>>({});
   const [sortId, setSortId] = useState<string | null>(null);
@@ -224,6 +230,11 @@ export default function DataTable<T>({
                   <tr
                     key={i}
                     onClick={href ? () => router.push(href) : undefined}
+                    // Warm the route as soon as the pointer (or a finger) lands
+                    // on the row, so the click itself has less to fetch. Each
+                    // href is only ever prefetched once.
+                    onMouseEnter={href ? () => prefetch(href) : undefined}
+                    onTouchStart={href ? () => prefetch(href) : undefined}
                     style={{ cursor: href ? "pointer" : undefined }}
                   >
                     {columns.map((c) => (

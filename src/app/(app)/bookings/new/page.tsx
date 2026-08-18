@@ -121,6 +121,11 @@ export default async function NewBookingPage({
           available — enter the full amount below to {mode === "blocking" ? "block" : "book"}.
         </div>
       )}
+      {!blocked && sp.err === "incomplete" && (
+        <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+          Nothing was saved — every field on this form is required. Fill them all in and submit again.
+        </div>
+      )}
       {!blocked && (
         <BookingForm
           mode={mode}
