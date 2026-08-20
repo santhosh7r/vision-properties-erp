@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import { can, isSalesRole } from "@/lib/roles";
 import { getSupabase } from "@/lib/supabase";
 import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
 import { inr } from "@/lib/format";
@@ -21,6 +23,10 @@ const TOKEN_META: Record<string, { icon: React.ReactNode; color: string }> = {
 // VIEW this; an admin issues and redeems on the Issue Token page.
 export default async function TokensPage() {
   const user = await requireUser();
+  // This page shows the tokens YOU hold. Only the sales tree is ever issued any,
+  // so for an issuer who is not in it (a branch desk, or Admin) this page can
+  // only ever be empty — send them to the page where their token work happens.
+  if (!isSalesRole(user.role) && can(user.role, "issue_token")) redirect("/business-operators");
   const sb = getSupabase();
 
   // Coupons may not be migrated yet — fall back to empty.
@@ -66,7 +72,7 @@ export default async function TokensPage() {
     <>
       <PageHeader
         title="Tokens"
-        subtitle="Your token & coupon balances and history."
+        subtitle="The tokens & coupons you hold, and every time one was issued to you or redeemed."
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">

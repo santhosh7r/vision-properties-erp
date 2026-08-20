@@ -22,21 +22,40 @@ export function shortRef(id: string | null | undefined): string {
 // types is ever truncated.
 const MAX_DECIMALS = 10;
 
-export function inr(value: number | null | undefined): string {
+// IEEE-754 doubles cannot represent most decimal fractions exactly, so ordinary
+// arithmetic leaks noise far below a paisa: 709.3 x 700 evaluates to
+// 496509.99999999994 and 721.2 x 700 to 504840.00000000006. Printed at full
+// width those read back as "₹4,96,509.9999999999" / "₹5,04,840.0000000001".
+//
+// That noise always lives in the 16th-17th significant digit, so rounding to
+// SIGNIFICANT_DIGITS clears it while keeping every digit anyone actually enters:
+// 4.589363 x 1200 stays exactly 5507.2356, and a ₹9-crore figure still has four
+// decimals of headroom. MAX_DECIMALS then caps the printed width.
+const SIGNIFICANT_DIGITS = 12;
+
+// Strip float noise from a computed amount. Applied on BOTH sides: to values
+// before they are written to the DB, and again at format time so rows already
+// stored with noise (written before this existed) still read clean.
+export function exact(value: number | null | undefined): number {
   const n = Number(value || 0);
+  if (!Number.isFinite(n) || n === 0) return 0;
+  return Number(n.toPrecision(SIGNIFICANT_DIGITS));
+}
+
+export function inr(value: number | null | undefined): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     minimumFractionDigits: 0,
     maximumFractionDigits: MAX_DECIMALS,
-  }).format(n);
+  }).format(exact(value));
 }
 
 export function num(value: number | null | undefined): string {
   return new Intl.NumberFormat("en-IN", {
     minimumFractionDigits: 0,
     maximumFractionDigits: MAX_DECIMALS,
-  }).format(Number(value || 0));
+  }).format(exact(value));
 }
 
 export function fmtDate(value: string | null | undefined): string {
@@ -81,13 +100,15 @@ export function isExpired(deadline: string | null | undefined): boolean {
 }
 
 export function totalPlotValue(sqft: number, pricePerSqft: number): number {
-  return (sqft || 0) * (pricePerSqft || 0);
+  return exact((sqft || 0) * (pricePerSqft || 0));
 }
 
 // Indian-style amount in words, e.g. 125000 -> "One Lakh Twenty Five Thousand
 // Rupees Only". Used on the printable booking receipt.
 export function amountInWords(value: number | null | undefined): string {
-  let n = Math.floor(Number(value || 0));
+  // exact() first: 496509.99999999994 must read "Four Lakh Ninety Six Thousand
+  // Five Hundred Ten", not floor down to ...Nine.
+  let n = Math.floor(exact(value));
   if (!Number.isFinite(n) || n <= 0) return "Zero Rupees Only";
 
   const ones = [
@@ -129,7 +150,7 @@ export function ageFrom(dob: string | null | undefined): string {
 
 // Compact INR for KPI tiles: ₹1.2Cr, ₹45.0L, ₹80.0K.
 export function inrCompact(value: number | null | undefined): string {
-  const n = Number(value || 0);
+  const n = exact(value);
   if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)}Cr`;
   if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(1)}L`;
   if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
@@ -138,7 +159,7 @@ export function inrCompact(value: number | null | undefined): string {
 
 // Compact area in square feet for KPI tiles / charts: 1.25M sqft, 45.0K sqft.
 export function sqftCompact(value: number | null | undefined): string {
-  const n = Math.round(Number(value || 0));
+  const n = Math.round(exact(value));
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M sqft`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K sqft`;
   return `${n} sqft`;

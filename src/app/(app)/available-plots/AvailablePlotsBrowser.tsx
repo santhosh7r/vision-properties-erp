@@ -26,6 +26,7 @@ export default function AvailablePlotsBrowser({
       district: p.district,
       status: "active",
       plots: p.plots.length,
+      totalPlots: p.total_plots,
     }));
     return (
       <InventoryProjectGrid
@@ -33,6 +34,7 @@ export default function AvailablePlotsBrowser({
         onSelect={setProjectId}
         title="Select a Project"
         priorityDistrict={myDistrict ?? undefined}
+        groupByDistrict
         emptyHint="No projects with available plots right now."
       />
     );
@@ -52,7 +54,8 @@ export default function AvailablePlotsBrowser({
         <div>
           <h2 className="text-lg font-semibold">{project.name}</h2>
           <p className="text-xs text-[var(--muted)]">
-            {project.city} · {project.plots.length} available plot{project.plots.length === 1 ? "" : "s"}
+            {project.city} · {project.district} · {project.plots.length} of {project.total_plots} plot
+            {project.total_plots === 1 ? "" : "s"} available
           </p>
         </div>
       </div>

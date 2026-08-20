@@ -254,7 +254,7 @@ create table if not exists customers (
   mobile             text not null,                  -- 2. Customer Mobile*
   email              text,                           -- 3. Email
   dob                date,                           -- 4. D.O.B
-  anniversary_date   date,                           -- (deprecated, kept for legacy data)
+  anniversary_date   date,                           -- 5. Anniversary (the ONE optional field)
   street             text,                           -- 5. Street
   area               text,                           -- 6. Area
   pincode            text,                           -- 7. Pincode (auto-fills state/district/country)

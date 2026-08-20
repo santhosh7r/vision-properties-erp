@@ -22,7 +22,12 @@ export interface FlowProject {
   blocking_window_hours: number;
   booking_window_days: number;
   groups: { id: string; name: string }[];
+  // Only the AVAILABLE plots — this whole flow exists to block/book one.
   plots: FlowPlot[];
+  // Every plot in the project, whatever its status. `plots.length / total_plots`
+  // is what the sales picker shows as "86/103", so a project that is nearly sold
+  // out reads differently from one that was always small.
+  total_plots: number;
 }
 interface MiniCustomer { id: string; name: string; mobile: string }
 

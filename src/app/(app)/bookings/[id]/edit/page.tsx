@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import { getSupabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui";
 import { NOMINEE_RELATIONSHIPS } from "@/lib/options";
+import CustomerFields from "@/components/CustomerFields";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
 import { updateBooking } from "../../actions";
 import PartnerDetailsFields from "../../PartnerDetailsFields";
@@ -15,6 +17,18 @@ export const dynamic = "force-dynamic";
 // Field name (as posted) → what to tell the user when the server rejects a save
 // for it. Only reachable when HTML validation was bypassed.
 const MISSING_LABEL: Record<string, string> = {
+  name: "Customer Name",
+  mobile: "Customer Mobile",
+  email: "Email",
+  dob: "D.O.B",
+  street: "Street",
+  area: "Area",
+  pincode: "Pincode",
+  state: "State",
+  district: "District",
+  country: "Country",
+  occupation: "Occupation",
+  occupation_remarks: "Occupation Remarks",
   nominee_name: "Nominee Name",
   nominee_mobile: "Nominee Mobile",
   nominee_relationship: "Nominee Relationship",
@@ -31,24 +45,26 @@ export default async function EditBookingPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ missing?: string }>;
+  searchParams: Promise<{ missing?: string; err?: string }>;
 }) {
   // Editing applies to both blockings and bookings — any creator (sales or admin)
   // may edit; create_blocking is held by all of them.
-  await requireCapability("create_blocking");
+  const user = await requireCapability("create_blocking");
+  // Mirrors the gate in updateBooking — see the note there.
+  const mayEditCustomer = can(user.role, "manage_customers");
   const { id } = await params;
-  const { missing } = await searchParams;
+  const { missing, err } = await searchParams;
   const sb = getSupabase();
 
   const { data } = await sb
     .from("bookings")
-    .select("*, plots(plot_no), customers(name), projects(name)")
+    .select("*, plots(plot_no), customers(*), projects(name)")
     .eq("id", id)
     .maybeSingle();
   if (!data) notFound();
   const b = data as Booking & {
     plots: Pick<Plot, "plot_no"> | null;
-    customers: Pick<Customer, "name"> | null;
+    customers: Customer | null;
     projects: Pick<Project, "name"> | null;
   };
 
@@ -70,8 +86,28 @@ export default async function EditBookingPage({
         </div>
       )}
 
+      {err === "dup_mobile" && (
+        <div className="mb-6 max-w-3xl rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+          Nothing was saved — that mobile number already belongs to another customer in this
+          salesperson&apos;s book. Use a different number, or edit the existing customer instead.
+        </div>
+      )}
+
       <form action={updateBooking} className="max-w-3xl space-y-6">
         <input type="hidden" name="id" value={b.id} />
+
+        {/* Editing here edits the linked customer record itself, so the change
+            shows on their Clients page and on every other booking of theirs. */}
+        {mayEditCustomer && (
+        <div className="card">
+          <h2 className="mb-1 text-sm font-semibold">Customer Details</h2>
+          <p className="mb-4 text-xs text-[var(--muted)]">
+            These belong to the customer record, not to this {b.book_mode ?? "booking"} alone — saving
+            updates them everywhere {b.customers?.name ?? "this customer"} appears.
+          </p>
+          <CustomerFields c={b.customers ?? undefined} />
+        </div>
+        )}
 
         <div className="card">
           <h2 className="mb-4 text-sm font-semibold">Nominee Details</h2>

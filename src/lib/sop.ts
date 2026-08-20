@@ -7,6 +7,8 @@
 // Trichy). The SOP defaults live in the DB column defaults, not in code.
 // ============================================================================
 
+import { exact } from "@/lib/format";
+
 const MS_PER_DAY = 86_400_000;
 
 /** Whole days between two dates (date-only, ignores time-of-day). */
@@ -26,7 +28,9 @@ export function computeAdvanceRequired(
   advancePercent: number,
   advanceMinAmount: number,
 ): number {
-  const pct = (Number(plotValue) || 0) * (Number(advancePercent) || 0) / 100;
+  // exact(): 0.15% of 504840 is 757.2600000000001 in float — the advance a
+  // customer is quoted (and the DB row) must read ₹757.26.
+  const pct = exact((Number(plotValue) || 0) * (Number(advancePercent) || 0) / 100);
   return Math.max(pct, Number(advanceMinAmount) || 0);
 }
 
@@ -63,7 +67,7 @@ export function computeRefund(
     daysSinceBlocking: days,
     withinFullRefundWindow: within,
     charge,
-    refund: Math.max(0, paid - charge),
+    refund: exact(Math.max(0, paid - charge)),
   };
 }
 

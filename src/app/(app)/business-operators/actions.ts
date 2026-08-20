@@ -168,10 +168,11 @@ export async function toggleMemberActive(formData: FormData): Promise<void> {
   revalidatePath("/users");
 }
 
-// Issue extra coupons/tokens to a salesperson — ADMIN only (manage_users is
-// admin-exclusive). Records one ledger row; balances are summed for display.
+// Issue extra coupons/tokens to a salesperson — Admin and the Pre-Sales desk
+// (`issue_token`). Records one ledger row; balances are summed for display.
+// The handover happens offline, so there is no approval step: this IS the record.
 export async function issueCoupon(formData: FormData): Promise<void> {
-  const actor = await requireCapability("manage_users");
+  const actor = await requireCapability("issue_token");
   const sb = getSupabase();
 
   const user_id = String(formData.get("user_id") || "");
@@ -197,12 +198,13 @@ export async function issueCoupon(formData: FormData): Promise<void> {
   revalidatePath("/tokens");
 }
 
-// Redeem (spend) coupons/tokens from a salesperson's balance — ADMIN only. Sales
-// people can SEE their balance & history but cannot redeem. Recorded as a NEGATIVE
-// ledger row (source 'redeem') so the summed balance drops and the redemption is
-// its own history entry. Never redeems more than the current balance for the type.
+// Redeem (spend) coupons/tokens from a salesperson's balance — Admin and the
+// Pre-Sales desk (`issue_token`). Sales people can SEE their balance & history
+// but cannot redeem their own. Recorded as a NEGATIVE ledger row (source
+// 'redeem') so the summed balance drops and the redemption is its own history
+// entry. Never redeems more than the current balance for the type.
 export async function redeemCoupon(formData: FormData): Promise<void> {
-  const actor = await requireCapability("manage_users");
+  const actor = await requireCapability("issue_token");
   const sb = getSupabase();
 
   const user_id = String(formData.get("user_id") || "");

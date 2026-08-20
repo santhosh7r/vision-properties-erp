@@ -37,16 +37,30 @@ export default function CustomerFields({
         <label className="label">4. D.O.B *</label>
         <input name="dob" type="date" className="input" defaultValue={c?.dob ?? ""} required />
       </div>
+      {/* The ONE optional field on this form. It prints on the customer receipt,
+          which has always had an Anniversary line; married customers give it,
+          everyone else leaves it blank rather than being blocked by it. */}
       <div>
-        <label className="label">5. Street *</label>
+        <label className="label">
+          5. Anniversary <span className="font-normal text-[var(--muted)]">(optional)</span>
+        </label>
+        <input
+          name="anniversary_date"
+          type="date"
+          className="input"
+          defaultValue={c?.anniversary_date ?? ""}
+        />
+      </div>
+      <div>
+        <label className="label">6. Street *</label>
         <input name="street" className="input" defaultValue={c?.street ?? ""} required />
       </div>
       <div>
-        <label className="label">6. Area *</label>
+        <label className="label">7. Area *</label>
         <input name="area" className="input" defaultValue={c?.area ?? ""} required />
       </div>
       <div>
-        <label className="label">7. Pincode *</label>
+        <label className="label">8. Pincode *</label>
         <input
           name="pincode"
           className="input"
@@ -59,11 +73,11 @@ export default function CustomerFields({
         />
       </div>
       <div>
-        <label className="label">8. State *</label>
+        <label className="label">9. State *</label>
         <input name="state" className="input" defaultValue={c?.state ?? ""} required />
       </div>
       <div>
-        <label className="label">9. District *</label>
+        <label className="label">10. District *</label>
         <select name="district" className="select" defaultValue={c?.district ?? ""} required>
           <option value="" disabled>— Select district —</option>
           {/* preserve an existing saved value even if it's no longer in the master list */}
@@ -76,11 +90,11 @@ export default function CustomerFields({
         </select>
       </div>
       <div>
-        <label className="label">10. Country *</label>
+        <label className="label">11. Country *</label>
         <input name="country" className="input" defaultValue={c?.country ?? "India"} required />
       </div>
       <div>
-        <label className="label">11. Occupation *</label>
+        <label className="label">12. Occupation *</label>
         <select name="occupation" className="select" defaultValue={c?.occupation ?? ""} required>
           <option value="" disabled>Select occupation</option>
           {OCCUPATIONS.map((o) => (
@@ -89,7 +103,7 @@ export default function CustomerFields({
         </select>
       </div>
       <div className="sm:col-span-2">
-        <label className="label">12. Occupation Remarks *</label>
+        <label className="label">13. Occupation Remarks *</label>
         <input name="occupation_remarks" className="input" defaultValue={c?.occupation_remarks ?? ""} required />
       </div>
     </div>

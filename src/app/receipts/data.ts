@@ -29,7 +29,7 @@ export function customerBlock(c: Customer | null | undefined) {
     email: c?.email ?? "",
     phone: c?.mobile ?? "",
     address: [c?.street, c?.area, c?.district, c?.state, c?.pincode, c?.country].filter(Boolean).join(", "),
-    anniversary: "",
+    anniversary: fmtDateOrBlank(c?.anniversary_date),
     dob: fmtDateOrBlank(c?.dob),
     occupation: c?.occupation ?? "",
   };

@@ -1,42 +1,102 @@
-import { requireCapability } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { ROLE_LABELS, SALES_HIERARCHY, isSalesRole, type Role } from "@/lib/roles";
-import { isValueCoupon } from "@/lib/options";
+import { ROLE_LABELS, SALES_HIERARCHY, isSalesRole, can, type Role } from "@/lib/roles";
+import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
 import { HIDDEN_IN_LIST } from "@/lib/hidden-users";
 import { PageHeader, StatCard } from "@/components/ui";
 import type { User } from "@/lib/types";
 import BusinessOperatorsTree, { type TreeUser } from "./BusinessOperatorsTree";
-import CouponsTable, { type CouponRow } from "./CouponsTable";
+import { type CouponRow } from "./CouponsTable";
+import { type LedgerRow } from "./CouponLedger";
+import TokenWorkspace from "./TokenWorkspace";
 
 export const dynamic = "force-dynamic";
 
-export default async function BusinessOperatorsPage() {
-  // Admin + the three managing sales roles can open this. Business Partners have
-  // no downline, so they lack `manage_team` and are redirected.
-  const actor = await requireCapability("manage_team");
+export default async function BusinessOperatorsPage({
+  searchParams,
+}: {
+  // ?tab=history deep-links straight to the ledger (same idea as Post-Sales).
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  // One route, two audiences:
+  //   • `issue_token` (Admin, Pre-Sales desk) → the Issue Token workspace: every
+  //     salesperson, what they hold, and the issue/redeem actions.
+  //   • `manage_team`  (Senior Director / Director / Business Manager) → their
+  //     own team tree, unchanged.
+  // Business Partners have no downline and issue nothing, so they hold neither
+  // and are redirected.
+  const actor = await requireUser();
+  const mayIssue = can(actor.role, "issue_token");
+  if (!mayIssue && !can(actor.role, "manage_team")) redirect("/dashboard");
   const sb = getSupabase();
 
-  // ── ADMIN: a flat table of every salesperson with their coupon balances + the
-  // ability to issue extra coupons/tokens. (The hierarchy tree lives on the
-  // View Partner page.) ──────────────────────────────────────────────────────
-  if (actor.role === "admin") {
-    const { data: salesData } = await sb
-      .from("users")
-      .select("id, full_name, role, partner_code")
-      .in("role", SALES_HIERARCHY)
-      .order("full_name", { ascending: true });
-    const salesUsers = (salesData ?? []) as Pick<User, "id" | "full_name" | "role" | "partner_code">[];
+  // ── ISSUE TOKEN: a flat table of every salesperson with their coupon balances
+  // + the ability to issue extra coupons/tokens, or redeem against what they
+  // hold. Deliberately the WHOLE sales tree, not one district — a desk issues to
+  // any partner, director or senior director who walks in. (The hierarchy tree
+  // lives on the View Partner page.) ────────────────────────────────────────
+  if (mayIssue) {
+    // EVERY user, not just the sales tree: the ledger names whoever recorded a
+    // movement, and that is an Admin or a branch desk — neither of which is in
+    // SALES_HIERARCHY. One fetch serves both the table and the ledger below.
+    const [{ data: userData }, { data: couponData }] = await Promise.all([
+      sb.from("users").select("id, full_name, role, partner_code").order("full_name", { ascending: true }),
+      // Coupons may not be migrated yet — fall back to empty.
+      sb
+        .from("coupons")
+        .select("id, user_id, type, quantity, value, source, note, issued_by, created_at")
+        .order("created_at", { ascending: false }),
+    ]);
+    const allUsers = (userData ?? []) as Pick<User, "id" | "full_name" | "role" | "partner_code">[];
+    const salesUsers = allUsers.filter((u) => SALES_HIERARCHY.includes(u.role as Role));
+    const userById = new Map(allUsers.map((u) => [u.id, u]));
 
-    // Coupons may not be migrated yet — fall back to empty balances. Value-based
-    // types (tools) sum their ₹ value; the rest count whole tokens (quantity).
-    const { data: couponData } = await sb.from("coupons").select("user_id, type, quantity, value");
-    const coupons = (couponData ?? []) as { user_id: string; type: string; quantity: number; value: number }[];
+    const coupons = (couponData ?? []) as {
+      id: string;
+      user_id: string;
+      type: string;
+      quantity: number;
+      value: number;
+      source: string;
+      note: string | null;
+      issued_by: string | null;
+      created_at: string;
+    }[];
+
+    // Value-based types (tools/digital/gold) sum their ₹ value; the rest count
+    // whole tokens. Redemptions are negative rows, so the same sum handles both.
     const balancesByUser = new Map<string, Record<string, number>>();
     for (const c of coupons) {
       const m = balancesByUser.get(c.user_id) ?? {};
       m[c.type] = (m[c.type] ?? 0) + (isValueCoupon(c.type) ? Number(c.value || 0) : Number(c.quantity || 0));
       balancesByUser.set(c.user_id, m);
     }
+
+    // The movements behind those balances. Same rows, unsummed.
+    const typeLabel = Object.fromEntries(COUPON_TYPES.map((t) => [t.value, t.label]));
+    const ledger: LedgerRow[] = coupons.map((c) => {
+      const valueBased = isValueCoupon(c.type);
+      const amount = valueBased ? Number(c.value || 0) : Number(c.quantity || 0);
+      const holder = userById.get(c.user_id);
+      const issuer = c.issued_by ? userById.get(c.issued_by) : null;
+      // 'auto' rows are the coupons issued by a registration, not by a person.
+      const auto = c.source === "auto";
+      return {
+        id: c.id,
+        date: c.created_at,
+        holder: holder?.full_name ?? "(removed user)",
+        holderCode: holder?.partner_code ?? null,
+        holderRole: (holder?.role as Role | undefined) ?? null,
+        type: typeLabel[c.type] ?? c.type,
+        action: c.source === "redeem" || amount < 0 ? "Redeemed" : "Issued",
+        amount,
+        valueBased,
+        note: c.note ?? "",
+        by: auto ? "Registration" : (issuer?.full_name ?? "—"),
+        auto,
+      };
+    });
 
     const couponRows: CouponRow[] = salesUsers.map((u) => ({
       id: u.id,
@@ -46,24 +106,28 @@ export default async function BusinessOperatorsPage() {
       balances: balancesByUser.get(u.id) ?? {},
     }));
 
-    const counts = SALES_HIERARCHY.reduce<Record<string, number>>((acc, r) => {
-      acc[r] = couponRows.filter((n) => n.role === r).length;
-      return acc;
-    }, {});
+    const stats = [
+      { label: "Sales People", value: couponRows.length },
+      ...SALES_HIERARCHY.map((r) => ({
+        label: ROLE_LABELS[r],
+        value: couponRows.filter((n) => n.role === r).length,
+      })),
+    ];
+    const initialTab = (await searchParams).tab === "history" ? "history" : "holdings";
 
     return (
       <>
         <PageHeader
           title="Issue Token"
-          subtitle="Every salesperson and their coupon balances — issue extra coupons / tokens (e.g. a Cab Token to a Director)."
+          subtitle="Every salesperson and what they currently hold. Issue tokens / coupons, or redeem against a balance — the handover happens offline, this is the record of it."
         />
-        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-          <StatCard label="Sales People" value={couponRows.length} />
-          {SALES_HIERARCHY.map((r) => (
-            <StatCard key={r} label={ROLE_LABELS[r]} value={counts[r] ?? 0} />
-          ))}
-        </div>
-        <CouponsTable rows={couponRows} />
+        <TokenWorkspace
+          rows={couponRows}
+          ledger={ledger}
+          types={COUPON_TYPES}
+          stats={stats}
+          initialTab={initialTab}
+        />
       </>
     );
   }

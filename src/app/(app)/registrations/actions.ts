@@ -5,6 +5,7 @@ import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit, notify } from "@/lib/audit";
 import { getDistrictScope, projectInScope } from "@/lib/scope";
+import { exact } from "@/lib/format";
 
 function s(v: FormDataEntryValue | null): string {
   return String(v || "").trim();
@@ -137,7 +138,7 @@ export async function createRegistration(formData: FormData): Promise<void> {
     ]);
     // Full precision — a rate of ₹4.589363/sq.ft must credit exactly
     // 4.589363 × sqft, not a 2-decimal approximation of it.
-    const value = (rate: unknown) => Number(rate || 0) * sqft;
+    const value = (rate: unknown) => exact(Number(rate || 0) * sqft);
     const dir = bk?.director_id ?? null;
     const sd = bk?.senior_director_id ?? null;
 

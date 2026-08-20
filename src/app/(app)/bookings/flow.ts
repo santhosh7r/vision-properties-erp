@@ -92,6 +92,9 @@ export async function loadBookingFlow(
       blocking_window_hours: p.blocking_window_hours,
       booking_window_days: p.booking_window_days,
       groups: (groupsByProject.get(p.id) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name)),
+      // Counted before the `available` filter below — this is the project's
+      // full extent, the denominator of the "86/103" the picker shows.
+      total_plots: (p.plots ?? []).length,
       plots: (p.plots ?? [])
         .filter((pl) => pl.status === "available")
         .map((pl) => ({

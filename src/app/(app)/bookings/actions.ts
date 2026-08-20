@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import { logAudit, notify } from "@/lib/audit";
 import { bookingInScope, plotInScope } from "@/lib/scope";
 import { isFlaggedExpired } from "@/lib/holds";
-import { totalPlotValue } from "@/lib/format";
+import { totalPlotValue, exact } from "@/lib/format";
 import { computeAdvanceRequired, computeRefund, addWorkingDays } from "@/lib/sop";
 import type { BookMode, LoanTokenBy } from "@/lib/types";
 
@@ -20,7 +21,8 @@ function nullable(v: FormDataEntryValue | null): string | null {
 }
 
 // Every captured field on a blocking/booking is mandatory (the ONE exception is
-// the customer's anniversary date, which the forms no longer ask for at all).
+// the customer's anniversary date, which is deliberately optional — see
+// CustomerFields, and note it is absent from CUSTOMER_REQUIRED below).
 // The forms mark them `required`, but a stale tab or a hand-rolled POST does not
 // run HTML validation — so the same list is enforced here, and a record can
 // never be saved half-filled again.
@@ -264,6 +266,7 @@ export async function createBooking(formData: FormData): Promise<void> {
           mobile,
           email: nullable(formData.get("email")),
           dob: nullable(formData.get("dob")),
+          anniversary_date: nullable(formData.get("anniversary_date")),
           street: nullable(formData.get("street")),
           area: nullable(formData.get("area")),
           pincode: nullable(formData.get("pincode")),
@@ -385,7 +388,9 @@ async function recomputePayment(bookingId: string): Promise<void> {
     .select("amount, status")
     .eq("booking_id", bookingId)
     .eq("status", "completed");
-  const paid = (pays ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+  // exact(): summing float amounts drifts (0.1 + 0.2), and `paid >= total`
+  // below decides payment_status — a hair short must not read as unpaid.
+  const paid = exact((pays ?? []).reduce((sum, p) => sum + Number(p.amount), 0));
 
   const { data: b } = await sb
     .from("bookings")
@@ -450,9 +455,11 @@ export async function recordPayment(formData: FormData): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// EDIT DETAILS — update the captured (non-financial) fields of a booking.
-// Plot, customer, amounts and status are managed through their own flows; this
-// only edits the descriptive details (nominee, partner/director, dates, remarks).
+// EDIT DETAILS — update the captured (non-financial) fields of a booking, plus
+// the customer they were captured against. Plot, amounts and status are managed
+// through their own flows (Transfer, Record Payment, Confirm/Cancel); everything
+// descriptive is editable here so a record captured wrong can be put right in
+// one place instead of hunting through Clients.
 // ---------------------------------------------------------------------------
 export async function updateBooking(formData: FormData): Promise<void> {
   // Editing applies to both blockings and bookings — gate on create_blocking
@@ -464,12 +471,73 @@ export async function updateBooking(formData: FormData): Promise<void> {
   if (!(await bookingInScope(sb, actor, id))) return;
   if (await hiddenFromActor(sb, actor, id)) return;
 
+  // The customer block is only rendered — and only accepted — for someone who
+  // may edit customers anyway. Every role holding `create_blocking` holds
+  // `manage_customers` too, so today this never bites; it is here so that adding
+  // a role with one and not the other cannot quietly widen what Edit can reach.
+  const mayEditCustomer = can(actor.role, "manage_customers");
+
   // Every edited field is mandatory — a partial save is what left older records
   // showing "—" everywhere. Bounce back to the form rather than writing blanks.
-  const missing = !nullable(formData.get("mode_of_payment"))
-    ? "mode_of_payment"
-    : firstMissing(formData, BOOKING_REQUIRED);
+  // Anniversary is the sole exception and is absent from CUSTOMER_REQUIRED.
+  const missing =
+    (!nullable(formData.get("mode_of_payment")) ? "mode_of_payment" : null) ??
+    firstMissing(formData, BOOKING_REQUIRED) ??
+    // Only checked when the customer block was actually on the form, or an
+    // actor who cannot edit customers could never save the booking half.
+    (mayEditCustomer ? firstMissing(formData, CUSTOMER_REQUIRED) : null);
   if (missing) redirect(`/bookings/${id}/edit?missing=${missing}`);
+
+  // The customer is edited through the booking, so resolve which record this
+  // booking actually points at rather than trusting anything posted.
+  const { data: bk } = await sb.from("bookings").select("customer_id").eq("id", id).maybeSingle();
+  const customerId = mayEditCustomer
+    ? ((bk as { customer_id: string } | null)?.customer_id ?? null)
+    : null;
+
+  if (customerId) {
+    const mobile = s(formData.get("mobile"));
+    // Same rule as updateCustomer: a mobile may not collide with ANOTHER
+    // customer in the same salesperson's book (unique (created_by, mobile)).
+    // Checked before writing, so a clash changes nothing at all.
+    const { data: current } = await sb
+      .from("customers")
+      .select("created_by")
+      .eq("id", customerId)
+      .maybeSingle();
+    const ownedBy = (current as { created_by: string | null } | null)?.created_by ?? null;
+    if (ownedBy) {
+      const { data: clash } = await sb
+        .from("customers")
+        .select("id")
+        .eq("mobile", mobile)
+        .eq("created_by", ownedBy)
+        .neq("id", customerId)
+        .maybeSingle();
+      if (clash) redirect(`/bookings/${id}/edit?err=dup_mobile`);
+    }
+
+    await sb
+      .from("customers")
+      .update({
+        name: s(formData.get("name")),
+        mobile,
+        email: nullable(formData.get("email")),
+        dob: nullable(formData.get("dob")),
+        // Optional by design — clearing it is a legitimate edit, so it is
+        // written as null rather than skipped.
+        anniversary_date: nullable(formData.get("anniversary_date")),
+        street: nullable(formData.get("street")),
+        area: nullable(formData.get("area")),
+        pincode: nullable(formData.get("pincode")),
+        state: nullable(formData.get("state")),
+        district: nullable(formData.get("district")),
+        country: nullable(formData.get("country")),
+        occupation: nullable(formData.get("occupation")),
+        occupation_remarks: nullable(formData.get("occupation_remarks")),
+      })
+      .eq("id", customerId);
+  }
 
   await sb
     .from("bookings")
@@ -497,6 +565,11 @@ export async function updateBooking(formData: FormData): Promise<void> {
   await logAudit(actor, "booking", id, "edit", "details updated");
   revalidatePath(`/bookings/${id}`);
   revalidatePath("/bookings");
+  // The customer block is shown on their own pages too, and those are cached.
+  if (customerId) {
+    revalidatePath(`/customers/${customerId}`);
+    revalidatePath("/customers");
+  }
   redirect(`/bookings/${id}`);
 }
 

@@ -111,12 +111,17 @@ export const NAV: NavItem[] = [
   // Payments list — finance only (admin reaches it via Part Payment / Fully Paid Receipt).
   { href: "/payments", label: "Payments", icon: "creditCard", roles: ["finance"], group: "Operations" },
   { href: "/registrations", label: "Registrations", icon: "scroll", roles: ["admin", "legal", ...POST_SALES_DESK], group: "Operations" },
-  // Admin: token/coupon issuance lives in its own Tokens section. Sales managers
-  // keep the team view ("Business Operators" → "My Team") under Business Partners.
-  { href: "/business-operators", label: "Issue Token", icon: "creditCard", roles: ["admin"], group: "Tokens" },
-  // Sales roles: a read-only view of the tokens they hold + their issue/redeem
-  // history. The Pre-Sales desk gets it too — it hands tokens to walk-ins.
-  { href: "/tokens", label: "Tokens", icon: "creditCard", roles: [...SALES_TIERS, ...PRE_SALES_DESK], group: "Tokens" },
+  // Token/coupon issuance lives in its own Tokens section — Admin and the
+  // Pre-Sales desk, which hands tokens to partners at the branch and records the
+  // handover here. Sales managers keep the team view ("Business Operators" →
+  // "My Team") under Business Partners; the same route serves both.
+  { href: "/business-operators", label: "Issue Token", icon: "creditCard", roles: ["admin", ...PRE_SALES_DESK], group: "Tokens" },
+  // Sales roles ONLY: a read-only view of the tokens THEY hold, plus their own
+  // issue/redeem history. Deliberately not the branch desks — coupons are only
+  // ever issued to the sales tree (see the Issue Token table), so a desk's own
+  // balance is structurally always zero and this page was permanently empty for
+  // them. Their token work is issuing, which lives on /business-operators above.
+  { href: "/tokens", label: "Tokens", icon: "creditCard", roles: SALES_TIERS, group: "Tokens" },
   { href: "/business-operators", label: "My Team", icon: "briefcase", roles: ["senior_director", "director", "business_manager"], group: "Business Partners" },
   { href: "/reports", label: "Reports", icon: "barChart", roles: ["admin", "senior_director", "director", "business_manager", "finance", "legal"], group: "Reports" },
   // --- Partners (all backed by the existing /users page + users/actions) ---

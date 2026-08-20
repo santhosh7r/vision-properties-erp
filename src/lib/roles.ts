@@ -227,7 +227,12 @@ export type Capability =
   // OPEN the Plot Release page without being able to act on it. The Post-Sales
   // desk works the queue day to day and needs to see what is waiting and chase
   // it, but the release itself stays the Admin's call.
-  | "view_plot_release";
+  | "view_plot_release"
+  // Issue / redeem tokens & coupons on the Issue Token page. Split out from
+  // `manage_users` (admin-only) so the Pre-Sales desk can hand a Cab Token to a
+  // Director without also gaining the power to block or re-level accounts.
+  // Issuing is a RECORD of something agreed offline — there is no approval step.
+  | "issue_token";
 
 // ── In-house branch desks (district-scoped — see isDistrictScoped) ───────────
 // Pre-Sales: the front of the deal. Blocks and books plots for walk-in
@@ -239,6 +244,8 @@ export type Capability =
 const PRE_SALES_CAPS: Capability[] = [
   "manage_customers",
   "view_partners",
+  // The desk hands tokens to partners face to face and records it here.
+  "issue_token",
   "create_blocking",
   "create_booking",
   "approve_booking",
@@ -281,6 +288,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
     "manage_projects",
     "manage_plots",
     "manage_customers",
+    "issue_token",
     "create_blocking",
     "create_booking",
     "approve_booking",
