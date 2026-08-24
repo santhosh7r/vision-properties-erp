@@ -16,7 +16,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { computeRefund } from "@/lib/sop";
-import PrintReceiptButton from "./PrintReceiptButton";
+import PrintReceiptButton from "@/components/PrintReceiptButton";
 import RecordPaymentForm from "../RecordPaymentForm";
 import ConvertToBookingButton from "../ConvertToBookingButton";
 import RequestCancelButton from "../RequestCancelButton";

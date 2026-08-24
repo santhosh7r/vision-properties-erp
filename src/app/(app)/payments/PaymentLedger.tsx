@@ -4,7 +4,7 @@ import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
 import { PaymentBadge } from "@/components/ui";
 import { inr, fmtDateTime } from "@/lib/format";
-import PrintReceiptButton from "../bookings/[id]/PrintReceiptButton";
+import PrintReceiptButton from "@/components/PrintReceiptButton";
 
 // One row per individual payment transaction (the `payments` ledger).
 export interface LedgerRow {
