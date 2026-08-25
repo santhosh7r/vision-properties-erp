@@ -146,6 +146,8 @@ export interface Customer {
 
 export interface Booking {
   id: string;
+  /** Running receipt-register number printed on the booking receipt (VPO3377…). */
+  receipt_no: string | null;
   plot_id: string;
   customer_id: string;
   project_id: string;
@@ -200,6 +202,8 @@ export interface Booking {
 export interface Payment {
   id: string;
   booking_id: string;
+  /** Receipt number printed on this payment's receipt (VPO3377-2). */
+  receipt_no: string | null;
   amount: number;
   kind: PaymentKind;
   mode: string | null;

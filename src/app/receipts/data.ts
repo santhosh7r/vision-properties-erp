@@ -18,13 +18,29 @@ export function fmtDateOrBlank(v: string | null | undefined): string {
   return d === "—" ? "" : d;
 }
 
-// Deterministic, human-quotable receipt numbers. A booking keeps one number for
-// its life; each payment gets its own, suffixed so the two can never collide.
-export function bookingReceiptNo(bookingId: string): string {
-  return `VPT${bookingId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+// The number the customer is handed. It comes from the database, which allocates
+// it once when the record is created and never recalculates it — a booking keeps
+// VPO3377 for life, and each payment under it prints VPO3377-1, VPO3377-2, so a
+// bill says which deal the money belongs to and where it sits in the run.
+//
+// The fallbacks below derive a number from the record's UUID, the way every
+// receipt was numbered before the register existed. They exist for one case: a
+// record written before migration 0037 was applied, or against a database that
+// has not had it applied yet. A receipt must print SOMETHING unique in the
+// number box rather than a blank, so an old bill stays as traceable as it ever
+// was; anything created since carries a register number.
+export function bookingReceiptNo(booking: { id: string; receipt_no?: string | null }): string {
+  return booking.receipt_no || `VPT${booking.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
 }
-export function paymentReceiptNo(bookingId: string, paymentId: string): string {
-  return `${bookingReceiptNo(bookingId)}-${paymentId.replace(/-/g, "").slice(0, 4).toUpperCase()}`;
+
+export function paymentReceiptNo(
+  booking: { id: string; receipt_no?: string | null },
+  payment: { id: string; receipt_no?: string | null },
+): string {
+  return (
+    payment.receipt_no ||
+    `${bookingReceiptNo(booking)}-${payment.id.replace(/-/g, "").slice(0, 4).toUpperCase()}`
+  );
 }
 
 export const PAYMENT_KIND_LABEL: Record<string, string> = {
@@ -88,7 +104,7 @@ export async function bookingReceiptFields(bookingId: string): Promise<ReceiptFi
 
   return {
     ...commonFields(b),
-    receiptNo: bookingReceiptNo(b.id),
+    receiptNo: bookingReceiptNo(b),
     date: fmtDate(b.booked_date ?? b.created_at),
     amount: paid ? num(paid) : "",
     mode: b.mode_of_payment ?? "",
@@ -119,7 +135,7 @@ export async function paymentReceiptFields(paymentId: string): Promise<ReceiptFi
 
   return {
     ...commonFields(b),
-    receiptNo: paymentReceiptNo(b.id, pay.id),
+    receiptNo: paymentReceiptNo(b, pay),
     date: fmtDateTime(pay.paid_at),
     amount: amount ? num(amount) : "",
     // The form prints one "Payment Mode" line and no line for what the money was

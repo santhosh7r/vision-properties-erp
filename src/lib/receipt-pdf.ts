@@ -24,6 +24,17 @@ const TEMPLATE = path.join(process.cwd(), "public", "receipt.pdf");
 // Template page box, from `pdfinfo`: 419.52 x 595.2 pt (A5 portrait).
 const PAGE_H = 595.2;
 
+// The finished receipt is issued on A4, because A4 is what every office printer
+// in the building is loaded with. The stationery's own page is A5, so printing
+// it as-is put the whole receipt in the top corner of the sheet with the bottom
+// half blank. The artwork is NOT redrawn or re-laid-out for this: the filled A5
+// page is placed on an A4 page and scaled up whole, so the receipt keeps the
+// exact proportions the template was designed with and simply arrives at the
+// size of the paper it is printed on. A5 (0.7049 w/h) and A4 (0.7072) differ by
+// a quarter of a percent, so the scaled page fills the sheet edge to edge.
+const A4_W = 595.28;
+const A4_H = 841.89;
+
 const INK = rgb(0.05, 0.05, 0.12);
 
 // A blank the form prints a dotted rule for. `y` is the rule itself; text sits
@@ -139,6 +150,13 @@ function sanitize(value: string): string {
 // resort — a customer's address should read in full, small, rather than be cut.
 const MIN_SIZE = 4.6;
 
+// A value only moves onto its second line when keeping it on one would shrink it
+// past this. Wrapping is not free: it costs a mid-word break for anything without
+// spaces, and it pushes text down into the gap the next row needs. Splitting
+// "…@gmail.com" after the "c" to gain a fraction of a point reads as a broken
+// form; the same address set whole, one point smaller, reads as a filled one.
+const SINGLE_LINE_FLOOR = 7.0;
+
 // Greedy word wrap, with a fallback to breaking mid-token: an email address or a
 // long project code has no spaces to break at, and dropping half of it would be
 // worse than splitting it across the two lines.
@@ -171,10 +189,10 @@ function wrap(text: string, font: PDFFont, width: number, size: number): string[
 function layout(text: string, font: PDFFont, width: number, preferred: number, maxLines: number) {
   for (let size = preferred; size > MIN_SIZE; size -= 0.25) {
     const lines = wrap(text, font, width, size);
-    if (lines.length <= maxLines) return { size, lines };
+    if (lines.length <= maxLines) return { size, lines, truncated: false };
   }
   const lines = wrap(text, font, width, MIN_SIZE);
-  if (lines.length <= maxLines) return { size: MIN_SIZE, lines };
+  if (lines.length <= maxLines) return { size: MIN_SIZE, lines, truncated: false };
 
   // Past the floor even wrapped — keep as much as fits and mark the cut, so a
   // shortened value is never mistaken for the whole of one.
@@ -182,7 +200,7 @@ function layout(text: string, font: PDFFont, width: number, preferred: number, m
   let last = kept[maxLines - 1];
   while (last.length > 1 && font.widthOfTextAtSize(`${last}...`, MIN_SIZE) > width) last = last.slice(0, -1);
   kept[maxLines - 1] = `${last}...`;
-  return { size: MIN_SIZE, lines: kept };
+  return { size: MIN_SIZE, lines: kept, truncated: true };
 }
 
 function draw(page: PDFPage, font: PDFFont, slot: Slot, raw: string | null | undefined) {
@@ -194,13 +212,25 @@ function draw(page: PDFPage, font: PDFFont, slot: Slot, raw: string | null | und
   // value is capped by that gap rather than by the preferred size.
   const ceiling = slot.y2 ? Math.min(slot.size ?? 9.5, (slot.y2 - slot.y) / 1.15) : (slot.size ?? 9.5);
 
-  let { size, lines } = layout(text, font, width, slot.size ?? 9.5, 1);
+  const single = layout(text, font, width, slot.size ?? 9.5, 1);
+  let { size, lines } = single;
+
   if (slot.y2) {
-    // Wrap onto the second line only when doing so lets the value be set LARGER
-    // than cramming it onto one — a short address stays on its rule at full size,
-    // a long one wraps instead of shrinking to the floor or being cut.
     const wrapped = layout(text, font, width, ceiling, 2);
-    if (wrapped.size > size) ({ size, lines } = wrapped);
+    // A wrap that lands on a space keeps the value readable; one that cuts
+    // through a word does not. `lines.join(" ")` reconstructs the original only
+    // when every break fell between words.
+    const onWordBoundary = wrapped.lines.join(" ") === text;
+
+    // Two reasons to take the second line, and only these two: the value would
+    // otherwise be set too small to read comfortably, or it would otherwise be
+    // cut short. Anything that already fits legibly on its own rule stays there,
+    // which keeps the row clear of the row beneath it.
+    const tooSmallOnOneLine =
+      onWordBoundary && wrapped.size > single.size && single.size < SINGLE_LINE_FLOOR;
+    const savesTheWholeValue = single.truncated && !wrapped.truncated;
+
+    if (tooSmallOnOneLine || savesTheWholeValue) ({ size, lines } = wrapped);
   }
 
   lines.forEach((line, i) => {
@@ -233,7 +263,35 @@ export async function renderReceiptPdf(fields: ReceiptFields): Promise<Uint8Arra
     draw(page, font, slot, fields[key as keyof ReceiptFields]);
   }
 
+  toA4(page);
+
+  // Names the file in a viewer's title bar and in a phone's share sheet, where
+  // the filename from Content-Disposition is not always what gets shown.
+  pdf.setTitle(`Receipt ${fields.receiptNo}`);
   return pdf.save();
+}
+
+// Enlarges the finished page from the stationery's A5 to A4, in place.
+//
+// The page itself is scaled — artwork, rules and the values just drawn onto them
+// together, by one factor, so every proportion is exactly as designed and only
+// the size changes. Nothing is re-laid-out and nothing is redrawn.
+//
+// The scale is uniform rather than stretched to A4 exactly: A5 and A4 differ in
+// shape by a quarter of a percent, so height is the binding dimension and the
+// scaled page is 1.9pt narrower than the sheet. The page boxes are then widened
+// to full A4 around it — a negative origin puts that difference as half a point
+// of margin down each side, which centres the receipt on the paper.
+function toA4(page: PDFPage): void {
+  const scale = Math.min(A4_W / page.getWidth(), A4_H / page.getHeight());
+  page.scale(scale, scale);
+
+  const xOffset = -(A4_W - page.getWidth()) / 2;
+  page.setMediaBox(xOffset, 0, A4_W, A4_H);
+  // A viewer that finds a CropBox honours it over the MediaBox, and the template
+  // carries one from Photoshop — left alone, it would crop the enlarged page back
+  // to a corner of itself.
+  page.setCropBox(xOffset, 0, A4_W, A4_H);
 }
 
 // Filenames the office can file without renaming: VPT1A2B3C-24-Aug-2026.pdf.

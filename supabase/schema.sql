@@ -271,6 +271,11 @@ create index if not exists idx_customers_mobile on customers(mobile);
 -- ---------------------------------------------------------------------------
 -- BOOKINGS  (board: the full blocking / booking record)
 -- ---------------------------------------------------------------------------
+-- The running receipt register, shared by the booking receipt and (through its
+-- suffix) every payment receipt under it. It starts at 3377 because it continues
+-- the office's existing paper receipt books rather than starting a new count.
+create sequence if not exists booking_receipt_seq start with 3377 minvalue 3377;
+
 create table if not exists bookings (
   id                       uuid primary key default gen_random_uuid(),
   plot_id                  uuid not null references plots(id) on delete restrict,
@@ -322,8 +327,18 @@ create table if not exists bookings (
   refund_paid_at           timestamptz,
   cab_tokens_issued        boolean not null default false,    -- 3 cab tokens auto-issued to the director once held > 48h
   created_by               uuid references users(id) on delete set null,
-  created_at               timestamptz not null default now()
+  created_at               timestamptz not null default now(),
+  -- Receipt register ---------------------------------------------------------
+  -- The number printed on the booking receipt (VPO3377, VPO3378, …), allocated
+  -- by the database on insert. Stored rather than derived: a receipt reprinted
+  -- next year must carry the number the customer was handed.
+  receipt_no               text not null default 'VPO' || nextval('booking_receipt_seq'),
+  -- Highest payment-receipt suffix ever issued under this booking (VPO3377-2 →
+  -- 2). Only ever increases, so a number already printed for a payment that was
+  -- later deleted or reversed is never handed to another one.
+  payment_receipt_seq      integer not null default 0
 );
+create unique index if not exists uniq_bookings_receipt_no on bookings(receipt_no);
 create index if not exists idx_bookings_plot     on bookings(plot_id);
 create index if not exists idx_bookings_customer on bookings(customer_id);
 create index if not exists idx_bookings_status   on bookings(status);
@@ -347,9 +362,45 @@ create table if not exists payments (
   status      payment_status not null default 'completed',
   paid_at     timestamptz   not null default now(),
   recorded_by uuid references users(id) on delete set null,
-  created_at  timestamptz   not null default now()
+  created_at  timestamptz   not null default now(),
+  -- The number printed on THIS payment's receipt, suffixed onto its booking's
+  -- (VPO3377-1, VPO3377-2, …) so a bill says at a glance which deal the money
+  -- belongs to. Assigned by trg_assign_payment_receipt_no below.
+  receipt_no  text
 );
 create index if not exists idx_payments_booking on payments(booking_id);
+create unique index if not exists uniq_payments_receipt_no on payments(receipt_no);
+
+-- The suffix is claimed from bookings.payment_receipt_seq, a counter that only
+-- ever goes up — not from how many payments exist, which would re-issue the
+-- number of a payment that was deleted or reversed.
+create or replace function assign_payment_receipt_no() returns trigger
+language plpgsql as $$
+declare
+  booking_no text;
+  suffix     integer;
+begin
+  if new.receipt_no is not null then return new; end if;
+
+  -- Advancing the counter takes a row lock on the booking, so two payments
+  -- recorded against the same deal at the same moment queue behind each other
+  -- instead of both reading the same number. Payments on any other booking are
+  -- unaffected.
+  update bookings
+     set payment_receipt_seq = payment_receipt_seq + 1
+   where id = new.booking_id
+  returning receipt_no, payment_receipt_seq into booking_no, suffix;
+
+  if booking_no is null then return new; end if;
+
+  new.receipt_no := booking_no || '-' || suffix;
+  return new;
+end $$;
+
+drop trigger if exists trg_assign_payment_receipt_no on payments;
+create trigger trg_assign_payment_receipt_no
+  before insert on payments
+  for each row execute function assign_payment_receipt_no();
 
 -- ---------------------------------------------------------------------------
 -- REGISTRATIONS  (board: Registration Details / plot registering)
