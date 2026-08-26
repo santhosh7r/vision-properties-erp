@@ -18,6 +18,8 @@ import {
   canManageRole,
   creatableRolesUnder,
   isDistrictScoped,
+  isSalesRole,
+  hasFullAccess,
   requiresRegistration,
   type Role,
 } from "@/lib/roles";
@@ -42,6 +44,31 @@ function nullable(v: FormDataEntryValue | null): string | null {
   return s(v) || null;
 }
 
+// The company itself: the oldest Admin row, which every staff account and every
+// Senior Director hangs off.
+async function companyId(sb: ReturnType<typeof getSupabase>): Promise<string | null> {
+  const { data } = await sb
+    .from("users")
+    .select("id")
+    .eq("role", "admin")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+// Who a new member reports to when no manager / Reference ID was given: the
+// person creating them — but ONLY if that person is in the sales tree. A
+// full-access STAFF account (Admin, General Manager) is not, so a member they
+// create attaches to the company itself instead of dangling off a desk that no
+// hierarchy query walks.
+async function defaultParent(
+  sb: ReturnType<typeof getSupabase>,
+  actor: { id: string; role: Role },
+): Promise<string | null> {
+  return isSalesRole(actor.role) ? actor.id : await companyId(sb);
+}
+
 export async function createUser(
   _prev: CreateUserState | undefined,
   formData: FormData,
@@ -51,7 +78,7 @@ export async function createUser(
   // `manage_team`, so they never reach here.
   const actor = await requireCapability("manage_team");
   const sb = getSupabase();
-  const isAdmin = actor.role === "admin";
+  const isAdmin = hasFullAccess(actor.role);
 
   const full_name = s(formData.get("full_name"));
   const email = s(formData.get("email")).toLowerCase();
@@ -146,7 +173,9 @@ export async function createUser(
       }
       finalManagerId = parent.id;
     } else {
-      finalManagerId = actor.id; // no reference given → reports to whoever created them
+      // No reference given → reports to whoever created them (or to the company,
+      // when the creator is staff and sits outside the tree).
+      finalManagerId = await defaultParent(sb, actor);
     }
   } else if (need === "admin") {
     if (manager_id) {
@@ -154,14 +183,7 @@ export async function createUser(
       if (!parent || (parent.role as Role) !== "admin") return { error: "Invalid manager for this role." };
     } else {
       // Attach directly to the company: the oldest Admin account.
-      const { data: company } = await sb
-        .from("users")
-        .select("id")
-        .eq("role", "admin")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      finalManagerId = company?.id ?? null;
+      finalManagerId = await companyId(sb);
     }
   } else if (need) {
     // Director / Manager: validate the chosen parent can manage this role;
@@ -176,7 +198,7 @@ export async function createUser(
         return { error: "You can only add members under yourself or your own team." };
       }
     } else {
-      finalManagerId = actor.id;
+      finalManagerId = await defaultParent(sb, actor);
     }
   }
 
@@ -241,21 +263,14 @@ export async function updateUserPlacement(formData: FormData): Promise<void> {
       const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
       if (!parent || (parent.role as Role) !== "admin") return;
     } else {
-      const { data: company } = await sb
-        .from("users")
-        .select("id")
-        .eq("role", "admin")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      finalManagerId = company?.id ?? null;
+      finalManagerId = await companyId(sb);
     }
   } else if (need) {
     if (manager_id) {
       const { data: parent } = await sb.from("users").select("role").eq("id", manager_id).maybeSingle();
       if (!parent || !canManageRole(parent.role as Role, role)) return;
     } else {
-      finalManagerId = actor.id;
+      finalManagerId = await defaultParent(sb, actor);
     }
   }
 

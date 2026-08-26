@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { can } from "@/lib/roles";
+import { can, hasFullAccess } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { shownStatus } from "@/lib/holds";
 import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
@@ -98,7 +98,7 @@ export default async function BookingDetailPage({
   // else the whole page is rendered from a copy whose status reads 'cancelled',
   // so every badge, deadline and action gate below behaves exactly as it did
   // when expiry auto-released the plot. See lib/holds.
-  const isAdmin = user.role === "admin";
+  const isAdmin = hasFullAccess(user.role);
   const b = { ...raw, status: shownStatus(raw, isAdmin) };
 
   // Hold deadline = expires_at (kept through 'confirmed' until registration).

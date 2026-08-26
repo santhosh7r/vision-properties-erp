@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
 import { getDistrictScope } from "@/lib/scope";
-import { PRE_SALES_DESK_ROLES, type Role } from "@/lib/roles";
+import { PRE_SALES_DESK_ROLES, hasFullAccess, type Role } from "@/lib/roles";
 import { PageHeader } from "@/components/ui";
 import type { FeedbackForm, FeedbackQuestion } from "@/lib/feedback";
 import FeedbackWorkspace, { type FeedbackRow } from "./FeedbackWorkspace";
@@ -18,14 +18,17 @@ export const dynamic = "force-dynamic";
  */
 export default async function FeedbackPage() {
   const user = await requireUser();
-  const isAdmin = user.role === "admin";
+  const isAdmin = hasFullAccess(user.role);
   // Site visits are Pre-Sales work (they clear the "Pre-sales approval" stage on
   // the request), so the desk sees the feedback those visits produced — scoped
   // to its own district, the way every other desk screen is.
   const isPreSalesDesk = PRE_SALES_DESK_ROLES.includes(user.role as Role);
   if (!isAdmin && user.role !== "senior_director" && !isPreSalesDesk) redirect("/dashboard");
   const sb = getSupabase();
-  const scope = isPreSalesDesk ? await getDistrictScope(sb, user) : null;
+  // Asked for EVERY user, not just the desk: a branch General Manager is
+  // full-access (isAdmin above) but district-scoped, so the filter below has to
+  // reach them too. Unscoped roles get null back and are unaffected.
+  const scope = await getDistrictScope(sb, user);
 
   const { data: formRow } = await sb
     .from("feedback_forms")
@@ -68,8 +71,8 @@ export default async function FeedbackPage() {
   let raw = (rowsRaw ?? []) as unknown as Raw[];
 
   if (scope) {
-    // A branch desk has no downline, so it is scoped by DISTRICT — every site
-    // visit to a project it works, whoever raised it. A desk with no district
+    // A branch account has no downline, so it is scoped by DISTRICT — every site
+    // visit to a project it works, whoever raised it. An account with no district
     // configured gets an empty projectIds and therefore sees nothing, matching
     // how getDistrictScope fails closed everywhere else.
     raw = raw.filter(
@@ -116,7 +119,9 @@ export default async function FeedbackPage() {
         title="Site Visit Feedback"
         subtitle={
           isAdmin
-            ? "Responses from customers after their site visit — and the form they are asked."
+            ? scope
+              ? `Site visit responses for the ${scope.district ?? "branch"} branch — and the form customers are asked.`
+              : "Responses from customers after their site visit — and the form they are asked."
             : "Feedback from site visits raised by your team."
         }
       />

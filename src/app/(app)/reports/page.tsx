@@ -1,6 +1,7 @@
 import { requireCapability } from "@/lib/auth";
 import { ROLE_LABELS } from "@/lib/roles";
-import { supabaseConfigured } from "@/lib/supabase";
+import { getSupabase, supabaseConfigured } from "@/lib/supabase";
+import { getDistrictScope } from "@/lib/scope";
 import { getReports, getSalesLeaderboard } from "@/lib/queries";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { KpiCard, Panel, StackedBar } from "@/components/dashboard";
@@ -21,12 +22,19 @@ export default async function ReportsPage() {
     );
   }
 
+  // A branch account (General Manager) reports on its own district, whoever
+  // made the deal; everyone else keeps the company / network split.
+  const scope = await getDistrictScope(getSupabase(), user);
   const [r, leaderboard] = await Promise.all([
-    getReports(user.id, user.role),
-    getSalesLeaderboard(user.id, user.role),
+    getReports(user.id, user.role, scope),
+    getSalesLeaderboard(user.id, user.role, scope),
   ]);
   const scopeLabel =
-    r.scope === "company" ? "Company-wide totals." : "Totals across your network.";
+    r.scope === "company"
+      ? "Company-wide totals."
+      : r.scope === "branch"
+        ? `Totals across the ${r.branch ?? "branch"} branch.`
+        : "Totals across your network.";
 
   return (
     <>
@@ -54,7 +62,7 @@ export default async function ReportsPage() {
         />
         <KpiCard
           label="Total Partners" value={String(r.partners)}
-          sub={r.scope === "company" ? "Across the company" : "In your network"}
+          sub={r.partnersScope === "company" ? "Across the company" : "In your network"}
           icon={<UserCircle size={20} />} accent="#10b981" href="/business-operators"
         />
       </div>

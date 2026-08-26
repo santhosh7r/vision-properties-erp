@@ -1,7 +1,7 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
-import { creatableRolesUnder, isSalesRole, type Role } from "@/lib/roles";
+import { creatableRolesUnder, isSalesRole, hasFullAccess, type Role } from "@/lib/roles";
 import { HIDDEN_IN_LIST } from "@/lib/hidden-users";
 import { PageHeader } from "@/components/ui";
 import type { User } from "@/lib/types";
@@ -41,7 +41,7 @@ export default async function UsersPage({
   const actor = await requireCapability(
     intent === "new" ? "manage_team" : intent === "manage" ? "manage_users" : "view_partners",
   );
-  const isAdmin = actor.role === "admin";
+  const isAdmin = hasFullAccess(actor.role);
   const head = HEADERS[intent];
   const sb = getSupabase();
   const { data: users } = await sb

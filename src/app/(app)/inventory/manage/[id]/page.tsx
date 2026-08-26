@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { getDistrictScope, projectInScope } from "@/lib/scope";
 import { PageHeader, Badge } from "@/components/ui";
 import type { Plot, PlotCategory, Project } from "@/lib/types";
 import ManageProjectClient, { type EditCategory, type EditPlot } from "./ManageProjectClient";
@@ -31,8 +32,13 @@ export default async function ManageProjectPage({
 }) {
   const { id } = await params;
   const { error: errorKey } = await searchParams;
-  await requireCapability("manage_projects");
+  const user = await requireCapability("manage_projects");
   const sb = getSupabase();
+
+  // The grid already hides other branches' projects; this stops one being opened
+  // by typing its URL. Unscoped roles pass through.
+  const scope = await getDistrictScope(sb, user);
+  if (!projectInScope(scope, id)) notFound();
 
   const { data: projectData } = await sb.from("projects").select("*").eq("id", id).maybeSingle();
   if (!projectData) notFound();

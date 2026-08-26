@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { getDistrictScope, projectInScope } from "@/lib/scope";
+import type { SessionUser } from "@/lib/session";
 import type { ApprovalType, ProjectStatus, ProjectType } from "@/lib/types";
 
 // Editable SOP policy config (shared by create + update). Defaults mirror the
@@ -43,6 +45,20 @@ function officeFields(f: FormData) {
   };
 }
 
+/**
+ * May this actor edit THIS project? Only a district-scoped account (a branch
+ * desk, or the General Manager running the branch) is ever restricted; everyone
+ * else passes. Mirrors the guard on the project hub page, so an action fired at
+ * another branch's project is refused even though the page never showed it.
+ */
+async function canTouchProject(
+  actor: Pick<SessionUser, "id" | "role"> & { email?: string | null },
+  projectId: string,
+): Promise<boolean> {
+  const scope = await getDistrictScope(getSupabase(), actor);
+  return projectInScope(scope, projectId);
+}
+
 export async function createProject(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_projects");
 
@@ -79,6 +95,7 @@ export async function updateProject(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_projects");
   const id = String(formData.get("id") || "");
   if (!id) return;
+  if (!(await canTouchProject(actor, id))) return;
 
   const payload = {
     name: String(formData.get("name") || "").trim(),
@@ -111,6 +128,7 @@ export async function deleteProject(formData: FormData): Promise<void> {
   const actor = await requireCapability("manage_projects");
   const id = String(formData.get("id") || "");
   if (!id) return;
+  if (!(await canTouchProject(actor, id))) return;
 
   // bookings & registrations are ON DELETE RESTRICT — block the delete if any exist
   // (plots cascade automatically, so a project with only plots can still be removed).
@@ -138,6 +156,7 @@ export async function updateProjectStatus(formData: FormData): Promise<void> {
   const id = String(formData.get("id") || "");
   const status = String(formData.get("status") || "") as ProjectStatus;
   if (!id) return;
+  if (!(await canTouchProject(actor, id))) return;
   await getSupabase().from("projects").update({ status }).eq("id", id);
   await logAudit(actor, "project", id, "status_change", status);
   revalidatePath(`/projects/${id}`);

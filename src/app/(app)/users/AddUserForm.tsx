@@ -334,6 +334,12 @@ export default function AddUserForm({
                   </option>
                 ))}
               </optgroup>
+              {/* The branch GM: every capability the app has, over ONE district
+                  (so the District field below is required for them, exactly as
+                  it is for the desks). Admin is the only company-wide account. */}
+              <optgroup label="Branch Head">
+                <option value="general_manager">{ROLE_LABELS.general_manager}</option>
+              </optgroup>
               <option value="admin">{ROLE_LABELS.admin}</option>
             </>
           )}

@@ -13,7 +13,7 @@
 // nothing in the app reads or writes them.
 // ============================================================================
 
-import { can, type Role } from "./roles";
+import { can, FULL_ACCESS_ROLES, type Role } from "./roles";
 
 export type ServiceRequestType =
   | "legal_query"
@@ -42,12 +42,12 @@ export const REQUEST_CHAIN: Record<ServiceRequestType, RequestStage[]> = {
 // Roles allowed to act on a request sitting at a given stage. Admin can act on
 // any stage as a backstop. ('accounts' maps to Finance.)
 export const STAGE_ROLES: Record<RequestStage, Role[]> = {
-  senior: ["senior_director", "admin"],
+  senior: ["senior_director", ...FULL_ACCESS_ROLES],
   // The Pre-Sales desk owns this stage now that the role exists; Admin stays on
   // it as the backstop that cleared it before the desk did.
-  presales: ["pre_sales", "pre_post_sales", "admin"],
-  legal: ["legal", "admin"],
-  accounts: ["finance", "admin"],
+  presales: ["pre_sales", "pre_post_sales", ...FULL_ACCESS_ROLES],
+  legal: ["legal", ...FULL_ACCESS_ROLES],
+  accounts: ["finance", ...FULL_ACCESS_ROLES],
   done: [],
 };
 

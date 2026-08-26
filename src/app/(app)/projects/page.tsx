@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { can } from "@/lib/roles";
+import { can, hasFullAccess } from "@/lib/roles";
 import { PageHeader } from "@/components/ui";
 import { Plus } from "@/components/icons";
 import type { Project } from "@/lib/types";
@@ -14,7 +14,7 @@ export default async function ProjectsPage() {
   const user = await requireUser();
   // Admin uses the dedicated card-based Inventory workspace, not this shared
   // table. Keep the route working for non-admin roles only.
-  if (user.role === "admin") redirect("/inventory/manage");
+  if (hasFullAccess(user.role)) redirect("/inventory/manage");
   const sb = getSupabase();
   const { data } = await sb
     .from("projects")

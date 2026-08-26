@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import type { SessionUser } from "@/lib/session";
-import { can, isSalesRole, isNetworkHead, ROLE_LABELS } from "@/lib/roles";
+import { can, isSalesRole, isNetworkHead, hasFullAccess, ROLE_LABELS } from "@/lib/roles";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase";
 import { getDistrictScope } from "@/lib/scope";
 import { getDashboard, getAdminInsights, getSalesDashboard, getSeniorOverview } from "@/lib/queries";
@@ -73,19 +73,20 @@ export default async function DashboardPage() {
   // inventory, deals and collections of the projects it works, not the company's.
   const scope = await getDistrictScope(getSupabase(), user);
 
-  // Admin (and Finance/Legal) see company-wide figures.
-  // Only Admin sees an expired hold for what it is; everyone else is shown it as
-  // though it had auto-released (lib/holds).
-  const maskExpired = user.role !== "admin";
+  // Admin (and Finance/Legal) see company-wide figures; a branch GM sees their
+  // district's. Only a full-access account sees an expired hold for what it is;
+  // everyone else is shown it as though it had auto-released (lib/holds).
+  const maskExpired = !hasFullAccess(user.role);
   const d = await getDashboard(
     scope
       ? { userId: user.id, projectIds: scope.projectIds, district: scope.district, maskExpired }
-      : user.role === "admin"
+      : hasFullAccess(user.role)
         ? {}
         : { userId: user.id, maskExpired },
   );
-  // Extra company-wide business intelligence — ADMIN dashboard only.
-  const insights = user.role === "admin" ? await getAdminInsights() : null;
+  // Extra business intelligence — full-access dashboards only. Company-wide for
+  // an Admin; the same panels narrowed to their own branch for a General Manager.
+  const insights = hasFullAccess(user.role) ? await getAdminInsights(scope) : null;
 
   const sold = d.breakdown.booked + d.breakdown.registered + d.breakdown.sold;
   const sellThrough = d.plots > 0 ? Math.round((sold / d.plots) * 100) : 0;

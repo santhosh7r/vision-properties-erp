@@ -106,6 +106,11 @@ export function defaultLevel(role: Role, pageKey: string): PageLevel {
   if (role === "admin") return "edit"; // Admin is locked to full access
   const page = PAGE_BY_KEY.get(pageKey);
   if (!page) return "none";
+  // General Manager starts with full access to every page in the registry —
+  // but unlike Admin this is only a DEFAULT, so an Admin can dial it back page
+  // by page from Page Config (resolveLevel applies overrides before falling
+  // through to here).
+  if (role === "general_manager") return "edit";
   if (page.key === "profile") return "edit"; // never gated
   if (page.follows) return defaultLevel(role, page.follows);
   const inNav = NAV.some(

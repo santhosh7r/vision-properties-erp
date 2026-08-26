@@ -1,0 +1,29 @@
+-- ============================================================================
+-- 0038 — General Manager role (branch GM)
+--
+-- The head of ONE branch. Holds every capability the app has — the union of the
+-- Pre-Sales and Post-Sales desks and everything above them — but sees only the
+-- district they run: their branch's projects, and the plots, bookings,
+-- payments, registrations, customers and requests hanging off those projects.
+--
+-- That combination is why it is a role of its own rather than a second Admin
+-- login or a re-used desk role:
+--   • Admin is company-wide and hard-locked to full access; a GM is not.
+--   • A Pre-Sales / Post-Sales desk is district-scoped but deliberately narrow.
+-- A GM is "full powers, one branch": district-scoped in src/lib/scope.ts like a
+-- desk, full capabilities in src/lib/roles.ts like an Admin, and — unlike Admin —
+-- still configurable from Administration › Page Config, so the access can be
+-- trimmed later without a code change.
+--
+-- Like every other staff role it reports directly to the company (Admin),
+-- carries no partner code and never appears in the partner hierarchy tree.
+--
+-- A GM account MUST have users.district set (Chennai / Trichy) — the app refuses
+-- to create one without it, because an unscoped branch account fails closed and
+-- would open onto empty screens.
+--
+-- NOTE: Postgres cannot USE a new enum value in the same transaction that adds
+-- it — so run this migration on its own, then assign the role to a user.
+-- ============================================================================
+
+alter type user_role add value if not exists 'general_manager';

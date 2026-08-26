@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { can, isSalesRole, isDistrictScoped } from "@/lib/roles";
+import { can, isSalesRole, isDistrictScoped, hasFullAccess } from "@/lib/roles";
 import { shownStatus, shownPlotStatus } from "@/lib/holds";
 import { getDownlineIds } from "@/lib/hierarchy";
 import { getDistrictScope } from "@/lib/scope";
@@ -25,7 +25,7 @@ export default async function BookingsPage({
   const sb = getSupabase();
   const sp = await searchParams;
   const mode = sp.mode === "blocking" ? "blocking" : sp.mode === "booking" ? "booking" : null;
-  const isAdmin = user.role === "admin";
+  const isAdmin = hasFullAccess(user.role);
   // Who sold it matters to anyone looking at other people's deals — Admin, a
   // sales manager, and a branch desk working its whole district.
   const showSalesperson =

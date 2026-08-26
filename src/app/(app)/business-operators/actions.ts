@@ -5,7 +5,13 @@ import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { ROLE_LABELS, creatableRolesUnder, requiresRegistration, type Role } from "@/lib/roles";
+import {
+  ROLE_LABELS,
+  creatableRolesUnder,
+  requiresRegistration,
+  hasFullAccess,
+  type Role,
+} from "@/lib/roles";
 import {
   EMPTY_PARTNER_FIELDS,
   generatePassword,
@@ -101,7 +107,7 @@ export async function createTeamMember(
   if (!parent) return { error: "Parent user not found." };
 
   // A non-admin may only add under themselves or someone in their own downline.
-  if (actor.role !== "admin") {
+  if (!hasFullAccess(actor.role)) {
     const ok = await actorControls(sb, actor.id, manager_id);
     if (!ok) return { error: "You can only add members under yourself or your team." };
   }
@@ -156,7 +162,7 @@ export async function toggleMemberActive(formData: FormData): Promise<void> {
   if (!id) return;
 
   // Non-admins can only (de)activate their own downline, never themselves.
-  if (actor.role !== "admin") {
+  if (!hasFullAccess(actor.role)) {
     if (id === actor.id) return;
     const ok = await actorControls(sb, actor.id, id);
     if (!ok) return;

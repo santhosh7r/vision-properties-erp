@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDistrictScope } from "@/lib/scope";
+import { hasFullAccess } from "@/lib/roles";
 import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
 import { loanTokenByLabel } from "@/lib/options";
 import { PageHeader, Badge, BookingStatusBadge, PaymentBadge, EmptyState } from "@/components/ui";
@@ -31,7 +32,7 @@ export default async function CustomerDetailPage({
   const inDistrict =
     !!scope?.district &&
     (customer.district ?? "").trim().toLowerCase() === scope.district.trim().toLowerCase();
-  if (user.role !== "admin" && !inDistrict && customer.created_by !== user.id) notFound();
+  if (!hasFullAccess(user.role) && !inDistrict && customer.created_by !== user.id) notFound();
 
   const { data: bk } = await sb
     .from("bookings")

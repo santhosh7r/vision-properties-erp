@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { requireUser, requireCapability } from "@/lib/auth";
 import { getDownlineIds } from "@/lib/hierarchy";
+import { hasFullAccess } from "@/lib/roles";
+import { getDistrictScope, projectInScope } from "@/lib/scope";
+import type { SessionUser } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
 import { FEEDBACK_DELAY_MS, makeFeedbackToken } from "@/lib/feedback";
 import {
@@ -179,7 +182,7 @@ async function cabGateOk(sb: SupabaseClient, role: string, actorId: string): Pro
 export async function createServiceRequest(formData: FormData): Promise<void> {
   const actor = await requireCapability("create_request");
   // Admin only approves requests — they never raise them.
-  if (actor.role === "admin") return;
+  if (hasFullAccess(actor.role)) return;
   const sb = getSupabase();
 
   const type = s(formData.get("type")) as ServiceRequestType;
@@ -232,7 +235,7 @@ export async function createServiceRequest(formData: FormData): Promise<void> {
 // ---------------------------------------------------------------------------
 export async function saveDraftRequest(formData: FormData): Promise<void> {
   const actor = await requireCapability("create_request");
-  if (actor.role === "admin") return;
+  if (hasFullAccess(actor.role)) return;
   const sb = getSupabase();
 
   const type = s(formData.get("type")) as ServiceRequestType;
@@ -269,7 +272,7 @@ export async function saveDraftRequest(formData: FormData): Promise<void> {
 // ---------------------------------------------------------------------------
 export async function submitDraftRequest(formData: FormData): Promise<void> {
   const actor = await requireCapability("create_request");
-  if (actor.role === "admin") return;
+  if (hasFullAccess(actor.role)) return;
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
@@ -310,7 +313,7 @@ export async function submitDraftRequest(formData: FormData): Promise<void> {
 // ---------------------------------------------------------------------------
 export async function deleteDraftRequest(formData: FormData): Promise<void> {
   const actor = await requireCapability("create_request");
-  if (actor.role === "admin") return;
+  if (hasFullAccess(actor.role)) return;
   const sb = getSupabase();
   const id = s(formData.get("id"));
   if (!id) return;
@@ -321,6 +324,31 @@ export async function deleteDraftRequest(formData: FormData): Promise<void> {
 // ---------------------------------------------------------------------------
 // ADVANCE — an approver moves the request to the next stage (or completes it).
 // ---------------------------------------------------------------------------
+/**
+ * May the actor act on THIS request? Capabilities say which STAGE a role may
+ * clear (canActOnStage); this says which RECORDS it may clear them on. Only a
+ * district-scoped account (a branch desk, or the General Manager above them) is
+ * ever restricted — everyone else gets `true`.
+ *
+ * A request with no project belongs to no branch and is left actionable, matching
+ * the panel, which shows those rows to every scoped approver rather than to none.
+ */
+async function requestInScope(
+  sb: ReturnType<typeof getSupabase>,
+  actor: SessionUser,
+  requestId: string,
+): Promise<boolean> {
+  const scope = await getDistrictScope(sb, actor);
+  if (!scope) return true;
+  const { data } = await sb
+    .from("service_requests")
+    .select("project_id")
+    .eq("id", requestId)
+    .maybeSingle();
+  const projectId = (data as { project_id?: string | null } | null)?.project_id ?? null;
+  return projectId === null || projectInScope(scope, projectId);
+}
+
 export async function advanceServiceRequest(formData: FormData): Promise<void> {
   const actor = await requireUser();
   const sb = getSupabase();
@@ -337,11 +365,12 @@ export async function advanceServiceRequest(formData: FormData): Promise<void> {
   const stage = req.stage as RequestStage;
   const type = req.type as ServiceRequestType;
   if (!canActOnStage(actor.role, stage)) return;
+  if (!(await requestInScope(sb, actor, id))) return;
 
   // A cab request at the Senior Director stage may only be approved by the
   // requester's OWN Senior Director (i.e. the requester is in their downline) —
   // or by Admin as a backstop. This keeps it within the right branch.
-  if (type === "cab" && stage === "senior" && actor.role !== "admin") {
+  if (type === "cab" && stage === "senior" && !hasFullAccess(actor.role)) {
     const ids = await getDownlineIds(sb, actor.id);
     if (!req.requested_by || !ids.includes(req.requested_by)) return;
   }
@@ -475,6 +504,7 @@ export async function declineServiceRequest(formData: FormData): Promise<void> {
     .maybeSingle();
   if (!req || req.status !== "pending") return;
   if (!canActOnStage(actor.role, req.stage as RequestStage)) return;
+  if (!(await requestInScope(sb, actor, id))) return;
 
   await sb
     .from("service_requests")

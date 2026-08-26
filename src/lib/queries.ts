@@ -1,7 +1,8 @@
 import "server-only";
 import { getSupabase } from "./supabase";
 import { getDownlineIds } from "./hierarchy";
-import { isSalesRole, isNetworkHead, type Role } from "./roles";
+import { withProjectScope, type DistrictScope } from "./scope";
+import { isSalesRole, isNetworkHead, hasFullAccess, type Role } from "./roles";
 import { shownStatus } from "./holds";
 import { HIDDEN_IN_LIST } from "./hidden-users";
 
@@ -192,10 +193,19 @@ export async function getSalesDashboard(userId: string): Promise<SalesDashboardD
 
 // ---------------------------------------------------------------------------
 // REPORTS — the five totals on the Senior Director panel (§6). Company-wide for
-// admin / finance / legal; confined to the user's own network otherwise.
+// admin / finance / legal, one branch for a district-scoped General Manager, and
+// confined to the user's own network otherwise.
 // ---------------------------------------------------------------------------
 export interface ReportsData {
-  scope: "company" | "network";
+  scope: "company" | "branch" | "network";
+  /** The branch these totals cover — set only when `scope` is "branch". */
+  branch: string | null;
+  /**
+   * Partners are the one total a branch scope cannot narrow (no district on a
+   * partner row), so it is reported separately rather than silently mixed in
+   * with the branch figures.
+   */
+  partnersScope: "company" | "network";
   siteVisits: number;
   bookings: number;
   blockings: number;
@@ -223,19 +233,28 @@ export interface LeaderboardRow {
 // Sales-by-person breakdown. Company-wide for admin/finance/legal; the user's own
 // network otherwise. A deal is attributed to the partner stamped on it (the
 // salesperson), falling back to whoever created it. Admin/operator rows excluded.
-export async function getSalesLeaderboard(userId: string, role: Role): Promise<LeaderboardRow[]> {
+export async function getSalesLeaderboard(
+  userId: string,
+  role: Role,
+  scope: DistrictScope | null = null,
+): Promise<LeaderboardRow[]> {
   const sb = getSupabase();
-  const companyWide = role === "admin" || role === "finance" || role === "legal";
-  const ids = companyWide ? null : await getDownlineIds(sb, userId);
+  // A branch GM is full-access but district-scoped: they get everyone's numbers
+  // for their OWN branch, not their downline (they have none) and not the
+  // company. `scope` decides that — see getReports for the same split.
+  const companyWide = !scope && (hasFullAccess(role) || role === "finance" || role === "legal");
+  const ids = companyWide || scope ? null : await getDownlineIds(sb, userId);
   const list = ids ? ids.join(",") : "";
 
   let bq = sb
     .from("bookings")
     .select("created_by, partner_id, partner_name, partner_code, status, book_mode, total_plot_value");
   if (ids) bq = bq.or(`created_by.in.(${list}),partner_id.in.(${list})`);
+  bq = withProjectScope(bq, scope);
 
   let rq = sb.from("registrations").select("created_by");
   if (ids) rq = rq.in("created_by", ids);
+  rq = withProjectScope(rq, scope);
 
   const [{ data: bookingData }, { data: regData }, { data: userData }] = await Promise.all([
     bq,
@@ -303,16 +322,28 @@ export async function getSalesLeaderboard(userId: string, role: Role): Promise<L
     .sort((a, b) => b.value - a.value || b.deals - a.deals);
 }
 
-export async function getReports(userId: string, role: Role): Promise<ReportsData> {
+export async function getReports(
+  userId: string,
+  role: Role,
+  scope: DistrictScope | null = null,
+): Promise<ReportsData> {
   const sb = getSupabase();
-  const companyWide = role === "admin" || role === "finance" || role === "legal";
-  const ids = companyWide ? null : await getDownlineIds(sb, userId);
+  // Three scopes, not two:
+  //   company  — Admin / Finance / Legal: everything.
+  //   branch   — a General Manager: every deal in THEIR district, whoever made
+  //              it. Not a downline (a GM has none) and not the company.
+  //   network  — a sales role: their own downline.
+  const companyWide = !scope && (hasFullAccess(role) || role === "finance" || role === "legal");
+  const ids = companyWide || scope ? null : await getDownlineIds(sb, userId);
   const list = ids ? ids.join(",") : "";
 
+  // Ownership filters (network scope) and the district filter (branch scope) are
+  // independent: exactly one of `ids` / `scope` is ever set.
   const inCreated = (q: any) => (ids ? q.in("created_by", ids) : q);
   const inRequester = (q: any) => (ids ? q.in("requested_by", ids) : q);
   const inBookingOwner = (q: any) =>
     ids ? q.or(`created_by.in.(${list}),partner_id.in.(${list})`) : q;
+  const inBranch = (q: any) => withProjectScope(q, scope);
 
   const [
     siteVisits,
@@ -326,27 +357,42 @@ export async function getReports(userId: string, role: Role): Promise<ReportsDat
     partnersRaw,
     customers,
   ] = await Promise.all([
-    count("service_requests", (q) => inRequester(q.eq("type", "cab"))),
-    count("service_requests", (q) => inRequester(q.eq("type", "cab").eq("status", "pending"))),
-    count("service_requests", (q) => inRequester(q.eq("type", "cab").eq("status", "approved"))),
-    count("service_requests", (q) => inRequester(q.eq("type", "cab").eq("status", "declined"))),
-    count("bookings", (q) => inBookingOwner(q.eq("book_mode", "booking"))),
-    count("bookings", (q) => inBookingOwner(q.eq("book_mode", "blocking"))),
-    count("registrations", (q) => inCreated(q)),
-    count("bookings", (q) => inBookingOwner(q.eq("status", "cancelled"))),
+    count("service_requests", (q) => inBranch(inRequester(q.eq("type", "cab")))),
+    count("service_requests", (q) => inBranch(inRequester(q.eq("type", "cab").eq("status", "pending")))),
+    count("service_requests", (q) => inBranch(inRequester(q.eq("type", "cab").eq("status", "approved")))),
+    count("service_requests", (q) => inBranch(inRequester(q.eq("type", "cab").eq("status", "declined")))),
+    count("bookings", (q) => inBranch(inBookingOwner(q.eq("book_mode", "booking")))),
+    count("bookings", (q) => inBranch(inBookingOwner(q.eq("book_mode", "blocking")))),
+    count("registrations", (q) => inBranch(inCreated(q))),
+    count("bookings", (q) => inBranch(inBookingOwner(q.eq("status", "cancelled")))),
+    // PARTNERS is the one total a branch scope cannot narrow: a partner belongs
+    // to a sales network, not to a district — there is no column to filter on.
+    // A GM therefore sees the company partner count; every other total on this
+    // page is their branch's. Flagged as `partnersScope` so the card can say so
+    // rather than quietly implying it is a branch figure.
     count("users", (q) => {
       let qq = q.not("partner_code", "is", null);
       if (ids) qq = qq.in("id", ids);
       return qq;
     }),
-    count("customers", (q) => inCreated(q)),
+    // Customers carry their own address district rather than a project, so they
+    // are matched on that — the same filter the Customers page uses.
+    count("customers", (q) => {
+      const qq = inCreated(q);
+      if (!scope) return qq;
+      return scope.district ? qq.ilike("district", scope.district) : qq.in("id", []);
+    }),
   ]);
 
-  // Exclude the viewer themselves from their own partner count.
-  const partners = companyWide ? partnersRaw : Math.max(0, partnersRaw - (isSalesRole(role) ? 1 : 0));
+  // Exclude the viewer themselves from their own partner count. A GM is staff
+  // and carries no partner code, so there is nothing to subtract for them.
+  const partners =
+    companyWide || scope ? partnersRaw : Math.max(0, partnersRaw - (isSalesRole(role) ? 1 : 0));
 
   return {
-    scope: companyWide ? "company" : "network",
+    scope: companyWide ? "company" : scope ? "branch" : "network",
+    branch: scope?.district ?? null,
+    partnersScope: scope ? "company" : companyWide ? "company" : "network",
     siteVisits,
     bookings,
     blockings,
@@ -718,18 +764,30 @@ export interface AdminInsights {
   revenueByType: { type: string; value: number; count: number }[];
 }
 
-export async function getAdminInsights(): Promise<AdminInsights> {
+// `scope` narrows every panel to one branch — the same figures a General Manager
+// gets for their district. Null (the Admin case) means company-wide.
+export async function getAdminInsights(scope: DistrictScope | null = null): Promise<AdminInsights> {
   const sb = getSupabase();
   const nowKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
 
   const [plotsRes, bookingsRes, projectsRes, customersRes, requestsPending] = await Promise.all([
-    sb.from("plots").select("status, sqft, price_per_sqft"),
-    sb
-      .from("bookings")
-      .select("status, book_mode, total_plot_value, advance_paid, partner_name, partner_code, project_id, refund_status, refund_amount"),
-    sb.from("projects").select("id, project_type"),
-    sb.from("customers").select("created_at"),
-    count("service_requests", (q) => q.eq("status", "pending")),
+    withProjectScope(sb.from("plots").select("status, sqft, price_per_sqft"), scope),
+    withProjectScope(
+      sb
+        .from("bookings")
+        .select("status, book_mode, total_plot_value, advance_paid, partner_name, partner_code, project_id, refund_status, refund_amount"),
+      scope,
+    ),
+    // Projects are the scope itself — filter on the id list rather than a
+    // project_id column they do not have.
+    withProjectScope(sb.from("projects").select("id, project_type"), scope, "id"),
+    // Customers carry their own address district, not a project.
+    scope
+      ? scope.district
+        ? sb.from("customers").select("created_at").ilike("district", scope.district)
+        : sb.from("customers").select("created_at").in("id", [])
+      : sb.from("customers").select("created_at"),
+    count("service_requests", (q) => withProjectScope(q.eq("status", "pending"), scope)),
   ]);
 
   // Plots → realized value (registered/sold) + value locked in cancelled plots.

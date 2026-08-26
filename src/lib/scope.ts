@@ -3,10 +3,11 @@ import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SessionUser } from "./session";
 import { isHiddenUser } from "./hidden-users";
-import { isDistrictScoped } from "./roles";
+import { isDistrictScoped, hasFullAccess, type Role } from "./roles";
 
 // ============================================================================
-// DISTRICT SCOPE — the branch desks (Pre-Sales / Post-Sales) see ONE district.
+// DISTRICT SCOPE — a branch account sees ONE district: the Pre-Sales and
+// Post-Sales desks, and the General Manager who runs the branch above them.
 //
 // A Chennai Pre-Sales desk works Chennai projects and everything hanging off
 // them; a Trichy desk works Trichy. The district lives on the user row
@@ -19,7 +20,8 @@ import { isDistrictScoped } from "./roles";
 //
 // Roles that are NOT district-scoped (Admin, Finance, Legal, the sales tree)
 // get `null` back — meaning "no district filter", not "no access". Access
-// itself is decided by capabilities, never by this module.
+// itself is decided by capabilities, never by this module: a branch GM holds
+// every capability there is and is still filtered to their district here.
 // ============================================================================
 
 export interface DistrictScope {
@@ -110,6 +112,12 @@ const resolveScope = cache(
  * "Sees every record, unfiltered." True for Admin, and for the hidden dev/support
  * account whatever role it is previewing.
  *
+ * NOT true for a General Manager: they hold every capability (hasFullAccess) but
+ * only over their own branch, so they go through getDistrictScope like the desks
+ * do. The two questions are separate on purpose — see the General Manager note
+ * in lib/roles.ts — and conflating them here would hand a Chennai GM the whole
+ * company.
+ *
  * Pages that are neither district-scoped nor Admin normally fall back to "just my
  * own records" (customers I created, deals I raised). For the dev account that
  * fallback yields NOTHING — it has created nothing — so a role preview showed
@@ -120,7 +128,8 @@ const resolveScope = cache(
 export function seesAllRecords(
   user: Pick<SessionUser, "role"> & { email?: string | null },
 ): boolean {
-  return user.role === "admin" || isHiddenUser(user.email);
+  const role = user.role as Role;
+  return (hasFullAccess(role) && !isDistrictScoped(role)) || isHiddenUser(user.email);
 }
 
 /**

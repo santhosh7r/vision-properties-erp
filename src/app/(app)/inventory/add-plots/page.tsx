@@ -1,5 +1,6 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { getDistrictScope } from "@/lib/scope";
 import { PageHeader, EmptyState } from "@/components/ui";
 import type { Plot, PlotCategory, Project } from "@/lib/types";
 import AddPlotsWorkspace, { type WorkspaceProject } from "./AddPlotsWorkspace";
@@ -7,13 +8,16 @@ import AddPlotsWorkspace, { type WorkspaceProject } from "./AddPlotsWorkspace";
 export const dynamic = "force-dynamic";
 
 // Admin Inventory · Add Plots. Pick a project from the card grid, then add plots
-// (and categories) to it. Admin-only.
+// (and categories) to it. Admin, and the branch GM for their own district.
 export default async function AddPlotsPage() {
-  await requireCapability("manage_plots");
+  const user = await requireCapability("manage_plots");
   const sb = getSupabase();
 
+  // A branch account adds plots to its OWN district's projects only.
+  const scope = await getDistrictScope(sb, user);
+  const projQ = sb.from("projects").select("*").order("name");
   const [{ data: projData }, { data: catData }, { data: plotData }] = await Promise.all([
-    sb.from("projects").select("*").order("name"),
+    scope ? projQ.in("id", scope.projectIds) : projQ,
     sb.from("plot_categories").select("*").order("name"),
     sb.from("plots").select("*").order("plot_no"),
   ]);

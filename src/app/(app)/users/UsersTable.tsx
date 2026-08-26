@@ -3,7 +3,7 @@
 import { useState } from "react";
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge } from "@/components/ui";
-import { ROLE_LABELS, ROLES, type Role } from "@/lib/roles";
+import { ROLE_LABELS, ROLES, hasFullAccess, type Role } from "@/lib/roles";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { ManagerOption } from "./AddUserForm";
 import { toggleUserActive, updateUserPlacement } from "./actions";
@@ -44,7 +44,7 @@ export default function UsersTable({
       <div><div className="font-medium text-[var(--text)]">{r.full_name}</div><div className="text-xs text-[var(--muted)]">{r.email}</div></div>
     ) },
     { id: "code", header: "ID", sort: (r) => r.code ?? "", cell: (r) => r.code ? <span className="font-mono text-xs text-[var(--muted)]">{r.code}</span> : <span className="text-[var(--muted)]">—</span> },
-    { id: "role", header: "Role", sort: (r) => r.role, cell: (r) => <Badge tone={r.role === "admin" ? "purple" : "blue"}>{ROLE_LABELS[r.role]}</Badge> },
+    { id: "role", header: "Role", sort: (r) => r.role, cell: (r) => <Badge tone={hasFullAccess(r.role) ? "purple" : "blue"}>{ROLE_LABELS[r.role]}</Badge> },
     { id: "manager", header: "Reports To", hideBelow: "md", cell: (r) => <span className="text-[var(--muted)]">{r.manager || "—"}</span> },
     { id: "status", header: "Status", sort: (r) => String(r.is_active), cell: (r) => <Badge tone={r.is_active ? "green" : "gray"}>{r.is_active ? "Active" : "Inactive"}</Badge> },
     ...(mode === "view"

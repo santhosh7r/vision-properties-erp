@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
-import { can } from "@/lib/roles";
+import { can, hasFullAccess, type Role } from "@/lib/roles";
 import { logAudit, notify } from "@/lib/audit";
 import { bookingInScope, plotInScope } from "@/lib/scope";
 import { isFlaggedExpired } from "@/lib/holds";
@@ -69,7 +69,7 @@ async function hiddenFromActor(
   actor: { role: string },
   bookingId: string,
 ): Promise<boolean> {
-  if (actor.role === "admin") return false;
+  if (hasFullAccess(actor.role as Role)) return false;
   const { data } = await sb
     .from("bookings")
     .select("status, expired_at")
@@ -198,7 +198,7 @@ export async function createBooking(formData: FormData): Promise<void> {
     // give the Admin's pending decision away. They get a neutral per-plot
     // problem instead. The page re-derives both cases from live data; `err` is
     // only the fallback for when the claim clears in between.
-    const masked = isFlaggedExpired(held) && actor.role !== "admin";
+    const masked = isFlaggedExpired(held) && !hasFullAccess(actor.role);
     const err = masked ? "plot_issue" : `held&held=${held.book_mode}`;
     redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=${err}`);
   }

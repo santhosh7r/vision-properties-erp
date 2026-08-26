@@ -5,6 +5,7 @@
 
 export type Role =
   | "admin"
+  | "general_manager"
   | "senior_director"
   | "director"
   | "business_manager"
@@ -18,6 +19,7 @@ export type Role =
 
 export const ROLES: Role[] = [
   "admin",
+  "general_manager",
   "senior_director",
   "director",
   "business_manager",
@@ -32,6 +34,7 @@ export const ROLES: Role[] = [
 
 export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
+  general_manager: "General Manager",
   senior_director: "Senior Director",
   director: "Director",
   business_manager: "Business Manager",
@@ -53,6 +56,31 @@ export const SALES_HIERARCHY: Role[] = [
 ];
 
 export const BUSINESS_OPERATORS: Role[] = ["finance", "legal"];
+
+// ── General Manager ─────────────────────────────────────────────────────────
+// The head of ONE branch: every capability the app has — the Pre-Sales desk's,
+// the Post-Sales desk's and everything above them — over a SINGLE district.
+//
+// Two independent axes, and a GM is deliberately at the far end of both:
+//   • WHAT may this account do?  → capabilities (this file). GM holds them all.
+//   • WHICH records may it touch? → district scope (lib/scope.ts). GM sees one
+//     branch's projects and everything hanging off them.
+// Admin is the only role that is full on both axes. That separation is why a GM
+// is not simply a second Admin login, and why `hasFullAccess` below answers only
+// the first question — asking it about data reach is a bug, which is exactly
+// what seesAllRecords() in lib/scope.ts guards against.
+//
+// It is also still CONFIGURABLE: unlike Admin, which is hard-locked to full
+// access so it can never lock itself out, a GM's pages can be trimmed from
+// Administration › Page Config without a code change.
+export const FULL_ACCESS_ROLES: Role[] = ["admin", "general_manager"];
+
+// "Holds every capability." NOT "sees every record" — a General Manager holds
+// every capability but only over their own district. For data reach use
+// seesAllRecords() / getDistrictScope() in lib/scope.ts.
+export function hasFullAccess(role: Role | null | undefined): boolean {
+  return !!role && FULL_ACCESS_ROLES.includes(role);
+}
 
 // In-house desks — branch staff, NOT part of the partner/sales tree. A Pre-Sales
 // or Post-Sales desk belongs to one district (Chennai / Trichy) and works every
@@ -76,7 +104,12 @@ export const EITHER_DESK_ROLES: Role[] = ["pre_sales", "post_sales", "pre_post_s
 // Every non-sales account: Admin, the business operators and the in-house desks.
 // "Staff" is the opposite of "in the partner tree", and is what decides that an
 // account skips the registration form and attaches directly to the company.
-export const STAFF_ROLES: Role[] = ["admin", ...BUSINESS_OPERATORS, ...IN_HOUSE_ROLES];
+export const STAFF_ROLES: Role[] = [
+  "admin",
+  "general_manager",
+  ...BUSINESS_OPERATORS,
+  ...IN_HOUSE_ROLES,
+];
 
 export function isSalesRole(role: Role): boolean {
   return SALES_HIERARCHY.includes(role);
@@ -86,12 +119,21 @@ export function isInHouseRole(role: Role): boolean {
   return IN_HOUSE_ROLES.includes(role);
 }
 
-// Desks confined to ONE district. A Chennai Pre-Sales user works only Chennai
-// projects and the bookings, payments and registrations that hang off them; a
-// Trichy desk sees only Trichy. Enforced in lib/scope.ts, which every scoped page
-// and server action routes through.
+// Accounts confined to ONE district: the branch desks and the branch GM above
+// them. A Chennai account works only Chennai projects and the bookings,
+// payments, registrations and customers that hang off them; a Trichy account
+// sees only Trichy. Enforced in lib/scope.ts, which every scoped page and server
+// action routes through.
 export function isDistrictScoped(role: Role): boolean {
-  return role === "pre_sales" || role === "post_sales" || role === "pre_post_sales";
+  return (
+    role === "pre_sales" ||
+    role === "post_sales" ||
+    role === "pre_post_sales" ||
+    // The branch GM runs one district too. Same boundary as the desks below
+    // them — a Chennai GM never sees a Trichy record — even though their
+    // capabilities are the Admin's rather than a desk's.
+    role === "general_manager"
+  );
 }
 
 // Every rung of the sales hierarchy — Senior Director, Director, Business
@@ -152,7 +194,9 @@ export function managerRoleOf(role: Role): Role | null {
 //   business_manager -> [business_partner]
 //   business_partner -> []   (leaf)
 export function rolesBelow(role: Role): Role[] {
-  if (role === "admin") return [...SALES_HIERARCHY];
+  // A full-access staff account (Admin, General Manager) sits above the whole
+  // sales tree and may create any rung of it.
+  if (hasFullAccess(role)) return [...SALES_HIERARCHY];
   const idx = SALES_HIERARCHY.indexOf(role);
   if (idx === -1) return [];
   return SALES_HIERARCHY.slice(idx + 1);
@@ -280,34 +324,41 @@ const POST_SALES_CAPS: Capability[] = [
   "view_post_sales",
 ];
 
+// Everything the app can do. Admin holds it company-wide; a General Manager
+// holds the same set over their own district — derived rather than re-listed so
+// a new capability can never be granted to one and forgotten on the other.
+const ADMIN_CAPS: Capability[] = [
+  "manage_users",
+  "view_partners",
+  "manage_team",
+  "manage_projects",
+  "manage_plots",
+  "manage_customers",
+  "issue_token",
+  "create_blocking",
+  "create_booking",
+  "approve_booking",
+  "confirm_booking",
+  "cancel_booking",
+  "record_payment",
+  "manage_registration",
+  "approve_refund",
+  "manage_transfer",
+  "approve_cab",
+  "create_request",
+  "view_finance",
+  "view_legal",
+  "view_reports",
+  "view_pre_sales",
+  "view_post_sales",
+  "release_plot",
+  "view_plot_release",
+];
+
 const CAPABILITIES: Record<Role, Capability[]> = {
-  admin: [
-    "manage_users",
-    "view_partners",
-    "manage_team",
-    "manage_projects",
-    "manage_plots",
-    "manage_customers",
-    "issue_token",
-    "create_blocking",
-    "create_booking",
-    "approve_booking",
-    "confirm_booking",
-    "cancel_booking",
-    "record_payment",
-    "manage_registration",
-    "approve_refund",
-    "manage_transfer",
-    "approve_cab",
-    "create_request",
-    "view_finance",
-    "view_legal",
-    "view_reports",
-    "view_pre_sales",
-    "view_post_sales",
-    "release_plot",
-    "view_plot_release",
-  ],
+  admin: ADMIN_CAPS,
+  // Same powers as Admin, confined to one branch by isDistrictScoped above.
+  general_manager: ADMIN_CAPS,
   // Only Admin holds `confirm_booking`, `cancel_booking` and `release_plot`.
   // A sales role raises a blocking/booking as 'pending' and waits for the Admin
   // to confirm it; to undo one it files a `request_cancellation` (with a reason)

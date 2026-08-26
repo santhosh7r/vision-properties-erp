@@ -1,8 +1,9 @@
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
+import { getDistrictScope } from "@/lib/scope";
 import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
-import { can } from "@/lib/roles";
+import { can, hasFullAccess } from "@/lib/roles";
 import { canActOnStage, isRequestComplete, type RequestStage } from "@/lib/requests";
 import { PageHeader } from "@/components/ui";
 import type { ServiceRequest, Customer } from "@/lib/types";
@@ -64,7 +65,10 @@ function toRow(r: RawRequest): RequestRow {
 export default async function RequestsPage() {
   const user = await requireUser();
   const sb = getSupabase();
-  const isAdmin = user.role === "admin";
+  const isAdmin = hasFullAccess(user.role);
+  // A branch General Manager holds the Admin's view of this page but only over
+  // their own district — the whole panel, filtered to their branch's projects.
+  const scope = await getDistrictScope(sb, user);
   // Admin only APPROVES requests on this panel — they never raise new ones.
   const canCreate = !isAdmin && can(user.role, "create_request");
 
@@ -82,11 +86,25 @@ export default async function RequestsPage() {
 
   if (isAdmin) {
     // Drafts are private to their author — admin never sees other people's drafts.
-    const { data, error } = await sb
+    let q = sb
       .from("service_requests")
       .select(SELECT)
       .neq("status", "draft")
       .order("created_at", { ascending: false });
+    // Branch GM: only requests against their own projects. `project_id.is.null`
+    // is kept in deliberately — a request with no project (an older row, before
+    // the field was required) belongs to no branch, and dropping it would make
+    // it invisible to every scoped approver rather than merely to the wrong one.
+    if (scope) {
+      q = scope.projectIds.length
+        ? q.or(`project_id.in.(${scope.projectIds.join(",")}),project_id.is.null`)
+        : // No district on the account, or a branch with no projects yet: fail
+          // closed to the unplaced rows only, never to the whole company.
+          scope.district
+          ? q.is("project_id", null)
+          : q.in("id", []);
+    }
+    const { data, error } = await q;
     if (error) migrationMissing = true;
     for (const r of (data ?? []) as RawRequest[]) byId.set(r.id, r);
   } else {
