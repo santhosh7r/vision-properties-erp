@@ -9,6 +9,7 @@ import { logAudit, notify } from "@/lib/audit";
 import { bookingInScope, plotInScope } from "@/lib/scope";
 import { isFlaggedExpired } from "@/lib/holds";
 import { totalPlotValue, exact } from "@/lib/format";
+import { cashAllowed } from "@/lib/options";
 import { computeAdvanceRequired, computeRefund, addWorkingDays } from "@/lib/sop";
 import type { BookMode, LoanTokenBy } from "@/lib/types";
 
@@ -20,9 +21,10 @@ function nullable(v: FormDataEntryValue | null): string | null {
   return t === "" ? null : t;
 }
 
-// Every captured field on a blocking/booking is mandatory (the ONE exception is
-// the customer's anniversary date, which is deliberately optional — see
-// CustomerFields, and note it is absent from CUSTOMER_REQUIRED below).
+// Every captured field on a blocking/booking is mandatory. The exceptions are
+// the customer's anniversary date and spouse details, which are deliberately
+// optional — see CustomerFields, and note they are absent from
+// CUSTOMER_REQUIRED below.
 // The forms mark them `required`, but a stale tab or a hand-rolled POST does not
 // run HTML validation — so the same list is enforced here, and a record can
 // never be saved half-filled again.
@@ -41,6 +43,8 @@ const CUSTOMER_REQUIRED = [
   "mobile",
   "email",
   "dob",
+  "father_name",
+  "father_mobile",
   "street",
   "area",
   "pincode",
@@ -241,6 +245,13 @@ export async function createBooking(formData: FormData): Promise<void> {
     redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=incomplete`);
   }
 
+  // Cash ceiling. The form does not offer Cash above it, but a stale tab or a
+  // hand-rolled POST would — so it is refused here too, before anything is
+  // written and before a customer is created.
+  if (paymentMode === "Cash" && !cashAllowed(amountPaidNow)) {
+    redirect(`/bookings/new?plot=${plot_id}&mode=${mode}&err=cash_limit`);
+  }
+
   // Resolve customer: existing id, or create new (with duplicate guard).
   let customer_id = s(formData.get("customer_id"));
   if (!customer_id) {
@@ -267,6 +278,11 @@ export async function createBooking(formData: FormData): Promise<void> {
           email: nullable(formData.get("email")),
           dob: nullable(formData.get("dob")),
           anniversary_date: nullable(formData.get("anniversary_date")),
+          father_name: nullable(formData.get("father_name")),
+          father_mobile: nullable(formData.get("father_mobile")),
+          // Optional — blank for an unmarried customer.
+          spouse_name: nullable(formData.get("spouse_name")),
+          spouse_mobile: nullable(formData.get("spouse_mobile")),
           street: nullable(formData.get("street")),
           area: nullable(formData.get("area")),
           pincode: nullable(formData.get("pincode")),
@@ -350,7 +366,7 @@ export async function createBooking(formData: FormData): Promise<void> {
   }
 
   // The plot deliberately STAYS 'available'. A hold moves inventory only once an
-  // Admin confirms it (see confirmBooking) — until then the pending booking above
+  // Admin or Post-Sales confirms it (see confirmBooking) — until then the pending
   // is the only thing standing between this plot and the next person to try.
 
   // Optional initial payment (blocking amount or advance).
@@ -421,6 +437,11 @@ export async function recordPayment(formData: FormData): Promise<void> {
   if (!booking_id || amount <= 0) return;
   if (!(await bookingInScope(sb, actor, booking_id))) return;
   if (await hiddenFromActor(sb, actor, booking_id)) return;
+  // Cash ceiling — the Mode select drops Cash above it, enforced here as well so
+  // a stale tab cannot post it. Nothing is written; the page says why.
+  if (mode === "Cash" && !cashAllowed(amount)) {
+    redirect(`/bookings/${booking_id}?error=cash_limit`);
+  }
 
   const { data: payment } = await sb
     .from("payments")
@@ -488,6 +509,21 @@ export async function updateBooking(formData: FormData): Promise<void> {
     (mayEditCustomer ? firstMissing(formData, CUSTOMER_REQUIRED) : null);
   if (missing) redirect(`/bookings/${id}/edit?missing=${missing}`);
 
+  // Cash ceiling on the booking-level mode, judged against what has actually
+  // been collected on this deal — a booking that took more than the limit
+  // cannot be relabelled as paid in cash. The form already hides the option;
+  // this refuses a stale tab that still had it.
+  if (nullable(formData.get("mode_of_payment")) === "Cash") {
+    const { data: paid } = await sb
+      .from("bookings")
+      .select("advance_paid")
+      .eq("id", id)
+      .maybeSingle();
+    if (!cashAllowed((paid as { advance_paid: number } | null)?.advance_paid ?? 0)) {
+      redirect(`/bookings/${id}/edit?err=cash_limit`);
+    }
+  }
+
   // The customer is edited through the booking, so resolve which record this
   // booking actually points at rather than trusting anything posted.
   const { data: bk } = await sb.from("bookings").select("customer_id").eq("id", id).maybeSingle();
@@ -527,6 +563,12 @@ export async function updateBooking(formData: FormData): Promise<void> {
         // Optional by design — clearing it is a legitimate edit, so it is
         // written as null rather than skipped.
         anniversary_date: nullable(formData.get("anniversary_date")),
+        father_name: nullable(formData.get("father_name")),
+        father_mobile: nullable(formData.get("father_mobile")),
+        // Optional too — clearing them is a legitimate edit, so they are
+        // written as null rather than skipped.
+        spouse_name: nullable(formData.get("spouse_name")),
+        spouse_mobile: nullable(formData.get("spouse_mobile")),
         street: nullable(formData.get("street")),
         area: nullable(formData.get("area")),
         pincode: nullable(formData.get("pincode")),
@@ -576,9 +618,11 @@ export async function updateBooking(formData: FormData): Promise<void> {
 // ---------------------------------------------------------------------------
 // CONFIRM / CANCEL (board: Booking List actions)
 // ---------------------------------------------------------------------------
-// ADMIN ONLY (`confirm_booking`). This is the step that makes a hold real: a
-// blocking/booking sits at 'pending' with the plot still reading 'available'
-// until an Admin lands here, and only now does the plot leave inventory.
+// ADMIN or the POST-SALES desk (`confirm_booking`). This is the step that makes
+// a hold real: a blocking/booking sits at 'pending' with the plot still reading
+// 'available' until one of them lands here, and only now does the plot leave
+// inventory. A branch desk is held to its own district by bookingInScope below,
+// so Post-Sales confirms its branch's deals and nobody else's.
 export async function confirmBooking(formData: FormData): Promise<void> {
   const actor = await requireCapability("confirm_booking");
   const sb = getSupabase();
@@ -952,6 +996,12 @@ export async function convertToBooking(formData: FormData): Promise<void> {
   const mode = nullable(formData.get("mode"));
   const loan_token_by = (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null;
 
+  // Cash ceiling, checked before the hold is promoted — otherwise a refused
+  // payment would leave a converted booking with no advance against it.
+  if (mode === "Cash" && !cashAllowed(Number(formData.get("amount") || 0))) {
+    redirect(`/bookings/${id}?error=cash_limit`);
+  }
+
   await sb
     .from("bookings")
     .update({
@@ -964,7 +1014,7 @@ export async function convertToBooking(formData: FormData): Promise<void> {
     })
     .eq("id", id);
   // The plot is NOT flipped to 'booked' here: the converted deal is back at
-  // 'pending' and an Admin has to confirm it again (confirmBooking does the
+  // 'pending' and Admin or Post-Sales has to confirm it again (confirmBooking does the
   // flip). The plot stays exactly as the blocking left it in the meantime.
 
   // Record the advance collected at conversion so the ledger + payment status

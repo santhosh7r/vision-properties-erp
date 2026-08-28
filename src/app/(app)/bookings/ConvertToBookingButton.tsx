@@ -10,6 +10,7 @@ import { convertToBooking } from "./actions";
 // paid (cash / cheque / UPI / home loan …). On submit the hold is promoted to a
 // booking AND the payment is recorded to the ledger. If the mode is a home loan,
 // PaymentModeFields also asks who arranged it (customer / senior director).
+// Above the cash ceiling the Cash option is not offered — see lib/options.
 export default function ConvertToBookingButton({
   bookingId,
   advanceRequired = 0,
@@ -24,6 +25,9 @@ export default function ConvertToBookingButton({
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Seeded with the advance required, then tracked so the Mode select drops
+  // "Cash" as soon as the amount passes the ceiling.
+  const [amount, setAmount] = useState(advanceRequired > 0 ? String(advanceRequired) : "");
 
   return (
     <>
@@ -50,7 +54,8 @@ export default function ConvertToBookingButton({
                   min={1}
                   step="0.01"
                   className="input"
-                  defaultValue={advanceRequired > 0 ? advanceRequired : undefined}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
                   required
                 />
                 {advanceRequired > 0 && (
@@ -59,7 +64,7 @@ export default function ConvertToBookingButton({
                   </p>
                 )}
               </div>
-              <PaymentModeFields modeName="mode" label="Payment Mode" required loanTokenBy />
+              <PaymentModeFields modeName="mode" label="Payment Mode" required loanTokenBy amount={Number(amount)} />
               <div className="sm:col-span-2 mt-1 flex justify-end gap-2">
                 <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>
                   Cancel

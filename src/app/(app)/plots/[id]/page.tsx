@@ -25,11 +25,16 @@ export default async function PlotDetailPage({
 
   const { data: plotData } = await sb
     .from("plots")
-    .select("*, projects(*)")
+    .select("*, projects(*), plot_categories(name)")
     .eq("id", id)
     .maybeSingle();
   if (!plotData) notFound();
-  const plot = plotData as Plot & { projects: Project };
+  const plot = plotData as Plot & {
+    projects: Project;
+    // The plot's category IS its type, and it is what the receipt prints in the
+    // "Sector" box — shown here so the desk can see what will appear on the bill.
+    plot_categories: { name: string } | null;
+  };
   const project = plot.projects;
   const value = plot.sqft * plot.price_per_sqft;
 
@@ -75,6 +80,7 @@ export default async function PlotDetailPage({
             <PlotStatusBadge status={plot.status} />
           </div>
           <Row label="Plot No">{plot.plot_no}</Row>
+          <Row label="Plot Type">{plot.plot_categories?.name ?? plot.block ?? "—"}</Row>
           <Row label="Sq.ft">{plot.sqft}</Row>
           <Row label="Price / Sq.ft">{inr(plot.price_per_sqft)}</Row>
           <Row label="Total Plot Value">

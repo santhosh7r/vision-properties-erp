@@ -2,6 +2,7 @@ import "server-only";
 import { getSupabase } from "./supabase";
 import { getDownlineIds } from "./hierarchy";
 import { withProjectScope, type DistrictScope } from "./scope";
+import { branchCustomerOrFilter } from "./customers";
 import { isSalesRole, isNetworkHead, hasFullAccess, type Role } from "./roles";
 import { shownStatus } from "./holds";
 import { HIDDEN_IN_LIST } from "./hidden-users";
@@ -343,6 +344,9 @@ export async function getReports(
   const inRequester = (q: any) => (ids ? q.in("requested_by", ids) : q);
   const inBookingOwner = (q: any) =>
     ids ? q.or(`created_by.in.(${list}),partner_id.in.(${list})`) : q;
+  // Resolved up front: the customers count below runs inside a Promise.all and
+  // cannot await. Null = this branch matches no client, so the count is 0.
+  const branchCustomers = scope ? await branchCustomerOrFilter(sb, scope) : null;
   const inBranch = (q: any) => withProjectScope(q, scope);
 
   const [
@@ -375,12 +379,13 @@ export async function getReports(
       if (ids) qq = qq.in("id", ids);
       return qq;
     }),
-    // Customers carry their own address district rather than a project, so they
-    // are matched on that — the same filter the Customers page uses.
+    // Customers hang off no project, and their address can be anywhere — so a
+    // branch's clients are the ones its staff entered or that bought in its
+    // projects. Same filter the Customers page uses (see lib/customers).
     count("customers", (q) => {
       const qq = inCreated(q);
       if (!scope) return qq;
-      return scope.district ? qq.ilike("district", scope.district) : qq.in("id", []);
+      return branchCustomers ? qq.or(branchCustomers) : qq.in("id", []);
     }),
   ]);
 
@@ -568,6 +573,11 @@ export async function getDashboard(scope: DashboardScope = {}): Promise<Dashboar
   // than the company's — never another district's.
   if (scoped || (byDistrict && userId)) activityQ = activityQ.eq("actor_id", userId!);
 
+  // Resolved before the Promise.all below, which cannot await inside.
+  const branchCustomers = byDistrict
+    ? await branchCustomerOrFilter(sb, { district: district ?? null, projectIds: projectIds! })
+    : null;
+
   const [
     projects,
     customers,
@@ -580,10 +590,13 @@ export async function getDashboard(scope: DashboardScope = {}): Promise<Dashboar
     projectNamesRes,
   ] = await Promise.all([
     byDistrict ? Promise.resolve(projectIds!.length) : count("projects"),
+    // A branch's clients are those its staff entered or that bought in its
+    // projects — not those whose home address happens to name the branch, which
+    // an address no longer has to (see lib/customers).
     count(
       "customers",
       byDistrict
-        ? (q) => (district ? q.ilike("district", district) : q.in("id", []))
+        ? (q) => (branchCustomers ? q.or(branchCustomers) : q.in("id", []))
         : scoped
           ? (q) => q.eq("created_by", userId!)
           : undefined,
@@ -769,6 +782,8 @@ export interface AdminInsights {
 export async function getAdminInsights(scope: DistrictScope | null = null): Promise<AdminInsights> {
   const sb = getSupabase();
   const nowKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
+  // Resolved before the Promise.all below, which cannot await inside.
+  const insightBranchCustomers = scope ? await branchCustomerOrFilter(sb, scope) : null;
 
   const [plotsRes, bookingsRes, projectsRes, customersRes, requestsPending] = await Promise.all([
     withProjectScope(sb.from("plots").select("status, sqft, price_per_sqft"), scope),
@@ -781,10 +796,12 @@ export async function getAdminInsights(scope: DistrictScope | null = null): Prom
     // Projects are the scope itself — filter on the id list rather than a
     // project_id column they do not have.
     withProjectScope(sb.from("projects").select("id, project_type"), scope, "id"),
-    // Customers carry their own address district, not a project.
+    // Customers hang off no project, and their address can be anywhere — the
+    // branch's clients are those its staff entered or that bought in its
+    // projects (see lib/customers).
     scope
-      ? scope.district
-        ? sb.from("customers").select("created_at").ilike("district", scope.district)
+      ? insightBranchCustomers
+        ? sb.from("customers").select("created_at").or(insightBranchCustomers)
         : sb.from("customers").select("created_at").in("id", [])
       : sb.from("customers").select("created_at"),
     count("service_requests", (q) => withProjectScope(q.eq("status", "pending"), scope)),

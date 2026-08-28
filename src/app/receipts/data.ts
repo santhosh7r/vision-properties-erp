@@ -50,7 +50,15 @@ export const PAYMENT_KIND_LABEL: Record<string, string> = {
   final: "Final Payment",
 };
 
-type FullBooking = Booking & { plots: Plot | null; customers: Customer | null; projects: Project | null };
+// The plot's category IS its type (COMMERCIAL / ELITE / PREMIUM / SIGNATURE …),
+// which is what the form's "Sector" box prints — see the note at `sector` below.
+type PlotWithType = Plot & { plot_categories: { name: string } | null };
+
+type FullBooking = Booking & {
+  plots: PlotWithType | null;
+  customers: Customer | null;
+  projects: Project | null;
+};
 
 // The blocks of the form that read the same on either receipt.
 function commonFields(b: FullBooking): Omit<ReceiptFields, "receiptNo" | "date"> {
@@ -77,7 +85,14 @@ function commonFields(b: FullBooking): Omit<ReceiptFields, "receiptNo" | "date">
     project: proj?.name ?? "",
     location: [proj?.city, proj?.district].filter(Boolean).join(", "),
     plotNo: p?.plot_no ?? "",
-    sector: p?.block ?? b.block ?? "",
+    // The stationery's "Sector" box is the plot's TYPE — its category on the
+    // project (COMMERCIAL / ELITE / PREMIUM / SIGNATURE …).
+    //
+    // It used to print `block`, which is why the box came out empty on every
+    // bill: migration 0004 removed Block from plot identity and stopped
+    // collecting it, so no plot created since has one. `block` is still read as
+    // a fallback for the legacy rows that do.
+    sector: p?.plot_categories?.name ?? p?.block ?? b.block ?? "",
     totalSqft: sqft != null ? num(sqft) : "",
     tentativeRegDate: fmtDateOrBlank(b.tentative_registration_date),
     directorNameId: join(b.director_name, b.director_code),
@@ -85,7 +100,9 @@ function commonFields(b: FullBooking): Omit<ReceiptFields, "receiptNo" | "date">
   };
 }
 
-const BOOKING_SELECT = "*, plots(*), customers(*), projects(*)";
+// plot_categories is embedded through plots.plot_category_id — the plot's type,
+// printed in the form's "Sector" box.
+const BOOKING_SELECT = "*, plots(*, plot_categories(name)), customers(*), projects(*)";
 
 // ---------------------------------------------------------------------------
 // The BOOKING / BLOCKING receipt — the deal as a whole.
@@ -96,18 +113,38 @@ export async function bookingReceiptFields(bookingId: string): Promise<ReceiptFi
   if (!data) return null;
   const b = data as FullBooking;
 
-  // `advance_paid` is the running total from the ledger (see recomputePayment),
-  // so a fully-paid deal shows the whole amount against the form's "Advance
-  // Amount" line — that line is what the stationery prints, and it is the sum
-  // the customer has actually handed over either way.
-  const paid = Number(b.advance_paid || 0) || Number(b.blocking_amount || 0);
+  // A bill is a receipt for ONE collection — the money handed over at the moment
+  // it is issued — so this one prints the payment taken when the deal was struck
+  // (the blocking amount, or the advance), and nothing else. Every later
+  // installment has its own receipt under the Payments table.
+  //
+  // It used to print `advance_paid`, the running LEDGER TOTAL kept by
+  // recomputePayment. That made the booking bill grow with every later payment:
+  // a deal that took ₹10,000 to block and ₹2,08,385 afterwards reprinted as a
+  // ₹2,18,385 receipt, claiming to acknowledge money this bill never took.
+  const { data: firstPayment } = await sb
+    .from("payments")
+    .select("amount, mode")
+    .eq("booking_id", bookingId)
+    .eq("status", "completed")
+    .order("paid_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const first = firstPayment as { amount: number; mode: string | null } | null;
+
+  // No ledger row at all (a record written before payments were tracked): fall
+  // back to what the deal says it took, as this receipt always did.
+  const paid = Number(first?.amount || 0) || Number(b.blocking_amount || 0) || Number(b.advance_paid || 0);
 
   return {
     ...commonFields(b),
     receiptNo: bookingReceiptNo(b),
     date: fmtDate(b.booked_date ?? b.created_at),
     amount: paid ? num(paid) : "",
-    mode: b.mode_of_payment ?? "",
+    // The mode of THAT collection. `mode_of_payment` on the booking is
+    // overwritten by every later payment (see recordPayment), so using it here
+    // would label this bill with a mode belonging to a different collection.
+    mode: first?.mode ?? b.mode_of_payment ?? "",
     amountWords: paid ? amountInWords(paid) : "",
   };
 }

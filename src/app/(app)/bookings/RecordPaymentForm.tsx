@@ -1,12 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import PaymentModeFields from "./PaymentModeFields";
 import { recordPayment } from "./actions";
 
 // Record Payment card on the booking detail page. The Mode select drives which
 // instrument-detail fields appear (cheque no / UPI txn id / UTR …) so Finance
-// captures the supporting reference for every non-cash collection.
+// captures the supporting reference for every non-cash collection. The amount is
+// tracked here so the Mode select can drop "Cash" once it passes the ceiling.
 export default function RecordPaymentForm({
   bookingId,
   balance,
@@ -14,6 +16,9 @@ export default function RecordPaymentForm({
   bookingId: string;
   balance: number;
 }) {
+  // Kept as a string: an empty box must stay empty, not snap back to 0.
+  const [amount, setAmount] = useState("");
+
   return (
     <form action={recordPayment} className="space-y-3">
       <input type="hidden" name="booking_id" value={bookingId} />
@@ -26,6 +31,8 @@ export default function RecordPaymentForm({
           step="0.01"
           max={balance > 0 ? balance : undefined}
           className="input"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
           required
         />
       </div>
@@ -38,7 +45,7 @@ export default function RecordPaymentForm({
         </select>
       </div>
 
-      <PaymentModeFields modeName="mode" label="Mode" required loanTokenBy />
+      <PaymentModeFields modeName="mode" label="Mode" required loanTokenBy amount={Number(amount)} />
 
       <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">
         Add Payment

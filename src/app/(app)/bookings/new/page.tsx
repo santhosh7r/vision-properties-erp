@@ -4,7 +4,8 @@ import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDistrictScope, seesAllRecords } from "@/lib/scope";
 import { isFlaggedExpired } from "@/lib/holds";
-import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
+import { ownBookedCustomerIds, ownCustomerOrFilter, branchCustomerOrFilter } from "@/lib/customers";
+import { CASH_LIMIT_LABEL } from "@/lib/options";
 import { PageHeader } from "@/components/ui";
 import type { Customer, Plot, Project } from "@/lib/types";
 import BookingForm from "./BookingForm";
@@ -67,7 +68,10 @@ export default async function NewBookingPage({
   let custQ = sb.from("customers").select("id, name, mobile").order("name");
   const scope = await getDistrictScope(sb, user);
   if (scope) {
-    custQ = scope.district ? custQ.ilike("district", scope.district) : custQ.in("id", []);
+    // Branch scope: who entered the client and which branch's projects they
+    // bought in — never their home address (see lib/customers).
+    const branchFilter = await branchCustomerOrFilter(sb, scope);
+    custQ = branchFilter ? custQ.or(branchFilter) : custQ.in("id", []);
   } else if (!isAdmin) {
     const bookedIds = await ownBookedCustomerIds(sb, user.id);
     custQ = custQ.or(ownCustomerOrFilter(user.id, bookedIds));
@@ -119,6 +123,12 @@ export default async function NewBookingPage({
           The plot was <b>not {mode === "blocking" ? "blocked" : "booked"}</b>: the full{" "}
           {mode === "blocking" ? "blocking amount" : "advance"} must be paid to lock it. It is still
           available — enter the full amount below to {mode === "blocking" ? "block" : "book"}.
+        </div>
+      )}
+      {!blocked && sp.err === "cash_limit" && (
+        <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+          Nothing was saved — <b>{CASH_LIMIT_LABEL}</b> is the most that may be taken in cash on a
+          plot. Reduce the amount paid now, or pay by cheque, bank transfer, UPI or loan.
         </div>
       )}
       {!blocked && sp.err === "incomplete" && (

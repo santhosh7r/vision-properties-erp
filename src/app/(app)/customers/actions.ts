@@ -33,6 +33,11 @@ export async function createCustomer(formData: FormData): Promise<void> {
     email: emptyToNull(formData.get("email")),
     dob: emptyToNull(formData.get("dob")),
     anniversary_date: emptyToNull(formData.get("anniversary_date")),
+    father_name: emptyToNull(formData.get("father_name")),
+    father_mobile: emptyToNull(formData.get("father_mobile")),
+    // Optional — blank for an unmarried customer.
+    spouse_name: emptyToNull(formData.get("spouse_name")),
+    spouse_mobile: emptyToNull(formData.get("spouse_mobile")),
     street: emptyToNull(formData.get("street")),
     area: emptyToNull(formData.get("area")),
     pincode: emptyToNull(formData.get("pincode")),
@@ -100,6 +105,11 @@ export async function updateCustomer(formData: FormData): Promise<void> {
     email: emptyToNull(formData.get("email")),
     dob: emptyToNull(formData.get("dob")),
     anniversary_date: emptyToNull(formData.get("anniversary_date")),
+    father_name: emptyToNull(formData.get("father_name")),
+    father_mobile: emptyToNull(formData.get("father_mobile")),
+    // Optional — blank for an unmarried customer.
+    spouse_name: emptyToNull(formData.get("spouse_name")),
+    spouse_mobile: emptyToNull(formData.get("spouse_mobile")),
     street: emptyToNull(formData.get("street")),
     area: emptyToNull(formData.get("area")),
     pincode: emptyToNull(formData.get("pincode")),

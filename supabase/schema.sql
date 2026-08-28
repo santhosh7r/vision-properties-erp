@@ -254,15 +254,19 @@ create table if not exists customers (
   mobile             text not null,                  -- 2. Customer Mobile*
   email              text,                           -- 3. Email
   dob                date,                           -- 4. D.O.B
-  anniversary_date   date,                           -- 5. Anniversary (the ONE optional field)
-  street             text,                           -- 5. Street
-  area               text,                           -- 6. Area
-  pincode            text,                           -- 7. Pincode (auto-fills state/district/country)
-  state              text,                           -- 8. State
-  district           text,                           -- 9. District
-  country            text,                           -- 10. Country
-  occupation         text,                           -- 11. Occupation
-  occupation_remarks text,                           -- 12. Occupation Remarks
+  anniversary_date   date,                           -- 5. Anniversary (optional)
+  father_name        text,                           -- 6. Father's Name
+  father_mobile      text,                           -- 7. Father's Mobile
+  spouse_name        text,                           -- 8. Spouse's Name (optional)
+  spouse_mobile      text,                           -- 9. Spouse's Mobile (optional)
+  street             text,                           -- 10. Street
+  area               text,                           -- 11. Area
+  pincode            text,                           -- 12. Pincode
+  state              text,                           -- 13. State
+  district           text,                           -- 14. District
+  country            text,                           -- 15. Country
+  occupation         text,                           -- 16. Occupation
+  occupation_remarks text,                           -- 17. Occupation Remarks
   created_by         uuid references users(id) on delete set null,
   created_at         timestamptz not null default now()
 );

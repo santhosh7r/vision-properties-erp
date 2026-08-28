@@ -243,8 +243,10 @@ export type Capability =
   | "create_blocking"
   | "create_booking"
   | "approve_booking"
-  // ADMIN ONLY. Every blocking/booking is raised as 'pending' and does nothing
-  // to the plot until an Admin confirms it here — see confirmBooking.
+  // Admin and the Post-Sales desk. Every blocking/booking is raised as 'pending'
+  // and does nothing to the plot until one of them confirms it here — see
+  // confirmBooking. A Pre-Sales desk raises holds but does not confirm them, so
+  // the two halves of a branch stay separate.
   | "confirm_booking"
   | "cancel_booking"
   | "request_cancellation"
@@ -302,9 +304,9 @@ const PRE_SALES_CAPS: Capability[] = [
 // Post-Sales: everything after the deal is signed — collections, receipts,
 // cancellation + refund, and registration. Blocking / booking now sits in the
 // Post-Sales section of the sidebar and is worked by BOTH branch desks, so this
-// desk holds the create powers too (confirming stays Admin-only). Releasing a
-// plot back to inventory is Admin-only as well — this desk sees the queue build
-// up but does not act on it.
+// desk holds the create powers too — AND confirms them: whoever raises a hold
+// (a sales role, Pre-Sales, or this desk), Admin or Post-Sales makes it real.
+// Releasing a plot back to inventory is this desk's own queue too.
 const POST_SALES_CAPS: Capability[] = [
   // Both desks work the client book and look partners up — a Post-Sales desk
   // that can raise a blocking needs the customer behind it just as much.
@@ -312,6 +314,10 @@ const POST_SALES_CAPS: Capability[] = [
   "view_partners",
   "create_blocking",
   "create_booking",
+  // Whoever raises a blocking/booking, the desk that owns it confirms it —
+  // Admin or Post-Sales. confirmBooking is district-scoped (bookingInScope), so
+  // a branch desk can only confirm deals in its OWN branch's projects.
+  "confirm_booking",
   "record_payment",
   "cancel_booking",
   "approve_refund",
@@ -359,10 +365,11 @@ const CAPABILITIES: Record<Role, Capability[]> = {
   admin: ADMIN_CAPS,
   // Same powers as Admin, confined to one branch by isDistrictScoped above.
   general_manager: ADMIN_CAPS,
-  // Only Admin holds `confirm_booking`, `cancel_booking` and `release_plot`.
-  // A sales role raises a blocking/booking as 'pending' and waits for the Admin
-  // to confirm it; to undo one it files a `request_cancellation` (with a reason)
-  // for an Admin to action — see Payments & Cancellation.
+  // No sales role holds `confirm_booking`, `cancel_booking` or `release_plot` —
+  // those sit with Admin and the Post-Sales desk. A sales role raises a
+  // blocking/booking as 'pending' and waits for one of them to confirm it; to
+  // undo one it files a `request_cancellation` (with a reason) for them to
+  // action — see Payments & Cancellation.
   senior_director: [
     "manage_team",
     "manage_customers",

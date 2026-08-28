@@ -196,8 +196,16 @@ export default function BookingForm({ mode, plot, project }: Props) {
               min={0}
             />
           </div>
-          {/* Choosing "Loan" reveals the lender fields plus "Loan Taken By". */}
-          <PaymentModeFields modeName="payment_mode" label="Payment Mode" loanTokenBy required />
+          {/* Choosing "Loan" reveals the lender fields plus "Loan Taken By".
+              Above the cash ceiling, "Cash" drops out of the list — the
+              amount being paid now is what the ceiling applies to. */}
+          <PaymentModeFields
+            modeName="payment_mode"
+            label="Payment Mode"
+            loanTokenBy
+            required
+            amount={paidNow}
+          />
         </div>
 
         {/* Only warn when short — the full-paid "success" banner is dropped; a

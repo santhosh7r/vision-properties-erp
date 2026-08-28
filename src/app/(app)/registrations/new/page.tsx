@@ -5,7 +5,7 @@ import { getSupabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
 import { SubmitButton } from "@/components/SubmitButton";
-import PaymentModeFields from "../../bookings/PaymentModeFields";
+import RegistrationPaymentFields from "./RegistrationPaymentFields";
 import { createRegistration } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -86,23 +86,7 @@ export default async function NewRegistrationPage({
             amount blank if the plot is already fully paid.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="label">Amount (₹)</label>
-              <input
-                name="amount"
-                type="number"
-                min={0}
-                step="0.01"
-                className="input"
-                defaultValue={balance > 0 ? balance : undefined}
-              />
-              {balance > 0 && (
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  Outstanding balance: ₹{balance.toLocaleString("en-IN")}
-                </p>
-              )}
-            </div>
-            <PaymentModeFields modeName="mode" label="Payment Mode" loanTokenBy />
+            <RegistrationPaymentFields balance={balance} />
           </div>
         </div>
 

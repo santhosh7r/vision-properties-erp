@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDistrictScope } from "@/lib/scope";
+import { customerInBranch } from "@/lib/customers";
 import { hasFullAccess } from "@/lib/roles";
 import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
 import { loanTokenByLabel } from "@/lib/options";
@@ -27,12 +28,12 @@ export default async function CustomerDetailPage({
   if (!c) notFound();
   const customer = c as Customer;
   // A sales user may only view a customer they created. Admin sees all; a branch
-  // desk sees every client of its own district (same rule as the list).
+  // desk sees every client of its own branch (same rule as the list) — matched on
+  // who entered them and where they bought, not on their address, which can be
+  // anywhere in the country.
   const scope = await getDistrictScope(sb, user);
-  const inDistrict =
-    !!scope?.district &&
-    (customer.district ?? "").trim().toLowerCase() === scope.district.trim().toLowerCase();
-  if (!hasFullAccess(user.role) && !inDistrict && customer.created_by !== user.id) notFound();
+  const inBranch = scope ? await customerInBranch(sb, scope, customer) : false;
+  if (!hasFullAccess(user.role) && !inBranch && customer.created_by !== user.id) notFound();
 
   const { data: bk } = await sb
     .from("bookings")
@@ -81,6 +82,10 @@ export default async function CustomerDetailPage({
           <span className="text-sm font-semibold">Customer Details</span>
           <Row label="Email">{customer.email ?? "—"}</Row>
           <Row label="D.O.B">{fmtDate(customer.dob)}</Row>
+          <Row label="Father&apos;s Name">{customer.father_name ?? "—"}</Row>
+          <Row label="Father&apos;s Mobile">{customer.father_mobile ?? "—"}</Row>
+          <Row label="Spouse&apos;s Name">{customer.spouse_name ?? "—"}</Row>
+          <Row label="Spouse&apos;s Mobile">{customer.spouse_mobile ?? "—"}</Row>
           <Row label="Street">{customer.street ?? "—"}</Row>
           <Row label="Area">{customer.area ?? "—"}</Row>
           <Row label="Pincode">{customer.pincode ?? "—"}</Row>

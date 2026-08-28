@@ -3,9 +3,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SessionUser } from "@/lib/session";
 import { can } from "@/lib/roles";
 import { getDistrictScope, seesAllRecords } from "@/lib/scope";
-import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
+import { ownBookedCustomerIds, ownCustomerOrFilter, branchCustomerOrFilter } from "@/lib/customers";
 import { type FlowData } from "./BookingsWorkspace";
 import { type FlowProject } from "./StartBookingFlow";
+
+// Plot numbers read as numbers, not text: "9" comes before "62", and "122"
+// before "1468". Falls back to a natural (numeric-aware) compare so mixed
+// labels like "A-12" still sort sensibly. Gaps in the numbering are fine.
+const plotNoCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+function comparePlotNo(a: string, b: string) {
+  return plotNoCollator.compare(a ?? "", b ?? "");
+}
 
 // Loads the data the "Block / Book" create flow needs: active projects with
 // their AVAILABLE plots (+ categories) and the customers this user may pick.
@@ -37,11 +45,11 @@ export async function loadBookingFlow(
 
   let custQuery = sb.from("customers").select("id, name, mobile");
   if (scope) {
-    // Customers carry their own district (see the customer form), so a desk's
-    // client list follows the same boundary as its inventory.
-    // No district on the account → the desk is unconfigured and sees nobody,
-    // matching how getDistrictScope fails closed on inventory.
-    custQuery = scope.district ? custQuery.ilike("district", scope.district) : custQuery.in("id", []);
+    // A desk's client list is its BRANCH's, established from who entered them
+    // and which branch's projects they bought in — never their home address,
+    // which can be anywhere (see the branch-scope note in lib/customers).
+    const branchFilter = await branchCustomerOrFilter(sb, scope);
+    custQuery = branchFilter ? custQuery.or(branchFilter) : custQuery.in("id", []);
   } else if (!isAdmin) {
     custQuery = custQuery.or(custScopeFilter);
   }
@@ -103,7 +111,8 @@ export async function loadBookingFlow(
           sqft: pl.sqft,
           price_per_sqft: pl.price_per_sqft,
           plot_category_id: plotGroup.get(pl.id) ?? null,
-        })),
+        }))
+        .sort((a, b) => comparePlotNo(a.plot_no, b.plot_no)),
     }))
     .filter((p) => p.plots.length > 0);
 

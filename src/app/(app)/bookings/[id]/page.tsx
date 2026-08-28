@@ -6,7 +6,7 @@ import { can, hasFullAccess } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
 import { shownStatus } from "@/lib/holds";
 import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
-import { loanTokenByLabel } from "@/lib/options";
+import { CASH_LIMIT_LABEL, loanTokenByLabel } from "@/lib/options";
 import Countdown from "@/components/Countdown";
 import {
   PageHeader,
@@ -49,6 +49,9 @@ export const dynamic = "force-dynamic";
 const BOOKING_ERRORS: Record<string, string> = {
   already_registered:
     "This plot is already registered, so the booking can’t be cancelled. A registered plot is sold and final.",
+  cash_limit:
+    `Nothing was recorded — ${CASH_LIMIT_LABEL} is the most that may be taken in cash on a plot. ` +
+    "Record a larger collection as cheque, bank transfer, UPI or loan.",
 };
 
 export default async function BookingDetailPage({
@@ -83,12 +86,14 @@ export default async function BookingDetailPage({
 
   const { data } = await sb
     .from("bookings")
-    .select("*, plots(*), customers(*), projects(*)")
+    .select("*, plots(*, plot_categories(name)), customers(*), projects(*)")
     .eq("id", id)
     .maybeSingle();
   if (!data) notFound();
   const raw = data as Booking & {
-    plots: Plot;
+    // plot_categories is the plot's TYPE — the value the receipt prints in its
+    // "Sector" box (see app/receipts/data.ts).
+    plots: Plot & { plot_categories: { name: string } | null };
     customers: Customer;
     projects: Project;
   };
@@ -206,6 +211,8 @@ export default async function BookingDetailPage({
             <Grid>
               <F label="Project">{b.projects.name}</F>
               <F label="Plot No — Sq.ft">{b.plots.plot_no} — {b.plot_sqft}</F>
+              {/* The plot's type — what the receipt prints in its "Sector" box. */}
+              <F label="Plot Type">{b.plots.plot_categories?.name ?? b.plots.block ?? "—"}</F>
               <F label="Total Plot Value">{inr(b.total_plot_value)}</F>
             </Grid>
           </Section>
@@ -215,6 +222,10 @@ export default async function BookingDetailPage({
               <F label="Name">{b.customers.name}</F>
               <F label="Mobile">{b.customers.mobile}</F>
               <F label="D.O.B">{fmtDate(b.customers.dob)}</F>
+              <F label="Father&apos;s Name">{b.customers.father_name ?? "—"}</F>
+              <F label="Father&apos;s Mobile">{b.customers.father_mobile ?? "—"}</F>
+              <F label="Spouse&apos;s Name">{b.customers.spouse_name ?? "—"}</F>
+              <F label="Spouse&apos;s Mobile">{b.customers.spouse_mobile ?? "—"}</F>
               <F label="Occupation">{b.customers.occupation ?? "—"}</F>
               <F label="Address">
                 {[b.customers.street, b.customers.area, b.customers.district, b.customers.state, b.customers.pincode]

@@ -130,8 +130,13 @@ export interface Customer {
   mobile: string;
   email: string | null;
   dob: string | null;
-  // Optional — the only customer field that may be blank (see CustomerFields).
+  // Optional, alongside the spouse pair below (see CustomerFields).
   anniversary_date: string | null;
+  father_name: string | null;
+  father_mobile: string | null;
+  // Optional — blank for an unmarried customer.
+  spouse_name: string | null;
+  spouse_mobile: string | null;
   street: string | null;
   area: string | null;
   pincode: string | null;

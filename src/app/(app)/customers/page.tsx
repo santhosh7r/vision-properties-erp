@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
-import { ownBookedCustomerIds, ownCustomerOrFilter, networkBookedCustomerIds, networkCustomerOrFilter } from "@/lib/customers";
+import { ownBookedCustomerIds, ownCustomerOrFilter, networkBookedCustomerIds, networkCustomerOrFilter, branchCustomerOrFilter } from "@/lib/customers";
 import { getDownlineIds } from "@/lib/hierarchy";
 import { getDistrictScope, seesAllRecords } from "@/lib/scope";
 import { isNetworkHead } from "@/lib/roles";
@@ -21,7 +21,8 @@ export default async function CustomersPage() {
   // booking they made. A customer is "theirs" when they created it OR booked with
   // it (as creator or partner). Only the network head aggregates the team.
   // A branch desk (Pre-Sales) is the exception to the ownership rule: it works
-  // every client of its DISTRICT, whoever entered them.
+  // every client of its BRANCH, whoever entered them — see the branch-scope note
+  // in lib/customers.
   const isAdmin = seesAllRecords(user);
   const scope = await getDistrictScope(sb, user);
   let query = sb
@@ -29,7 +30,10 @@ export default async function CustomersPage() {
     .select("*, bookings(count)")
     .order("created_at", { ascending: false });
   if (scope) {
-    query = scope.district ? query.ilike("district", scope.district) : query.in("id", []);
+    // Branch scope keys off who entered the client and which branch's projects
+    // they bought in — NOT their home address, which can be anywhere.
+    const branchFilter = await branchCustomerOrFilter(sb, scope);
+    query = branchFilter ? query.or(branchFilter) : query.in("id", []);
   } else if (!isAdmin) {
     if (isNetworkHead(user.role)) {
       const ids = await getDownlineIds(sb, user.id);

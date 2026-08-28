@@ -9,6 +9,7 @@ import CustomerFields from "@/components/CustomerFields";
 import type { Booking, Customer, Plot, Project } from "@/lib/types";
 import { updateBooking } from "../../actions";
 import PartnerDetailsFields from "../../PartnerDetailsFields";
+import { CASH_LIMIT_LABEL } from "@/lib/options";
 import PaymentModeFields from "../../PaymentModeFields";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -93,6 +94,14 @@ export default async function EditBookingPage({
         </div>
       )}
 
+      {err === "cash_limit" && (
+        <div className="mb-6 max-w-3xl rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+          Nothing was saved — <b>{CASH_LIMIT_LABEL}</b> is the most that may be taken in cash on a
+          plot. More than that has already been collected on this booking, so its mode of payment
+          cannot be Cash. Choose cheque, bank transfer, UPI or loan.
+        </div>
+      )}
+
       <form action={updateBooking} className="max-w-3xl space-y-6">
         <input type="hidden" name="id" value={b.id} />
 
@@ -168,7 +177,10 @@ export default async function EditBookingPage({
             </div>
             {/* "Loan Taken By" appears only when the mode is Loan — same rule
                 as the booking form. Instrument details belong to an individual
-                payment, not to the booking, so they stay off here. */}
+                payment, not to the booking, so they stay off here.
+                The cash ceiling is judged against what has actually been
+                collected on this deal, so a booking that took more than the
+                limit cannot be (re)labelled as paid in cash. */}
             <PaymentModeFields
               modeName="mode_of_payment"
               label="Mode of Payment"
@@ -177,6 +189,7 @@ export default async function EditBookingPage({
               loanTokenBy
               instrumentFields={false}
               required
+              amount={b.advance_paid ?? 0}
             />
             <div>
               <label className="label">Booked Date *</label>

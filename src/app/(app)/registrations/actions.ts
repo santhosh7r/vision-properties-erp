@@ -6,6 +6,7 @@ import { requireCapability } from "@/lib/auth";
 import { logAudit, notify } from "@/lib/audit";
 import { getDistrictScope, projectInScope } from "@/lib/scope";
 import { exact } from "@/lib/format";
+import { cashAllowed } from "@/lib/options";
 
 function s(v: FormDataEntryValue | null): string {
   return String(v || "").trim();
@@ -27,6 +28,17 @@ export async function createRegistration(formData: FormData): Promise<void> {
   const name_of_registrant = s(formData.get("name_of_registrant"));
 
   if (!plot_id || !project_id || !register_date || !register_number || !name_of_registrant) return;
+
+  // Cash ceiling on the amount collected at registration. The Payment Mode
+  // select drops Cash above it; refused here too so a stale tab cannot post it,
+  // and refused BEFORE the registration is written so nothing is half-done.
+  if (
+    nullable(formData.get("mode")) === "Cash" &&
+    !cashAllowed(Number(formData.get("amount") || 0))
+  ) {
+    if (booking_id) redirect(`/bookings/${booking_id}?error=cash_limit`);
+    return;
+  }
 
   // A branch desk may only register plots in its own district.
   if (!projectInScope(await getDistrictScope(sb, actor), project_id)) return;

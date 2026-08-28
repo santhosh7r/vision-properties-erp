@@ -51,6 +51,29 @@ export const PAYMENT_MODES = [
   "Other",
 ];
 
+// Cash ceiling on a property deal: anything above ₹20,000 has to go through a
+// traceable instrument (cheque / bank transfer / UPI / loan), so "Cash" is not
+// offered at all once the amount being collected crosses it. Enforced in the
+// browser (the option is absent from the Mode select) AND in the server actions,
+// so a stale tab or a hand-rolled POST cannot save it either.
+export const CASH_LIMIT = 20_000;
+
+// ₹20,000 exactly is still allowed — the limit is a ceiling, not a threshold.
+// An absent/blank amount is NOT treated as over the limit: a form that has not
+// been filled in yet keeps every mode on offer.
+export function cashAllowed(amount: number | null | undefined): boolean {
+  return !(Number(amount) > CASH_LIMIT);
+}
+
+export function paymentModesFor(amount: number | null | undefined): string[] {
+  return cashAllowed(amount) ? PAYMENT_MODES : PAYMENT_MODES.filter((m) => m !== "Cash");
+}
+
+export const CASH_LIMIT_LABEL = `₹${CASH_LIMIT.toLocaleString("en-IN")}`;
+
+export const CASH_LIMIT_NOTE =
+  `Cash is not available above ${CASH_LIMIT_LABEL} — pay by cheque, bank transfer, UPI or loan.`;
+
 // Instrument details captured per payment mode. Persisted into three reusable
 // payments columns (reference / bank_name / instrument_date — migration 0020);
 // the form renders only the fields listed for the currently-selected mode.
@@ -115,9 +138,14 @@ export function isValueCoupon(type: string): boolean {
   return VALUE_COUPON_TYPES.includes(type);
 }
 
-// The single, app-wide district master. District is always a fixed dropdown —
-// never a free-text field — and these are the only selectable values everywhere
-// (bookings, customers, projects, users, profile). Add more here when needed.
+// The company's own branch master: the districts Vision Properties operates in.
+// It is the fixed dropdown behind everything that really is branch-bound —
+// projects, users, profiles, partner registration — and the values a desk can be
+// scoped to. Add more here when the company opens a branch.
+//
+// NOT an address vocabulary. A CUSTOMER's address district is free text filled
+// from their pincode (see components/CustomerFields): buyers live all over the
+// country, and confining their address to the branch list was wrong.
 export const DISTRICTS = ["Chennai", "Trichy"];
 
 // Who took the loan — asked only when the payment mode is "Loan". The customer,
