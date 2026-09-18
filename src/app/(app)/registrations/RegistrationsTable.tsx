@@ -32,6 +32,7 @@ export default function RegistrationsTable({ rows }: { rows: RegistrationRow[] }
       search={(r) => `${shortRef(r.bookingId)} ${r.project} ${r.plot} ${r.register_number} ${r.registrant}`}
       searchPlaceholder="Search register no, project, registrant…"
       emptyMessage="No registrations yet."
+      getRowHref={(r) => `/registrations/${r.id}`}
     />
   );
 }

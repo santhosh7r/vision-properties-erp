@@ -420,7 +420,7 @@ export default async function BookingDetailPage({
                 </Link>
               )}
               {reg && (
-                <Link href="/registrations" className="btn-ghost w-full">View Registration</Link>
+                <Link href={`/registrations/${reg.id}`} className="btn-ghost w-full">View Registration</Link>
               )}
             </div>
           )}
