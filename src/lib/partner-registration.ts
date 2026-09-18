@@ -52,6 +52,26 @@ export function generatePassword(len = 10): string {
   return out;
 }
 
+/**
+ * A temporary password for an ADMIN-DRIVEN RESET: the company name, then a
+ * random tail — e.g. `Vision@k7Qm2xPt`.
+ *
+ * The "Vision@" prefix is branding and legibility only, so the person on the
+ * phone recognises what they are being read. It is NOT the secret: every reset
+ * gets a fresh random 8-character tail from the unambiguous alphabet above
+ * (56^8 ≈ 9.6 × 10^13 combinations), so no two accounts ever share a password
+ * and knowing the prefix tells an attacker nothing useful.
+ *
+ * Deliberately NOT a fixed default like "Vision@123". A shared, guessable
+ * password would mean every freshly-reset account in the company is open to
+ * anyone who has ever been given one — and a partner who never logs in leaves it
+ * standing indefinitely. It is also only ever valid once: the account is flagged
+ * must_change_password, so it is spent the moment they sign in.
+ */
+export function generateResetPassword(): string {
+  return `Vision@${generatePassword(8)}`;
+}
+
 function s(v: FormDataEntryValue | null): string {
   return String(v || "").trim();
 }

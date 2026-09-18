@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import CopyText from "./CopyText";
 import { DISTRICTS } from "@/lib/options";
 
 // The declaration the partner signs — verbatim from the VISION PROPERTIES
@@ -251,7 +252,13 @@ export function NewPartnerCredentials({
         {password && (
           <div>
             <dt className="text-xs text-[var(--muted)]">Temporary password</dt>
-            <dd className="font-mono text-base font-semibold">{password}</dd>
+            {/* One press to copy — this is about to be pasted into WhatsApp or
+                an SMS, and mis-typing a generated password is the single most
+                common reason a new login "does not work". */}
+            <dd className="mt-0.5 flex items-center gap-2">
+              <span className="select-all font-mono text-base font-semibold">{password}</span>
+              <CopyText value={password} label="Copy" />
+            </dd>
           </div>
         )}
       </dl>

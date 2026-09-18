@@ -274,6 +274,12 @@ export type Capability =
   // desk works the queue day to day and needs to see what is waiting and chase
   // it, but the release itself stays the Admin's call.
   | "view_plot_release"
+  // ADMIN ONLY — and the only capability deliberately NOT in ADMIN_CAPS, so a
+  // General Manager (who otherwise holds that whole set) cannot reset anyone's
+  // password. Resetting a login is the one action that hands over another
+  // person's identity, so it stays with the company Admin rather than being
+  // delegated to a branch. See resetUserPassword in users/actions.ts.
+  | "reset_password"
   // Issue / redeem tokens & coupons on the Issue Token page. Split out from
   // `manage_users` (admin-only) so the Pre-Sales desk can hand a Cab Token to a
   // Director without also gaining the power to block or re-level accounts.
@@ -362,7 +368,10 @@ const ADMIN_CAPS: Capability[] = [
 ];
 
 const CAPABILITIES: Record<Role, Capability[]> = {
-  admin: ADMIN_CAPS,
+  // `reset_password` is added HERE rather than to ADMIN_CAPS on purpose: it is
+  // the one power a General Manager must not inherit (see the capability's note
+  // above). Everything else the two roles hold stays derived from one list.
+  admin: [...ADMIN_CAPS, "reset_password"],
   // Same powers as Admin, confined to one branch by isDistrictScoped above.
   general_manager: ADMIN_CAPS,
   // No sales role holds `confirm_booking`, `cancel_booking` or `release_plot` —

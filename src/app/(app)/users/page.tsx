@@ -1,7 +1,7 @@
 import { requireCapability } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
-import { creatableRolesUnder, isSalesRole, hasFullAccess, type Role } from "@/lib/roles";
+import { can, creatableRolesUnder, isSalesRole, hasFullAccess, type Role } from "@/lib/roles";
 import { HIDDEN_IN_LIST } from "@/lib/hidden-users";
 import { PageHeader } from "@/components/ui";
 import type { User } from "@/lib/types";
@@ -129,7 +129,14 @@ export default async function UsersPage({
   return (
     <>
       <PageHeader title={head.title} subtitle={head.subtitle} />
-      <UsersTable rows={rows} managers={managers} mode="manage" />
+      {/* Reset Password is Admin-only: a General Manager holds `manage_users`
+          and reaches this page, but not `reset_password`. */}
+      <UsersTable
+        rows={rows}
+        managers={managers}
+        mode="manage"
+        canResetPassword={can(actor.role as Role, "reset_password")}
+      />
     </>
   );
 }

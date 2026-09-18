@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui";
 import { ROLE_LABELS, ROLES, hasFullAccess, type Role } from "@/lib/roles";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { ManagerOption } from "./AddUserForm";
+import { ResetPasswordModal } from "./ResetPassword";
 import { toggleUserActive, updateUserPlacement } from "./actions";
 
 export interface UserRow {
@@ -30,14 +31,24 @@ export default function UsersTable({
   rows,
   managers,
   mode = "manage",
+  canResetPassword = false,
 }: {
   rows: UserRow[];
   managers: ManagerOption[];
   mode?: UsersTableMode;
+  /**
+   * Show the Reset Password action. Driven by the `reset_password` capability,
+   * which only the company Admin holds — a General Manager reaches this same
+   * page (they have `manage_users`) and must NOT see the button. The server
+   * action re-checks the capability, so this is presentation only.
+   */
+  canResetPassword?: boolean;
 }) {
   const [editing, setEditing] = useState<UserRow | null>(null);
+  const [resetting, setResetting] = useState<UserRow | null>(null);
   const showPlacement = mode === "manage" || mode === "placement";
   const showBlock = mode === "manage" || mode === "block";
+  const showReset = canResetPassword && (mode === "manage" || mode === "block");
 
   const columns: Column<UserRow>[] = [
     { id: "name", header: "Name", sort: (r) => r.full_name.toLowerCase(), cell: (r) => (
@@ -63,6 +74,16 @@ export default function UsersTable({
                   style={{ padding: "5px 12px", fontSize: 12 }}
                 >
                   Change Team
+                </button>
+              )}
+              {showReset && (
+                <button
+                  type="button"
+                  onClick={() => setResetting(r)}
+                  className="btn-ghost"
+                  style={{ padding: "5px 12px", fontSize: 12 }}
+                >
+                  Reset Password
                 </button>
               )}
               {showBlock && (
@@ -96,6 +117,7 @@ export default function UsersTable({
       />
 
       {editing && <ChangeTeamModal row={editing} managers={managers} onClose={() => setEditing(null)} />}
+      {resetting && <ResetPasswordModal row={resetting} onClose={() => setResetting(null)} />}
     </>
   );
 }
