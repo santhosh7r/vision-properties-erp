@@ -14,6 +14,17 @@ import {
   normProjectStatus,
   normPlotStatus,
 } from "@/lib/import-spec";
+import { toFailure } from "@/lib/errors/action";
+
+// The database's own message is never put in front of the person uploading a
+// spreadsheet: it names tables, columns and constraints, and it is unreadable
+// besides. The real error (SQLSTATE, detail, hint) is already captured for the
+// Error Logs page; this is the sentence that goes into the import report, with
+// the reference code that finds it.
+async function importRejectionMessage(error: unknown): Promise<string> {
+  const failure = await toFailure(error, { subject: "file", action: "imported" });
+  return `Nothing was saved. ${failure.error}`;
+}
 
 // ============================================================================
 // Bulk import — STRICT, ALL-OR-NOTHING, CHECK BEFORE WRITE.
@@ -517,7 +528,7 @@ export async function importProjects(_prev: ImportState, formData: FormData): Pr
   if (error) {
     return {
       phase: "invalid",
-      report: buildReport(file, sheet, [{ row: null, column: "—", message: `Nothing was saved — the database rejected the file: ${error.message}` }], previewHeaders, previewRows),
+      report: buildReport(file, sheet, [{ row: null, column: "—", message: await importRejectionMessage(error) }], previewHeaders, previewRows),
     };
   }
 
@@ -617,7 +628,7 @@ export async function importPlots(_prev: ImportState, formData: FormData): Promi
     if (createdCatIds.length) await sb.from("plot_categories").delete().in("id", createdCatIds);
     return {
       phase: "invalid",
-      report: buildReport(file, sheet, [{ row: null, column: "—", message: `Nothing was saved — the database rejected the file: ${error.message}` }], previewHeaders, previewRows),
+      report: buildReport(file, sheet, [{ row: null, column: "—", message: await importRejectionMessage(error) }], previewHeaders, previewRows),
     };
   }
 

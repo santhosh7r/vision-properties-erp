@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import ErrorMonitor from "@/components/ErrorMonitor";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,7 +26,14 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {/* Installs the browser-wide net for uncaught exceptions, unhandled
+            promise rejections, failed subresources and failed API calls. Mounted
+            here so it covers every page — signed in or not — including the login
+            screen and the public feedback form. Renders nothing. */}
+        <ErrorMonitor />
+        {children}
+      </body>
     </html>
   );
 }

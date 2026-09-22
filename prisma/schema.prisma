@@ -1,0 +1,678 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model audit_log {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actor_id   String?  @db.Uuid
+  actor_name String?
+  entity     String
+  entity_id  String?  @db.Uuid
+  action     String
+  details    String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users?   @relation(fields: [actor_id], references: [id], onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_audit_created")
+  @@index([entity, entity_id], map: "idx_audit_entity")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model bookings {
+  id                                        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  plot_id                                   String             @unique(map: "uniq_active_booking_per_plot", where: raw("(status = ANY (ARRAY['pending'::booking_status, 'confirmed'::booking_status]))")) @db.Uuid
+  customer_id                               String             @db.Uuid
+  project_id                                String             @db.Uuid
+  block                                     String?
+  plot_sqft                                 Decimal?           @db.Decimal
+  total_plot_value                          Decimal            @default(0) @db.Decimal
+  nominee_name                              String?
+  nominee_mobile                            String?
+  nominee_relationship                      String?
+  partner_id                                String?            @db.Uuid
+  partner_name                              String?
+  director_id                               String?            @db.Uuid
+  director_name                             String?
+  tentative_registration_date               DateTime?          @db.Date
+  mode_of_payment                           String?
+  loan_token_by                             loan_token_by?
+  booked_date                               DateTime?          @db.Date
+  remarks                                   String?
+  book_mode                                 book_mode
+  blocking_amount                           Decimal            @default(0) @db.Decimal
+  advance_required                          Decimal            @default(0) @db.Decimal
+  advance_paid                              Decimal            @default(0) @db.Decimal
+  status                                    booking_status     @default(pending)
+  payment_status                            payment_status     @default(pending)
+  expires_at                                DateTime?          @db.Timestamptz(6)
+  released_at                               DateTime?          @db.Timestamptz(6)
+  created_by                                String?            @db.Uuid
+  created_at                                DateTime           @default(now()) @db.Timestamptz(6)
+  cancellation_reason                       String?
+  cancellation_charge                       Decimal?           @db.Decimal
+  refund_amount                             Decimal?           @db.Decimal
+  refund_status                             String             @default("none")
+  refund_approved_by                        String?            @db.Uuid
+  refund_approved_at                        DateTime?          @db.Timestamptz(6)
+  refund_due_date                           DateTime?          @db.Date
+  refund_paid_at                            DateTime?          @db.Timestamptz(6)
+  partner_code                              String?
+  director_code                             String?
+  senior_director_id                        String?            @db.Uuid
+  senior_director_code                      String?
+  senior_director_name                      String?
+  cab_tokens_issued                         Boolean            @default(false)
+  cancel_requested_by                       String?            @db.Uuid
+  cancel_requested_at                       DateTime?          @db.Timestamptz(6)
+  cancel_request_reason                     String?
+  expired_at                                DateTime?          @db.Timestamptz(6)
+  pre_expiry_status                         booking_status?
+  receipt_no                                String?            @unique(map: "uniq_bookings_receipt_no") @default(dbgenerated("('VPO'::text || nextval('booking_receipt_seq'::regclass))"))
+  payment_receipt_seq                       Int                @default(0)
+  users_bookings_cancel_requested_byTousers users?             @relation("bookings_cancel_requested_byTousers", fields: [cancel_requested_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_bookings_created_byTousers          users?             @relation("bookings_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  customers                                 customers          @relation(fields: [customer_id], references: [id], onUpdate: NoAction)
+  users_bookings_director_idTousers         users?             @relation("bookings_director_idTousers", fields: [director_id], references: [id], onUpdate: NoAction)
+  users_bookings_partner_idTousers          users?             @relation("bookings_partner_idTousers", fields: [partner_id], references: [id], onUpdate: NoAction)
+  plots                                     plots              @relation(fields: [plot_id], references: [id], onUpdate: NoAction)
+  projects                                  projects           @relation(fields: [project_id], references: [id], onUpdate: NoAction)
+  users_bookings_refund_approved_byTousers  users?             @relation("bookings_refund_approved_byTousers", fields: [refund_approved_by], references: [id], onUpdate: NoAction)
+  users_bookings_senior_director_idTousers  users?             @relation("bookings_senior_director_idTousers", fields: [senior_director_id], references: [id], onUpdate: NoAction)
+  notifications                             notifications[]
+  payments                                  payments[]
+  plot_transfers                            plot_transfers[]
+  registrations                             registrations[]
+  service_requests                          service_requests[]
+
+  @@index([created_by], map: "idx_bookings_creator")
+  @@index([customer_id], map: "idx_bookings_customer")
+  @@index([expired_at], map: "idx_bookings_expired_at", where: raw("(expired_at IS NOT NULL)"))
+  @@index([plot_id], map: "idx_bookings_plot")
+  @@index([status], map: "idx_bookings_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model cab_requests {
+  id                                     String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customer_id                            String             @db.Uuid
+  requested_by                           String?            @db.Uuid
+  cab_date                               DateTime           @db.Date
+  pickup                                 String?
+  notes                                  String?
+  status                                 cab_request_status @default(pending)
+  decline_reason                         String?
+  decided_by                             String?            @db.Uuid
+  decided_at                             DateTime?          @db.Timestamptz(6)
+  created_at                             DateTime           @default(now()) @db.Timestamptz(6)
+  customers                              customers          @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_cab_requests_decided_byTousers   users?             @relation("cab_requests_decided_byTousers", fields: [decided_by], references: [id], onUpdate: NoAction)
+  users_cab_requests_requested_byTousers users?             @relation("cab_requests_requested_byTousers", fields: [requested_by], references: [id], onUpdate: NoAction)
+
+  @@index([customer_id], map: "idx_cab_requests_customer")
+  @@index([requested_by], map: "idx_cab_requests_requested_by")
+  @@index([status], map: "idx_cab_requests_status")
+}
+
+model coupons {
+  id                             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                        String   @db.Uuid
+  type                           String
+  quantity                       Int      @default(0)
+  value                          Decimal  @default(0) @db.Decimal
+  source                         String   @default("admin")
+  note                           String?
+  issued_by                      String?  @db.Uuid
+  created_at                     DateTime @default(now()) @db.Timestamptz(6)
+  users_coupons_issued_byTousers users?   @relation("coupons_issued_byTousers", fields: [issued_by], references: [id], onUpdate: NoAction)
+  users_coupons_user_idTousers   users    @relation("coupons_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([type], map: "idx_coupons_type")
+  @@index([user_id], map: "idx_coupons_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model customers {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  mobile             String
+  dob                DateTime?          @db.Date
+  anniversary_date   DateTime?          @db.Date
+  street             String?
+  area               String?
+  state              String?
+  district           String?
+  pincode            String?
+  occupation         String?
+  occupation_remarks String?
+  created_by         String?            @db.Uuid
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  email              String?
+  country            String?
+  father_name        String?
+  father_mobile      String?
+  spouse_name        String?
+  spouse_mobile      String?
+  bookings           bookings[]
+  cab_requests       cab_requests[]
+  users              users?             @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  service_requests   service_requests[]
+
+  @@unique([created_by, mobile], map: "customers_owner_mobile_key", where: raw("((mobile IS NOT NULL) AND (created_by IS NOT NULL))"))
+  @@index([mobile], map: "idx_customers_mobile")
+}
+
+model districts {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model feedback_forms {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title             String              @default("Site Visit Feedback")
+  intro             String?
+  thank_you         String?
+  questions         Json                @default("[]")
+  is_active         Boolean             @unique(map: "uniq_feedback_forms_active", where: raw("is_active")) @default(true)
+  updated_by        String?             @db.Uuid
+  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  users             users?              @relation(fields: [updated_by], references: [id], onUpdate: NoAction)
+  feedback_requests feedback_requests[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model feedback_requests {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  request_id       String?           @unique(map: "uniq_feedback_requests_request", where: raw("(request_id IS NOT NULL)")) @db.Uuid
+  form_id          String?           @db.Uuid
+  token            String            @unique
+  customer_name    String?
+  customer_phone   String?
+  scheduled_for    DateTime?         @db.Timestamptz(6)
+  sent_at          DateTime?         @db.Timestamptz(6)
+  responded_at     DateTime?         @db.Timestamptz(6)
+  answers          Json?
+  created_at       DateTime          @default(now()) @db.Timestamptz(6)
+  feedback_forms   feedback_forms?   @relation(fields: [form_id], references: [id], onUpdate: NoAction)
+  service_requests service_requests? @relation(fields: [request_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([request_id], map: "idx_feedback_requests_request")
+  @@index([responded_at], map: "idx_feedback_requests_responded")
+  @@index([scheduled_for], map: "idx_feedback_requests_scheduled", where: raw("(sent_at IS NULL)"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notifications {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_id String?   @db.Uuid
+  channel    String
+  recipient  String?
+  message    String
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  bookings   bookings? @relation(fields: [booking_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model payments {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_id      String         @db.Uuid
+  amount          Decimal        @db.Decimal
+  kind            payment_kind
+  mode            String?
+  status          payment_status @default(completed)
+  paid_at         DateTime       @default(now()) @db.Timestamptz(6)
+  recorded_by     String?        @db.Uuid
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  reference       String?
+  bank_name       String?
+  instrument_date DateTime?      @db.Date
+  receipt_no      String?        @unique(map: "uniq_payments_receipt_no")
+  bookings        bookings       @relation(fields: [booking_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users?         @relation(fields: [recorded_by], references: [id], onUpdate: NoAction)
+
+  @@index([booking_id], map: "idx_payments_booking")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model plot_categories {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id  String   @db.Uuid
+  name        String
+  description String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  projects    projects @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  plots       plots[]
+
+  @@unique([project_id, name])
+  @@index([project_id], map: "idx_plot_categories_project")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model plot_transfers {
+  id                                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_id                               String   @db.Uuid
+  from_plot_id                             String   @db.Uuid
+  to_plot_id                               String   @db.Uuid
+  from_value                               Decimal  @default(0) @db.Decimal
+  to_value                                 Decimal  @default(0) @db.Decimal
+  kind                                     String
+  charge                                   Decimal  @default(0) @db.Decimal
+  remarks                                  String?
+  approved_by                              String?  @db.Uuid
+  created_by                               String?  @db.Uuid
+  created_at                               DateTime @default(now()) @db.Timestamptz(6)
+  users_plot_transfers_approved_byTousers  users?   @relation("plot_transfers_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
+  bookings                                 bookings @relation(fields: [booking_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_plot_transfers_created_byTousers   users?   @relation("plot_transfers_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  plots_plot_transfers_from_plot_idToplots plots    @relation("plot_transfers_from_plot_idToplots", fields: [from_plot_id], references: [id], onUpdate: NoAction)
+  plots_plot_transfers_to_plot_idToplots   plots    @relation("plot_transfers_to_plot_idToplots", fields: [to_plot_id], references: [id], onUpdate: NoAction)
+
+  @@index([booking_id], map: "idx_transfers_booking")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model plots {
+  id                                                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id                                        String           @db.Uuid
+  block                                             String?
+  plot_no                                           String
+  sqft                                              Decimal          @db.Decimal
+  price_per_sqft                                    Decimal          @default(0) @db.Decimal
+  description                                       String?
+  status                                            plot_status      @default(available)
+  created_at                                        DateTime         @default(now()) @db.Timestamptz(6)
+  plot_category_id                                  String?          @db.Uuid
+  bookings                                          bookings?
+  plot_transfers_plot_transfers_from_plot_idToplots plot_transfers[] @relation("plot_transfers_from_plot_idToplots")
+  plot_transfers_plot_transfers_to_plot_idToplots   plot_transfers[] @relation("plot_transfers_to_plot_idToplots")
+  plot_categories                                   plot_categories? @relation(fields: [plot_category_id], references: [id], onUpdate: NoAction)
+  projects                                          projects         @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  registrations                                     registrations[]
+
+  @@unique([project_id, plot_no])
+  @@index([plot_category_id], map: "idx_plots_category")
+  @@index([project_id], map: "idx_plots_project")
+  @@index([status], map: "idx_plots_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model project_categories {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String     @unique
+  description String?
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  projects    projects[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model projects {
+  id                           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                         String
+  district                     String
+  city                         String
+  remarks                      String?
+  area                         String
+  land_type                    String?
+  approval_type                approval_type
+  project_type                 project_type
+  category_id                  String?             @db.Uuid
+  status                       project_status      @default(draft)
+  blocking_amount              Decimal             @default(10000) @db.Decimal
+  blocking_window_hours        Int                 @default(48)
+  advance_percent              Decimal             @default(5) @db.Decimal
+  booking_window_days          Int                 @default(15)
+  created_by                   String?             @db.Uuid
+  created_at                   DateTime            @default(now()) @db.Timestamptz(6)
+  advance_min_amount           Decimal             @default(50000) @db.Decimal
+  cancel_full_refund_days      Int                 @default(3)
+  cancellation_charge          Decimal             @default(5000) @db.Decimal
+  refund_processing_days       Int                 @default(5)
+  transfer_charge              Decimal             @default(5000) @db.Decimal
+  branch                       String?
+  guideline_value              Decimal             @default(0) @db.Decimal
+  director_gold_coupon         Decimal             @default(0) @db.Decimal
+  director_digital_coupon      Decimal             @default(0) @db.Decimal
+  senior_director_gold_coupon  Decimal             @default(0) @db.Decimal
+  director_tools_coupon        Decimal             @default(0) @db.Decimal
+  senior_director_tools_coupon Decimal             @default(0) @db.Decimal
+  pincode                      String?
+  bookings                     bookings[]
+  plot_categories              plot_categories[]
+  plots                        plots[]
+  project_categories           project_categories? @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  users                        users?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  registrations                registrations[]
+  service_requests             service_requests[]
+
+  @@index([category_id], map: "idx_projects_category")
+  @@index([status], map: "idx_projects_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model registrations {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_id         String?   @db.Uuid
+  plot_id            String    @db.Uuid
+  project_id         String    @db.Uuid
+  block              String?
+  plot_sqft          Decimal?  @db.Decimal
+  register_date      DateTime  @db.Date
+  register_number    String
+  name_of_registrant String
+  mobile             String?
+  remarks            String?
+  created_by         String?   @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  bookings           bookings? @relation(fields: [booking_id], references: [id], onUpdate: NoAction)
+  users              users?    @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  plots              plots     @relation(fields: [plot_id], references: [id], onUpdate: NoAction)
+  projects           projects  @relation(fields: [project_id], references: [id], onUpdate: NoAction)
+
+  @@index([plot_id], map: "idx_registrations_plot")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model role_page_access {
+  role       String
+  page_key   String
+  level      String
+  updated_by String?  @db.Uuid
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users?   @relation(fields: [updated_by], references: [id], onUpdate: NoAction)
+
+  @@id([role, page_key])
+  @@index([role], map: "idx_role_page_access_role")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model role_settings {
+  role       String   @id
+  can_login  Boolean  @default(true)
+  updated_by String?  @db.Uuid
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users?   @relation(fields: [updated_by], references: [id], onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model service_requests {
+  id                                              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type                                            service_request_type
+  status                                          service_request_status @default(pending)
+  stage                                           request_stage          @default(senior)
+  customer_id                                     String?                @db.Uuid
+  booking_id                                      String?                @db.Uuid
+  project_id                                      String?                @db.Uuid
+  subject                                         String?
+  details                                         String?
+  response                                        String?
+  visit_date                                      DateTime?              @db.Date
+  pickup                                          String?
+  requested_by                                    String?                @db.Uuid
+  senior_decided_by                               String?                @db.Uuid
+  senior_decided_at                               DateTime?              @db.Timestamptz(6)
+  final_decided_by                                String?                @db.Uuid
+  final_decided_at                                DateTime?              @db.Timestamptz(6)
+  decline_reason                                  String?
+  created_at                                      DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at                                      DateTime               @default(now()) @db.Timestamptz(6)
+  customer_name                                   String?
+  customer_phone                                  String?
+  visit_time                                      DateTime?              @db.Time(6)
+  travel_mode                                     String?
+  cab_type                                        String?
+  feedback_requests                               feedback_requests?
+  bookings                                        bookings?              @relation(fields: [booking_id], references: [id], onUpdate: NoAction)
+  customers                                       customers?             @relation(fields: [customer_id], references: [id], onUpdate: NoAction)
+  users_service_requests_final_decided_byTousers  users?                 @relation("service_requests_final_decided_byTousers", fields: [final_decided_by], references: [id], onUpdate: NoAction)
+  projects                                        projects?              @relation(fields: [project_id], references: [id], onUpdate: NoAction)
+  users_service_requests_requested_byTousers      users?                 @relation("service_requests_requested_byTousers", fields: [requested_by], references: [id], onUpdate: NoAction)
+  users_service_requests_senior_decided_byTousers users?                 @relation("service_requests_senior_decided_byTousers", fields: [senior_decided_by], references: [id], onUpdate: NoAction)
+
+  @@index([booking_id], map: "idx_service_requests_booking")
+  @@index([customer_id], map: "idx_service_requests_customer")
+  @@index([requested_by], map: "idx_service_requests_requested_by")
+  @@index([stage], map: "idx_service_requests_stage")
+  @@index([status], map: "idx_service_requests_status")
+  @@index([type], map: "idx_service_requests_type")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model users {
+  id                                                         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  full_name                                                  String
+  email                                                      String             @unique
+  password_hash                                              String
+  mobile                                                     String?
+  role                                                       user_role
+  manager_id                                                 String?            @db.Uuid
+  is_active                                                  Boolean            @default(true)
+  created_at                                                 DateTime           @default(now()) @db.Timestamptz(6)
+  partner_code                                               String?            @unique(map: "uniq_users_partner_code", where: raw("(partner_code IS NOT NULL)"))
+  city                                                       String?
+  settings                                                   Json               @default("{}")
+  session_version                                            Int                @default(0)
+  district                                                   String?
+  date_of_birth                                              DateTime?          @db.Date
+  whatsapp                                                   String?
+  address                                                    String?
+  occupation                                                 String?
+  rera_number                                                String?
+  nominee_name                                               String?
+  nominee_mobile                                             String?
+  declared_at                                                DateTime?          @db.Timestamptz(6)
+  audit_log                                                  audit_log[]
+  error_logs_error_logs_user_idTousers                       error_logs[]       @relation("error_logs_user_idTousers")
+  error_logs_error_logs_resolved_byTousers                   error_logs[]       @relation("error_logs_resolved_byTousers")
+  bookings_bookings_cancel_requested_byTousers               bookings[]         @relation("bookings_cancel_requested_byTousers")
+  bookings_bookings_created_byTousers                        bookings[]         @relation("bookings_created_byTousers")
+  bookings_bookings_director_idTousers                       bookings[]         @relation("bookings_director_idTousers")
+  bookings_bookings_partner_idTousers                        bookings[]         @relation("bookings_partner_idTousers")
+  bookings_bookings_refund_approved_byTousers                bookings[]         @relation("bookings_refund_approved_byTousers")
+  bookings_bookings_senior_director_idTousers                bookings[]         @relation("bookings_senior_director_idTousers")
+  cab_requests_cab_requests_decided_byTousers                cab_requests[]     @relation("cab_requests_decided_byTousers")
+  cab_requests_cab_requests_requested_byTousers              cab_requests[]     @relation("cab_requests_requested_byTousers")
+  coupons_coupons_issued_byTousers                           coupons[]          @relation("coupons_issued_byTousers")
+  coupons_coupons_user_idTousers                             coupons[]          @relation("coupons_user_idTousers")
+  customers                                                  customers[]
+  feedback_forms                                             feedback_forms[]
+  payments                                                   payments[]
+  plot_transfers_plot_transfers_approved_byTousers           plot_transfers[]   @relation("plot_transfers_approved_byTousers")
+  plot_transfers_plot_transfers_created_byTousers            plot_transfers[]   @relation("plot_transfers_created_byTousers")
+  projects                                                   projects[]
+  registrations                                              registrations[]
+  role_page_access                                           role_page_access[]
+  role_settings                                              role_settings[]
+  service_requests_service_requests_final_decided_byTousers  service_requests[] @relation("service_requests_final_decided_byTousers")
+  service_requests_service_requests_requested_byTousers      service_requests[] @relation("service_requests_requested_byTousers")
+  service_requests_service_requests_senior_decided_byTousers service_requests[] @relation("service_requests_senior_decided_byTousers")
+  users                                                      users?             @relation("usersTousers", fields: [manager_id], references: [id], onUpdate: NoAction)
+  other_users                                                users[]            @relation("usersTousers")
+
+  @@index([manager_id], map: "idx_users_manager")
+  @@index([role], map: "idx_users_role")
+}
+
+enum approval_type {
+  dtcp_rera
+  dtcp_only
+}
+
+enum book_mode {
+  blocking
+  booking
+}
+
+enum booking_status {
+  pending
+  confirmed
+  cancelled
+}
+
+enum cab_request_status {
+  pending
+  approved
+  declined
+}
+
+enum loan_token_by {
+  customer
+  director
+  senior_director
+}
+
+enum payment_kind {
+  blocking
+  advance
+  installment
+  final
+}
+
+enum payment_status {
+  pending
+  completed
+}
+
+enum plot_status {
+  available
+  blocked
+  booked
+  registered
+  sold
+  cancelled
+}
+
+enum project_status {
+  draft
+  active
+  on_hold
+  closed
+}
+
+enum project_type {
+  affordable
+  luxury
+}
+
+enum request_stage {
+  senior
+  presales
+  legal
+  accounts
+  done
+}
+
+enum service_request_status {
+  pending
+  approved
+  declined
+  draft
+}
+
+enum service_request_type {
+  site_visit
+  legal_query
+  draft
+  registration
+  cancellation
+  cab
+}
+
+enum user_role {
+  admin
+  senior_director
+  director
+  business_manager
+  business_partner
+  finance
+  legal
+  pre_sales
+  post_sales
+  digital
+  general_manager
+  pre_post_sales
+}
+
+/// Global error monitoring. One row per DISTINCT problem, keyed by `fingerprint`
+/// — not one row per occurrence. Written only by the server-side capture layer
+/// (src/lib/errors/capture.ts) through the record_error() function, and read
+/// only by the developer Error Logs page.
+///
+/// The upsert/dedup function, the CHECK constraints and the RLS lock-down live
+/// in this model's migration SQL, since Prisma's schema language cannot express
+/// them. See docs/ERROR_HANDLING.md.
+model error_logs {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fingerprint      String    @unique
+  short_id         String    @unique(map: "idx_error_logs_short_id")
+
+  name             String?
+  message          String?
+  raw_message      String?
+  code             String?
+  kind             String    @default("unknown")
+  severity         String    @default("error")
+  source           String    @default("server")
+
+  module           String?
+  route            String?
+  api_endpoint     String?
+  http_method      String?
+  http_status      Int?
+
+  stack            String?
+  component_stack  String?
+  db_details       Json?
+  context          Json?
+
+  request_id       String?
+  user_id          String?   @db.Uuid
+  user_email       String?
+  user_role        String?
+  url              String?
+  user_agent       String?
+  browser          String?
+  os               String?
+  device           String?
+  runtime          String?
+  environment      String    @default("production")
+  release          String?
+
+  occurrence_count Int       @default(1)
+  first_seen_at    DateTime  @default(now()) @db.Timestamptz(6)
+  last_seen_at     DateTime  @default(now()) @db.Timestamptz(6)
+  last_event_id    String?
+  recent           Json      @default("[]")
+  affected_users   Json      @default("[]")
+
+  status           String    @default("new")
+  resolved_at      DateTime? @db.Timestamptz(6)
+  resolved_by      String?   @db.Uuid
+  resolved_by_name String?
+  resolution_notes String?
+
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  users_error_logs_user_idTousers     users? @relation("error_logs_user_idTousers", fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  users_error_logs_resolved_byTousers users? @relation("error_logs_resolved_byTousers", fields: [resolved_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([last_seen_at(sort: Desc)], map: "idx_error_logs_last_seen")
+  @@index([status, last_seen_at(sort: Desc)], map: "idx_error_logs_status")
+  @@index([severity, last_seen_at(sort: Desc)], map: "idx_error_logs_severity")
+  @@index([module], map: "idx_error_logs_module")
+  @@index([source], map: "idx_error_logs_source")
+  @@index([environment], map: "idx_error_logs_env")
+  @@index([last_event_id], map: "idx_error_logs_last_event")
+}

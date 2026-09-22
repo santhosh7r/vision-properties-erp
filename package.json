@@ -2,7 +2,7 @@
   "name": "vision-properties-app",
   "version": "0.1.0",
   "private": true,
-  "description": "Vision Properties — Plot Booking & Inventory Management Platform (v0.1 MVP)",
+  "description": "Vision Properties \u2014 Plot Booking & Inventory Management Platform (v0.1 MVP)",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -16,9 +16,16 @@
     "db:reset:keep-logins": "tsx scripts/reset-keep-logins.ts",
     "db:migrate-emails": "tsx scripts/migrate-emails.ts",
     "db:fix-logins": "tsx scripts/fix-logins.ts",
-    "db:fix-districts": "tsx scripts/fix-project-districts.ts"
+    "db:fix-districts": "tsx scripts/fix-project-districts.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:pull": "prisma db pull",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/client": "7.10.0",
     "@supabase/supabase-js": "^2.45.4",
     "bcryptjs": "^2.4.3",
     "date-fns": "^3.6.0",
@@ -37,6 +44,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "dotenv": "^16.4.7",
+    "prisma": "7.10.0",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"

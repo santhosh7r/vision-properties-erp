@@ -158,6 +158,12 @@ export const NAV: NavItem[] = [
   // itself is filtered by what is set here — see lib/access.navForUser.
   { href: "/page-config", label: "Page Config", icon: "shieldLock", roles: ADMIN_STAFF, group: "Administration" },
   { href: "/settings", label: "Settings", icon: "cog", roles: ADMIN_STAFF, group: "Administration" },
+  // Error Logs — the developer surface for the error monitoring system. `devOnly`
+  // restricts it to the hidden dev/support account, and `roles: ALL` is there so
+  // it stays visible while that account is switched into another role for
+  // testing. It is deliberately absent from lib/pages.ts, so it can never be
+  // handed to a role from Page Config.
+  { href: "/dev/error-logs", label: "Error Logs", icon: "shieldLock", roles: ALL, devOnly: true, group: "Administration" },
   // Account — sales roles: one Profile page (details, tokens, password,
   // appearance, language, sign-out-everywhere). In-house desks get the same page
   // without the tokens block, so a new staff login can change its own password.

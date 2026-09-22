@@ -5,6 +5,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { ROLES, type Role } from "./roles";
 import { isHiddenUser } from "./hidden-users";
 import { getSupabase } from "./supabase";
+import { SESSION_COOKIE } from "./session-cookie";
 
 // Best-effort fetch of a user's current session_version. Fails OPEN (returns
 // null) so a missing column / DB hiccup never locks anyone out.
@@ -45,7 +46,7 @@ export const mustChangePassword = cache(
   },
 );
 
-const COOKIE_NAME = "vp_session";
+const COOKIE_NAME = SESSION_COOKIE;
 const MAX_AGE = 60 * 60 * 12; // 12 hours
 
 export interface SessionUser {
@@ -169,4 +170,40 @@ export async function setDevRole(role: Role | null): Promise<boolean> {
   return true;
 }
 
-export const SESSION_COOKIE = COOKIE_NAME;
+/**
+ * Decode a session token WITHOUT any database round-trip.
+ *
+ * Used by the error monitoring layer, which needs to know who hit a problem but
+ * must never issue a query of its own to find out — a query that could fail, and
+ * whose failure would be captured, and so on. It therefore skips the
+ * session_version check that getSession() performs: attributing a log row to a
+ * signed-out-everywhere session is harmless, re-entering the database from
+ * inside the error path is not.
+ */
+export async function decodeSessionToken(
+  token: string | null | undefined,
+): Promise<SessionUser | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secret());
+    const email = payload.email as string;
+    const realRole = payload.role as Role;
+    const isDev = isHiddenUser(email);
+    const devRole = payload.dev_role as Role | undefined;
+    const effective = isDev && devRole && ROLES.includes(devRole) ? devRole : realRole;
+    return {
+      id: payload.id as string,
+      full_name: payload.full_name as string,
+      email,
+      role: effective,
+      realRole,
+      isDev,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Re-exported so existing imports keep working; the value lives in
+// ./session-cookie so middleware can read it without pulling this module in.
+export { SESSION_COOKIE };

@@ -5,6 +5,7 @@ import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type { FeedbackQuestion } from "@/lib/feedback";
+import { toFailure } from "@/lib/errors/action";
 
 export interface SaveFormState {
   error?: string;
@@ -99,12 +100,15 @@ export async function saveFeedbackForm(
     updated_at: new Date().toISOString(),
   };
 
+  // The database's own message never reaches the form. The instrumented client
+  // has already recorded the real error with its SQLSTATE and hint; what the
+  // user gets back is a sentence plus the reference that finds it.
   if (id) {
     const { error } = await sb.from("feedback_forms").update(payload).eq("id", id);
-    if (error) return { error: error.message };
+    if (error) return await toFailure(error, { subject: "form", action: "saved" });
   } else {
     const { error } = await sb.from("feedback_forms").insert({ ...payload, is_active: true });
-    if (error) return { error: error.message };
+    if (error) return await toFailure(error, { subject: "form", action: "saved" });
   }
 
   await logAudit(actor, "feedback_form", id || null, "update", title);
