@@ -172,6 +172,11 @@ export async function createRegistration(formData: FormData): Promise<void> {
           source: "auto",
           note: `${r.type === "digital" ? "Digital token" : `${r.type[0].toUpperCase()}${r.type.slice(1)} coupon`} · registration ${register_number}`,
           issued_by: actor.id,
+          // What it was issued for — shown on the token history.
+          registration_id: data.id,
+          booking_id,
+          plot_id,
+          project_id,
         })),
       );
     }

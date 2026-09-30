@@ -33,8 +33,9 @@ export const REQUEST_CHAIN: Record<ServiceRequestType, RequestStage[]> = {
   legal_query: ["legal"],
   registration: ["legal"],
   cancellation: ["senior", "accounts"],
-  // Cab: a Director's request is approved by their Senior Director, then Admin.
-  // A Senior Director's own request starts at the Admin stage (see
+  // Cab: a Director's request is approved by their Senior Director, then the
+  // Pre-Sales desk of its branch (Admin is the backstop on both stages).
+  // A Senior Director's own request starts at the Pre-Sales stage (see
   // initialStageFor) since there's no SD above them.
   cab: ["senior", "presales"],
 };
@@ -110,7 +111,7 @@ export const REQUEST_TYPES: RequestTypeMeta[] = [
     label: "Cab",
     noun: "cab request",
     description:
-      "Arrange a customer site visit and the cab for it. Your Senior Director approves, then Admin. A Director spends one cab token on final approval.",
+      "Arrange a customer site visit and the cab for it. Your Senior Director approves, then the Pre-Sales desk. A Director spends one cab token on final approval.",
     // Raised for a WALK-IN before any customer record exists — the name and
     // phone are typed on the form (customer_name / customer_phone) rather than
     // picked from the customers table. See migration 0026.
@@ -333,7 +334,7 @@ export function requestActorRoles(): Role[] {
 // Human label for the action an approver takes at a stage (the button text).
 export function actionLabel(type: ServiceRequestType, stage: RequestStage): string {
   if (type === "cab") {
-    // Cab: SD forwards to Admin; Admin gives final approval.
+    // Cab: SD forwards to Pre-Sales; Pre-Sales gives final approval.
     return nextStage(type, stage) === "done" ? "Approve (final)" : "Approve & forward";
   }
   if (stage === "accounts") return "Process refund";

@@ -76,6 +76,11 @@ model bookings {
   pre_expiry_status                         booking_status?
   receipt_no                                String?            @unique(map: "uniq_bookings_receipt_no") @default(dbgenerated("('VPO'::text || nextval('booking_receipt_seq'::regclass))"))
   payment_receipt_seq                       Int                @default(0)
+  /// When Admin (or a desk acting for Admin) verified the customer + plot
+  /// details. No bill prints for a booking raised by a sales role until this
+  /// is set; staff-raised bookings are verified at creation.
+  bill_verified_at                          DateTime?          @db.Timestamptz(6)
+  bill_verified_by                          String?            @db.Uuid
   users_bookings_cancel_requested_byTousers users?             @relation("bookings_cancel_requested_byTousers", fields: [cancel_requested_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users_bookings_created_byTousers          users?             @relation("bookings_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
   customers                                 customers          @relation(fields: [customer_id], references: [id], onUpdate: NoAction)
@@ -85,6 +90,8 @@ model bookings {
   projects                                  projects           @relation(fields: [project_id], references: [id], onUpdate: NoAction)
   users_bookings_refund_approved_byTousers  users?             @relation("bookings_refund_approved_byTousers", fields: [refund_approved_by], references: [id], onUpdate: NoAction)
   users_bookings_senior_director_idTousers  users?             @relation("bookings_senior_director_idTousers", fields: [senior_director_id], references: [id], onUpdate: NoAction)
+  users_bookings_bill_verified_byTousers    users?             @relation("bookings_bill_verified_byTousers", fields: [bill_verified_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  coupons                                   coupons[]
   notifications                             notifications[]
   payments                                  payments[]
   plot_transfers                            plot_transfers[]
@@ -130,11 +137,27 @@ model coupons {
   note                           String?
   issued_by                      String?  @db.Uuid
   created_at                     DateTime @default(now()) @db.Timestamptz(6)
+  /// What the movement was for. plot_id / project_id are the plot AT ISSUE TIME —
+  /// a later plot transfer moves the booking, never the history.
+  booking_id                     String?  @db.Uuid
+  plot_id                        String?  @db.Uuid
+  project_id                     String?  @db.Uuid
+  registration_id                String?  @db.Uuid
+  service_request_id             String?  @db.Uuid
   users_coupons_issued_byTousers users?   @relation("coupons_issued_byTousers", fields: [issued_by], references: [id], onUpdate: NoAction)
   users_coupons_user_idTousers   users    @relation("coupons_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  bookings                       bookings?         @relation(fields: [booking_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  plots                          plots?            @relation(fields: [plot_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  projects                       projects?         @relation(fields: [project_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  registrations                  registrations?    @relation(fields: [registration_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  service_requests               service_requests? @relation(fields: [service_request_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([type], map: "idx_coupons_type")
   @@index([user_id], map: "idx_coupons_user")
+  @@index([booking_id], map: "idx_coupons_booking")
+  @@index([plot_id], map: "idx_coupons_plot")
+  @@index([registration_id], map: "idx_coupons_registration")
+  @@index([service_request_id], map: "idx_coupons_service_request")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -294,6 +317,7 @@ model plots {
   created_at                                        DateTime         @default(now()) @db.Timestamptz(6)
   plot_category_id                                  String?          @db.Uuid
   bookings                                          bookings?
+  coupons                                           coupons[]
   plot_transfers_plot_transfers_from_plot_idToplots plot_transfers[] @relation("plot_transfers_from_plot_idToplots")
   plot_transfers_plot_transfers_to_plot_idToplots   plot_transfers[] @relation("plot_transfers_to_plot_idToplots")
   plot_categories                                   plot_categories? @relation(fields: [plot_category_id], references: [id], onUpdate: NoAction)
@@ -348,6 +372,7 @@ model projects {
   senior_director_tools_coupon Decimal             @default(0) @db.Decimal
   pincode                      String?
   bookings                     bookings[]
+  coupons                      coupons[]
   plot_categories              plot_categories[]
   plots                        plots[]
   project_categories           project_categories? @relation(fields: [category_id], references: [id], onUpdate: NoAction)
@@ -374,6 +399,7 @@ model registrations {
   remarks            String?
   created_by         String?   @db.Uuid
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  coupons            coupons[]
   bookings           bookings? @relation(fields: [booking_id], references: [id], onUpdate: NoAction)
   users              users?    @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   plots              plots     @relation(fields: [plot_id], references: [id], onUpdate: NoAction)
@@ -432,6 +458,7 @@ model service_requests {
   visit_time                                      DateTime?              @db.Time(6)
   travel_mode                                     String?
   cab_type                                        String?
+  coupons                                         coupons[]
   feedback_requests                               feedback_requests?
   bookings                                        bookings?              @relation(fields: [booking_id], references: [id], onUpdate: NoAction)
   customers                                       customers?             @relation(fields: [customer_id], references: [id], onUpdate: NoAction)
@@ -481,6 +508,7 @@ model users {
   bookings_bookings_partner_idTousers                        bookings[]         @relation("bookings_partner_idTousers")
   bookings_bookings_refund_approved_byTousers                bookings[]         @relation("bookings_refund_approved_byTousers")
   bookings_bookings_senior_director_idTousers                bookings[]         @relation("bookings_senior_director_idTousers")
+  bookings_bookings_bill_verified_byTousers                  bookings[]         @relation("bookings_bill_verified_byTousers")
   cab_requests_cab_requests_decided_byTousers                cab_requests[]     @relation("cab_requests_decided_byTousers")
   cab_requests_cab_requests_requested_byTousers              cab_requests[]     @relation("cab_requests_requested_byTousers")
   coupons_coupons_issued_byTousers                           coupons[]          @relation("coupons_issued_byTousers")

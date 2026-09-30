@@ -30,6 +30,7 @@ const ENTITIES = [
   "customer",
   "coupon",
   "user",
+  "report",
 ] as const;
 
 const ENTITY_ICON: Record<string, React.ReactNode> = {
@@ -43,6 +44,7 @@ const ENTITY_ICON: Record<string, React.ReactNode> = {
   customer: <UserCircle size={14} />,
   coupon: <CreditCard size={14} />,
   user: <UserCircle size={14} />,
+  report: <FileText size={14} />,
 };
 
 // A coarse colour cue by the kind of action, so destructive vs creative events

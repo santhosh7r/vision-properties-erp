@@ -21,8 +21,10 @@ export interface LedgerRow {
   recordedBy: string;
   status: string;
   // Receipt for this single money entry. Null on refund rows — a refund is not a
-  // payment and has no bill of its own.
+  // payment and has no bill of its own — and while the bill is on hold.
   receiptHref: string | null;
+  // lib/bill: the booking's details await Admin verification, so no bill yet.
+  billOnHold?: boolean;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -93,6 +95,11 @@ export default function PaymentLedger({ rows }: { rows: LedgerRow[] }) {
       align: "right",
       cell: (r) => (
         <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+          {!r.receiptHref && r.billOnHold && (
+            <span className="text-xs text-amber-600" title="Bill available once Admin verifies the customer and plot details.">
+              Bill on hold
+            </span>
+          )}
           {r.receiptHref && (
             <PrintReceiptButton
               href={r.receiptHref}

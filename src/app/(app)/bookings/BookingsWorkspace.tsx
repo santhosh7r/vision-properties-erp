@@ -29,8 +29,10 @@ export default function BookingsWorkspace({
   initialCreating = false,
   hideCreate = false,
   myDistrict = null,
+  projects = [],
 }: {
   rows: BookingRow[];
+  projects?: { value: string; label: string }[];
   canConfirm: boolean;
   canCancel: boolean;
   canRequestCancel?: boolean;
@@ -58,6 +60,7 @@ export default function BookingsWorkspace({
         canRegister={canRegister}
         canConvert={canConvert}
         showSalesperson={showSalesperson}
+        projects={projects}
       />
     );
   }
@@ -105,6 +108,7 @@ export default function BookingsWorkspace({
         canRegister={canRegister}
         canConvert={canConvert}
         showSalesperson={showSalesperson}
+        projects={projects}
       />
     </div>
   );

@@ -13,6 +13,8 @@ import { SubmitButton } from "@/components/SubmitButton";
 import SideNav from "./SideNav";
 import DevRoleSwitcher from "./DevRoleSwitcher";
 import DevBanner from "./DevBanner";
+import CabRequestNotifier from "./CabRequestNotifier";
+import { watchesCabQueue } from "@/lib/cab-queue";
 
 export default async function AppLayout({
   children,
@@ -55,6 +57,11 @@ export default async function AppLayout({
       <Suspense fallback={null}>
         <SideNav items={items} />
       </Suspense>
+      {/* Pre-Sales desk: live Approvals count + a pop-up when a cab request
+          reaches it. Only if Approvals is actually on its menu. */}
+      {watchesCabQueue(user.role) && items.some((i) => i.href === "/requests") && (
+        <CabRequestNotifier userId={user.id} />
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header

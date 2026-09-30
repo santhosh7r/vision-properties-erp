@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge } from "@/components/ui";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
 import { fmtDateTime, inr } from "@/lib/format";
+import { TOKEN_ORIGIN_LABELS, type TokenOrigin } from "@/lib/token-source";
 
 // One movement in the coupon ledger. Balances on the table above are the SUM of
 // these rows, so this is the audit trail behind every number shown there: what
@@ -21,9 +23,17 @@ export interface LedgerRow {
   amount: number;
   valueBased: boolean;
   note: string;
-  // Who recorded it — a person's name, or the registration that auto-issued it.
+  // Who recorded it — a person's name, or "System" for an unattended grant.
   by: string;
   auto: boolean;
+  // Where it came from and what it was for (lib/token-source).
+  origin: TokenOrigin;
+  originLabel: string;
+  reference: string;
+  plot: string;
+  customer: string;
+  bookingId: string | null;
+  registrationId: string | null;
 }
 
 function amountLabel(r: LedgerRow): string {
@@ -80,6 +90,47 @@ export default function CouponLedger({ rows, types }: { rows: LedgerRow[]; types
       ),
     },
     {
+      id: "source",
+      header: "Source",
+      sort: (r) => r.originLabel,
+      cell: (r) => (
+        <div>
+          <div className="whitespace-nowrap text-[var(--text)]">{r.originLabel}</div>
+          {r.reference &&
+            (r.registrationId ? (
+              <Link href={`/registrations/${r.registrationId}`} className="font-mono text-xs text-[var(--muted)] hover:underline">
+                {r.reference}
+              </Link>
+            ) : (
+              <div className="font-mono text-xs text-[var(--muted)]">{r.reference}</div>
+            ))}
+        </div>
+      ),
+    },
+    {
+      id: "plot",
+      header: "For Plot",
+      sort: (r) => r.plot.toLowerCase(),
+      cell: (r) =>
+        r.plot ? (
+          <div>
+            {r.bookingId ? (
+              <Link href={`/bookings/${r.bookingId}`} className="font-medium text-[var(--text)] hover:underline">
+                {r.plot}
+              </Link>
+            ) : (
+              <div className="font-medium text-[var(--text)]">{r.plot}</div>
+            )}
+            {r.customer && <div className="text-xs text-[var(--muted)]">{r.customer}</div>}
+          </div>
+        ) : (
+          <div>
+            <span className="text-[var(--muted)]">—</span>
+            {r.customer && <div className="text-xs text-[var(--muted)]">{r.customer}</div>}
+          </div>
+        ),
+    },
+    {
       id: "by",
       header: "Recorded By",
       hideBelow: "md",
@@ -98,8 +149,10 @@ export default function CouponLedger({ rows, types }: { rows: LedgerRow[]; types
     <DataTable
       rows={rows}
       columns={columns}
-      search={(r) => `${r.holder} ${r.holderCode ?? ""} ${r.type} ${r.action} ${r.note} ${r.by}`}
-      searchPlaceholder="Search holder, ID, token, note…"
+      search={(r) =>
+        `${r.holder} ${r.holderCode ?? ""} ${r.type} ${r.action} ${r.originLabel} ${r.reference} ${r.plot} ${r.customer} ${r.note} ${r.by}`
+      }
+      searchPlaceholder="Search holder, plot, customer, reg. no, receipt…"
       filters={[
         {
           id: "action",
@@ -115,6 +168,12 @@ export default function CouponLedger({ rows, types }: { rows: LedgerRow[]; types
           label: "Token",
           options: types.map((t) => ({ value: t.label, label: t.label })),
           match: (r, v) => r.type === v,
+        },
+        {
+          id: "source",
+          label: "Source",
+          options: (Object.keys(TOKEN_ORIGIN_LABELS) as TokenOrigin[]).map((o) => ({ value: o, label: TOKEN_ORIGIN_LABELS[o] })),
+          match: (r, v) => r.origin === v,
         },
       ]}
       emptyMessage="Nothing issued or redeemed yet."

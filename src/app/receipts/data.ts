@@ -3,6 +3,13 @@ import { fmtDate, fmtDateTime, ageFrom, num, amountInWords } from "@/lib/format"
 import { getSupabase } from "@/lib/supabase";
 import type { Booking, Customer, Payment, Plot, Project } from "@/lib/types";
 import type { ReceiptFields } from "@/lib/receipt-pdf";
+import { billReady } from "@/lib/bill";
+
+// Returned instead of fields when the booking's customer and plot details are
+// still awaiting Admin verification (lib/bill). Every receipt page and PDF goes
+// through the two functions below, so this is the one place the rule is enforced.
+export const BILL_UNVERIFIED = "unverified" as const;
+export type ReceiptResult = ReceiptFields | null | typeof BILL_UNVERIFIED;
 
 // Builds the values that go onto `public/receipt.pdf` — the office's own printed
 // stationery. Both receipt kinds are shaped here so a booking receipt and a
@@ -107,11 +114,12 @@ const BOOKING_SELECT = "*, plots(*, plot_categories(name)), customers(*), projec
 // ---------------------------------------------------------------------------
 // The BOOKING / BLOCKING receipt — the deal as a whole.
 // ---------------------------------------------------------------------------
-export async function bookingReceiptFields(bookingId: string): Promise<ReceiptFields | null> {
+export async function bookingReceiptFields(bookingId: string): Promise<ReceiptResult> {
   const sb = getSupabase();
   const { data } = await sb.from("bookings").select(BOOKING_SELECT).eq("id", bookingId).maybeSingle();
   if (!data) return null;
   const b = data as FullBooking;
+  if (!billReady(b)) return BILL_UNVERIFIED;
 
   // A bill is a receipt for ONE collection — the money handed over at the moment
   // it is issued — so this one prints the payment taken when the deal was struck
@@ -155,7 +163,7 @@ export async function bookingReceiptFields(bookingId: string): Promise<ReceiptFi
 // on the booking (and from the Payments list), so every rupee taken has its own
 // bill on demand rather than only at the moment it was recorded.
 // ---------------------------------------------------------------------------
-export async function paymentReceiptFields(paymentId: string): Promise<ReceiptFields | null> {
+export async function paymentReceiptFields(paymentId: string): Promise<ReceiptResult> {
   const sb = getSupabase();
   const { data } = await sb
     .from("payments")
@@ -166,6 +174,7 @@ export async function paymentReceiptFields(paymentId: string): Promise<ReceiptFi
   const pay = data as Payment & { bookings: FullBooking | null };
   const b = pay.bookings;
   if (!b) return null;
+  if (!billReady(b)) return BILL_UNVERIFIED;
 
   const amount = Number(pay.amount || 0);
   const kind = PAYMENT_KIND_LABEL[pay.kind] ?? pay.kind;

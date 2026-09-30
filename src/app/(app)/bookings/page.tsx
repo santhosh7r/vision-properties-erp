@@ -89,6 +89,7 @@ export default async function BookingsPage({
       id: b.id,
       sno: i + 1,
       project: b.projects?.name ?? "—",
+      projectId: b.project_id,
       plot: b.plots?.plot_no ?? "—",
       sqft: b.plot_sqft ?? b.plots?.sqft ?? null,
       customer: b.customers?.name ?? "—",
@@ -115,7 +116,27 @@ export default async function BookingsPage({
       cancel_requested_at: b.cancel_requested_at,
       created_at: b.created_at,
       registered: registeredBookingIds.has(b.id),
+      billVerified: !!b.bill_verified_at,
     }));
+
+  // The Project dropdown: every ACTIVE project the viewer works (a branch desk
+  // only its district's), so one can be picked before it has any records — plus
+  // any non-active project that still has records in this list, labelled with
+  // its status, so an old deal stays reachable. Alphabetical, active first.
+  let projQuery = sb.from("projects").select("id, name, status").order("name");
+  if (scope) projQuery = projQuery.in("id", scope.projectIds);
+  const { data: projData } = await projQuery;
+  const withRecords = new Set(rows.map((r) => r.projectId));
+  const STATUS_LABEL: Record<string, string> = { draft: "Draft", on_hold: "On hold", closed: "Closed" };
+  const projectOptions = ((projData ?? []) as { id: string; name: string; status: string }[])
+    .filter((p) => p.status === "active" || withRecords.has(p.id))
+    .sort((a, b) => Number(b.status === "active") - Number(a.status === "active") || a.name.localeCompare(b.name))
+    .map((p) => ({
+      value: p.id,
+      label: p.status === "active" ? p.name : `${p.name} (${STATUS_LABEL[p.status] ?? p.status})`,
+    }));
+
+  const awaitingBill = rows.filter((r) => !r.billVerified && r.status !== "cancelled").length;
 
   const salesView = isSalesRole(user.role);
   const title =
@@ -139,6 +160,18 @@ export default async function BookingsPage({
   return (
     <>
       <PageHeader title={title} subtitle={subtitle} />
+      {/* Verifiers: how many bills are waiting on them (lib/bill). */}
+      {can(user.role, "confirm_booking") && awaitingBill > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <span>
+            <strong>{awaitingBill}</strong> {awaitingBill === 1 ? "booking is" : "bookings are"} waiting for you to verify the
+            customer and plot details before the bill can be printed.
+          </span>
+          <a href="/bookings?bill=pending" className="btn-ghost" style={{ padding: "5px 12px", fontSize: 12 }}>
+            Show them
+          </a>
+        </div>
+      )}
       {/* Pure list — creating happens on the dedicated New Blocking / Add pages. */}
       <BookingsWorkspace
         rows={rows}
@@ -149,6 +182,7 @@ export default async function BookingsPage({
         canConvert={can(user.role, "create_booking")}
         canCreate={false}
         showSalesperson={showSalesperson}
+        projects={projectOptions}
         flow={null}
         hideCreate
       />

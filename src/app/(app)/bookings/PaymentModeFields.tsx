@@ -35,6 +35,8 @@ export default function PaymentModeFields({
   // option disappears. Leave it undefined where no amount is known — every mode
   // then stays on offer.
   amount,
+  // Pre-fill for the instrument inputs when correcting an existing payment.
+  detailDefaults,
 }: {
   modeName?: string;
   label?: string;
@@ -45,6 +47,7 @@ export default function PaymentModeFields({
   defaultLoanTokenBy?: string;
   instrumentFields?: boolean;
   amount?: number | null;
+  detailDefaults?: Partial<Record<"reference" | "bank_name" | "instrument_date", string | null>>;
 }) {
   const [mode, setMode] = useState(defaultMode);
   const modes = paymentModesFor(amount);
@@ -99,6 +102,7 @@ export default function PaymentModeFields({
             className="input"
             placeholder={f.placeholder}
             required={f.required}
+            defaultValue={detailDefaults?.[f.name]?.slice(0, f.type === "date" ? 10 : undefined) ?? undefined}
           />
         </div>
       ))}

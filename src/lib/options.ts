@@ -43,7 +43,14 @@ export const PAYMENT_MODES = [
   "Cash",
   "Cheque",
   "Bank Transfer",
+  "Net Banking",
   "UPI",
+  // The UPI apps customers actually name when they pay. Each is a UPI payment
+  // and captures its UPI transaction id like UPI does — kept as separate modes
+  // so the ledger and the monthly reports show which app the money came by.
+  "GPay",
+  "PhonePe",
+  "Paytm",
   // Plain "Loan", not "Home Loan" — a plot is bought on plot/mortgage/personal
   // loans just as often. Choosing it reveals the lender fields AND "Loan Taken
   // By", which is why that question no longer sits loose on the booking form.
@@ -72,7 +79,7 @@ export function paymentModesFor(amount: number | null | undefined): string[] {
 export const CASH_LIMIT_LABEL = `₹${CASH_LIMIT.toLocaleString("en-IN")}`;
 
 export const CASH_LIMIT_NOTE =
-  `Cash is not available above ${CASH_LIMIT_LABEL} — pay by cheque, bank transfer, UPI or loan.`;
+  `Cash is not available above ${CASH_LIMIT_LABEL} — pay by cheque, bank transfer, net banking, UPI (GPay / PhonePe / Paytm) or loan.`;
 
 // Instrument details captured per payment mode. Persisted into three reusable
 // payments columns (reference / bank_name / instrument_date — migration 0020);
@@ -96,8 +103,21 @@ export const PAYMENT_MODE_FIELDS: Record<string, PaymentModeField[]> = {
     { name: "reference", label: "Transaction Ref / UTR", type: "text", required: true, placeholder: "UTR / reference no." },
     { name: "bank_name", label: "Bank Name", type: "text", placeholder: "e.g. ICICI Bank" },
   ],
+  "Net Banking": [
+    { name: "reference", label: "Transaction Reference", type: "text", required: true, placeholder: "net-banking reference no." },
+    { name: "bank_name", label: "Bank Name", type: "text", required: true, placeholder: "e.g. SBI, HDFC Bank" },
+  ],
   UPI: [
     { name: "reference", label: "UPI Transaction ID", type: "text", required: true, placeholder: "12-digit UPI txn id" },
+  ],
+  GPay: [
+    { name: "reference", label: "UPI Transaction ID", type: "text", required: true, placeholder: "12-digit UPI txn id from GPay" },
+  ],
+  PhonePe: [
+    { name: "reference", label: "UPI Transaction ID", type: "text", required: true, placeholder: "12-digit UPI txn id from PhonePe" },
+  ],
+  Paytm: [
+    { name: "reference", label: "UPI Transaction ID", type: "text", required: true, placeholder: "12-digit UPI txn id from Paytm" },
   ],
   Loan: [
     { name: "bank_name", label: "Lender / Bank", type: "text", required: true, placeholder: "e.g. SBI, LIC Housing" },

@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { can, hasFullAccess } from "@/lib/roles";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
+import { getDistrictScope, projectInScope } from "@/lib/scope";
 import { shownStatus } from "@/lib/holds";
 import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
 import { CASH_LIMIT_LABEL, loanTokenByLabel } from "@/lib/options";
@@ -18,12 +19,16 @@ import {
 import { computeRefund } from "@/lib/sop";
 import PrintReceiptButton from "@/components/PrintReceiptButton";
 import RecordPaymentForm from "../RecordPaymentForm";
+import PaymentRowActions from "../PaymentRowActions";
+import { paymentReceiptNo } from "@/app/receipts/data";
+import { BILL_PENDING_NOTE, billReady } from "@/lib/bill";
 import ConvertToBookingButton from "../ConvertToBookingButton";
 import RequestCancelButton from "../RequestCancelButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { Booking, Customer, Payment, Plot, Project, PlotTransfer } from "@/lib/types";
 import {
   confirmBooking,
+  verifyBookingDetails,
   cancelBooking,
   dismissCancellationRequest,
   approveRefund,
@@ -50,8 +55,20 @@ const BOOKING_ERRORS: Record<string, string> = {
   already_registered:
     "This plot is already registered, so the booking can’t be cancelled. A registered plot is sold and final.",
   cash_limit:
-    `Nothing was recorded — ${CASH_LIMIT_LABEL} is the most that may be taken in cash on a plot. ` +
-    "Record a larger collection as cheque, bank transfer, UPI or loan.",
+    `Nothing was saved — ${CASH_LIMIT_LABEL} is the most that may be taken in cash on a plot. ` +
+    "Record a larger collection as cheque, bank transfer, net banking, UPI (GPay / PhonePe / Paytm) or loan.",
+  pay_locked:
+    "Payments on a cancelled booking can't be changed — its refund was worked out from what had been paid.",
+  pay_invalid: "Nothing was saved — pick a valid kind and mode for the payment.",
+  pay_details: "Nothing was saved — fill in the payment details the chosen mode needs (e.g. cheque number, UPI transaction ID).",
+  pay_reason: "Nothing was deleted — give a reason for deleting the payment.",
+  pay_failed: "The payment couldn't be saved. Please try again.",
+};
+
+const BOOKING_NOTICES: Record<string, string> = {
+  payment_updated: "Payment details corrected. The amount is unchanged, and its receipt reprints with the new details.",
+  payment_deleted: "Payment deleted. The paid total and balance are updated.",
+  bill_verified: "Customer and plot details verified. The bill can now be printed.",
 };
 
 export default async function BookingDetailPage({
@@ -59,11 +76,12 @@ export default async function BookingDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; receipt?: string }>;
+  searchParams: Promise<{ error?: string; receipt?: string; notice?: string; edit?: string; delete?: string }>;
 }) {
   const { id } = await params;
-  const { error: errorKey, receipt: justPaidId } = await searchParams;
+  const { error: errorKey, receipt: justPaidId, notice: noticeKey, edit: reopenEdit, delete: reopenDelete } = await searchParams;
   const bookingError = errorKey ? BOOKING_ERRORS[errorKey] : undefined;
+  const bookingNotice = noticeKey ? BOOKING_NOTICES[noticeKey] : undefined;
   const sb = getSupabase();
 
   // Opening a booking used to cost five sequential Supabase round-trips, which
@@ -119,9 +137,17 @@ export default async function BookingDetailPage({
 
   const balance = Math.max(0, b.total_plot_value - b.advance_paid);
   const canConfirm = can(user.role, "confirm_booking");
+  // lib/bill: no bill until Admin (or a desk for Admin) has verified the
+  // customer and plot details of a deal a sales role raised.
+  const billOk = billReady(b);
   const canCancel = can(user.role, "cancel_booking");
   const canRequestCancel = can(user.role, "request_cancellation");
   const canPay = can(user.role, "record_payment");
+  // Correcting a payment: same people as recording one, only on their own
+  // branch's bookings (the server refuses the rest — no point offering it), and
+  // never on a cancelled booking (its refund was computed from these payments).
+  const canCorrectPayments =
+    canPay && b.status !== "cancelled" && projectInScope(await getDistrictScope(sb, user), b.project_id);
   const canConvert = can(user.role, "create_booking");
   const canRegister = can(user.role, "manage_registration");
   const canApproveRefund = can(user.role, "approve_refund");
@@ -154,7 +180,8 @@ export default async function BookingDetailPage({
       <PageHeader
         title={`${b.book_mode === "blocking" ? "Blocking" : "Booking"} — ${b.plots.plot_no}`}
         subtitle={`${b.projects.name} · ${b.customers.name} (${b.customers.mobile})`}
-        back={{ href: "/bookings", label: "← Bookings" }}
+        // Back to the list with the project / filters the viewer had selected.
+        back={{ href: "/bookings", label: "← Bookings", remember: true }}
         action={
           <>
             {/* Fill in whatever the record is still missing — nominee, partner,
@@ -164,14 +191,38 @@ export default async function BookingDetailPage({
                 Edit
               </Link>
             )}
-            <PrintReceiptButton id={b.id} />
+            {billOk && <PrintReceiptButton id={b.id} />}
           </>
         }
       />
 
       {/* A payment was just recorded — hand over its bill immediately. The same
           receipt stays printable from the Payments table below, forever. */}
-      {justPaidId && (
+      {/* Bill on hold until Admin verifies what a sales role entered. */}
+      {!billOk && b.status !== "cancelled" && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <span>
+            <strong>Bill on hold.</strong> {BILL_PENDING_NOTE}
+            {canConfirm && b.status === "pending" && " Confirming the booking also verifies it."}
+            {!canConfirm && canPay && " Payments can still be recorded; their receipts print once verified."}
+          </span>
+          {canConfirm && (
+            <form action={verifyBookingDetails}>
+              <input type="hidden" name="id" value={b.id} />
+              <SubmitButton className="btn-primary" pendingLabel="Verifying…">
+                Verify details &amp; release bill
+              </SubmitButton>
+            </form>
+          )}
+        </div>
+      )}
+
+      {justPaidId && !billOk && (
+        <div className="mb-6 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400">
+          Payment recorded. Its receipt can be printed once Admin verifies the customer and plot details.
+        </div>
+      )}
+      {justPaidId && billOk && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400">
           <span>Payment recorded. Print the customer&apos;s receipt for it now, or any time from Payments below.</span>
           <PrintReceiptButton
@@ -180,6 +231,12 @@ export default async function BookingDetailPage({
             className="btn-primary"
             style={{ padding: "6px 14px", fontSize: 13 }}
           />
+        </div>
+      )}
+
+      {bookingNotice && (
+        <div className="mb-6 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400">
+          {bookingNotice}
         </div>
       )}
 
@@ -285,6 +342,7 @@ export default async function BookingDetailPage({
                       {/* Every money entry keeps its own bill, printable at any
                           time — not just when it was recorded. */}
                       <th className="th">Receipt</th>
+                      {canCorrectPayments && <th className="th">Correct</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -306,13 +364,38 @@ export default async function BookingDetailPage({
                         </td>
                         <td className="td">{inr(p.amount)}</td>
                         <td className="td">
-                          <PrintReceiptButton
-                            href={`/receipts/payment/${p.id}`}
-                            label="Print"
-                            className="btn-ghost"
-                            style={{ padding: "4px 10px", fontSize: 12 }}
-                          />
+                          {billOk ? (
+                            <PrintReceiptButton
+                              href={`/receipts/payment/${p.id}`}
+                              label="Print"
+                              className="btn-ghost"
+                              style={{ padding: "4px 10px", fontSize: 12 }}
+                            />
+                          ) : (
+                            <span className="text-xs text-amber-600" title={BILL_PENDING_NOTE}>
+                              On hold
+                            </span>
+                          )}
                         </td>
+                        {canCorrectPayments && (
+                          <td className="td">
+                            <PaymentRowActions
+                              payment={{
+                                id: p.id,
+                                receiptNo: paymentReceiptNo(b, p),
+                                paidAt: p.paid_at,
+                                amount: Number(p.amount),
+                                kind: p.kind,
+                                mode: p.mode,
+                                reference: p.reference,
+                                bank_name: p.bank_name,
+                                instrument_date: p.instrument_date,
+                              }}
+                              openInitially={reopenEdit === p.id ? "edit" : reopenDelete === p.id ? "delete" : undefined}
+                              error={reopenEdit === p.id || reopenDelete === p.id ? bookingError : undefined}
+                            />
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

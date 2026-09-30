@@ -26,6 +26,8 @@ interface RawPayment {
   paid_at: string;
   recorder: { full_name: string } | null;
   bookings: {
+    // lib/bill: null → the bill is on hold until Admin verifies the details.
+    bill_verified_at: string | null;
     plots: Pick<Plot, "plot_no"> | null;
     customers: Pick<Customer, "name"> | null;
     projects: Pick<Project, "name"> | null;
@@ -125,9 +127,18 @@ export default async function PostSalesPage({
     status: b.status,
     payment_status: b.payment_status,
   }));
+  const onHold = new Set(dealRaw.filter((b) => !b.bill_verified_at).map((b) => b.id));
   const receipts: ReceiptRow[] = deals
     .filter((r) => r.payment_status === "completed")
-    .map((r) => ({ id: r.id, project: r.project, plot: r.plot, customer: r.customer, value: r.value, paid: r.paid }));
+    .map((r) => ({
+      id: r.id,
+      project: r.project,
+      plot: r.plot,
+      customer: r.customer,
+      value: r.value,
+      paid: r.paid,
+      billOnHold: onHold.has(r.id),
+    }));
 
   // ── Ledger (Part Payment): every payment + refund outflow ───────────────────
   // A payment reaches a district only through its booking, and the nested join
@@ -141,7 +152,7 @@ export default async function PostSalesPage({
   let payQuery = sb
     .from("payments")
     .select(
-      "id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, status, paid_at, recorder:users!recorded_by(full_name), bookings(plots(plot_no), customers(name), projects(name))",
+      "id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, status, paid_at, recorder:users!recorded_by(full_name), bookings(bill_verified_at, plots(plot_no), customers(name), projects(name))",
     );
   if (scopedBookingIds) payQuery = payQuery.in("booking_id", scopedBookingIds);
   const { data: payData } = await payQuery.order("paid_at", { ascending: false });
@@ -159,7 +170,9 @@ export default async function PostSalesPage({
     reference: [p.reference, p.bank_name, p.instrument_date].filter(Boolean).join(" · "),
     recordedBy: p.recorder?.full_name ?? "—",
     status: p.status,
-    receiptHref: `/receipts/payment/${p.id}`,
+    // No bill until Admin has verified the booking's details (lib/bill).
+    receiptHref: p.bookings?.bill_verified_at ? `/receipts/payment/${p.id}` : null,
+    billOnHold: !p.bookings?.bill_verified_at,
   }));
 
   const { data: refundData } = await withProjectScope(

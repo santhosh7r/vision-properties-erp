@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import ReceiptView from "../../ReceiptView";
-import { paymentReceiptFields } from "../../data";
+import { BILL_UNVERIFIED, paymentReceiptFields } from "../../data";
+import BillPending from "../../BillPending";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default async function PaymentReceiptPage({ params }: { params: Promise<{
   const { id } = await params;
   const fields = await paymentReceiptFields(id);
   if (!fields) notFound();
+  if (fields === BILL_UNVERIFIED) return <BillPending />;
 
   return (
     <ReceiptView src={`/receipts/payment/${id}/pdf`} title="Payment Receipt" receiptNo={fields.receiptNo} />

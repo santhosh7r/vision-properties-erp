@@ -26,6 +26,8 @@ interface RawPayment {
   paid_at: string;
   recorder: { full_name: string } | null;
   bookings: {
+    // lib/bill: null → the bill is on hold until Admin verifies the details.
+    bill_verified_at: string | null;
     plots: Pick<Plot, "plot_no"> | null;
     customers: Pick<Customer, "name"> | null;
     projects: Pick<Project, "name"> | null;
@@ -82,7 +84,7 @@ export default async function PaymentsPage() {
   const { data: payData } = await sb
     .from("payments")
     .select(
-      "id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, status, paid_at, recorder:users!recorded_by(full_name), bookings(plots(plot_no), customers(name), projects(name))",
+      "id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, status, paid_at, recorder:users!recorded_by(full_name), bookings(bill_verified_at, plots(plot_no), customers(name), projects(name))",
     )
     .order("paid_at", { ascending: false });
   const payRaw = (payData ?? []) as unknown as RawPayment[];
@@ -102,7 +104,9 @@ export default async function PaymentsPage() {
       .join(" · "),
     recordedBy: p.recorder?.full_name ?? "—",
     status: p.status,
-    receiptHref: `/receipts/payment/${p.id}`,
+    // No bill until Admin has verified the booking's details (lib/bill).
+    receiptHref: p.bookings?.bill_verified_at ? `/receipts/payment/${p.id}` : null,
+    billOnHold: !p.bookings?.bill_verified_at,
   }));
 
   // Refunds — every booking that has money owed/returned, shown as outflows.

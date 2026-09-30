@@ -4,10 +4,12 @@ import { getSupabase } from "@/lib/supabase";
 import { ROLE_LABELS, SALES_HIERARCHY, isSalesRole, can, type Role } from "@/lib/roles";
 import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
 import { HIDDEN_IN_LIST } from "@/lib/hidden-users";
+import { COUPON_SOURCE_SELECT, describeTokenSource, type CouponSourceFields } from "@/lib/token-source";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { PageHeader, StatCard } from "@/components/ui";
 import type { User } from "@/lib/types";
 import BusinessOperatorsTree, { type TreeUser } from "./BusinessOperatorsTree";
-import { type CouponRow } from "./CouponsTable";
+import { type CouponRow, type BookingOption } from "./CouponsTable";
 import { type LedgerRow } from "./CouponLedger";
 import TokenWorkspace from "./TokenWorkspace";
 
@@ -40,29 +42,64 @@ export default async function BusinessOperatorsPage({
     // EVERY user, not just the sales tree: the ledger names whoever recorded a
     // movement, and that is an Admin or a branch desk — neither of which is in
     // SALES_HIERARCHY. One fetch serves both the table and the ledger below.
-    const [{ data: userData }, { data: couponData }] = await Promise.all([
+    const [{ data: userData }, couponData, bookingData] = await Promise.all([
       sb.from("users").select("id, full_name, role, partner_code").order("full_name", { ascending: true }),
-      // Coupons may not be migrated yet — fall back to empty.
-      sb
-        .from("coupons")
-        .select("id, user_id, type, quantity, value, source, note, issued_by, created_at")
-        .order("created_at", { ascending: false }),
+      // Coupons may not be migrated yet — fall back to empty. Every page: the
+      // balances below are sums of these rows.
+      fetchAllRows((from, to) =>
+        sb
+          .from("coupons")
+          .select(`id, user_id, type, quantity, value, source, note, issued_by, created_at, ${COUPON_SOURCE_SELECT}`)
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(from, to),
+      ),
+      // Live bookings, for the optional "For plot" on Issue / Redeem.
+      fetchAllRows((from, to) =>
+        sb
+          .from("bookings")
+          .select("id, receipt_no, partner_id, director_id, senior_director_id, plots(plot_no, block), projects(name), customers(name)")
+          .in("status", ["pending", "confirmed"])
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(from, to),
+      ),
     ]);
     const allUsers = (userData ?? []) as Pick<User, "id" | "full_name" | "role" | "partner_code">[];
     const salesUsers = allUsers.filter((u) => SALES_HIERARCHY.includes(u.role as Role));
     const userById = new Map(allUsers.map((u) => [u.id, u]));
 
-    const coupons = (couponData ?? []) as {
+    const coupons = couponData as (CouponSourceFields & {
       id: string;
       user_id: string;
-      type: string;
-      quantity: number;
       value: number;
-      source: string;
-      note: string | null;
       issued_by: string | null;
       created_at: string;
-    }[];
+    })[];
+
+    // Each holder's live bookings — the plots a desk issue / redeem can be for.
+    const bookingsByUser = new Map<string, BookingOption[]>();
+    for (const b of bookingData as {
+      id: string;
+      receipt_no: string | null;
+      partner_id: string | null;
+      director_id: string | null;
+      senior_director_id: string | null;
+      plots: { plot_no: string; block: string | null } | null;
+      projects: { name: string } | null;
+      customers: { name: string } | null;
+    }[]) {
+      const plot = [b.projects?.name, b.plots?.block ? `Block ${b.plots.block}` : null, b.plots ? `Plot ${b.plots.plot_no}` : null]
+        .filter(Boolean)
+        .join(" · ");
+      const opt = { id: b.id, label: [plot, b.customers?.name, b.receipt_no].filter(Boolean).join(" — ") };
+      for (const uid of new Set([b.partner_id, b.director_id, b.senior_director_id])) {
+        if (!uid) continue;
+        const list = bookingsByUser.get(uid) ?? [];
+        list.push(opt);
+        bookingsByUser.set(uid, list);
+      }
+    }
 
     // Value-based types (tools/digital/gold) sum their ₹ value; the rest count
     // whole tokens. Redemptions are negative rows, so the same sum handles both.
@@ -80,7 +117,9 @@ export default async function BusinessOperatorsPage({
       const amount = valueBased ? Number(c.value || 0) : Number(c.quantity || 0);
       const holder = userById.get(c.user_id);
       const issuer = c.issued_by ? userById.get(c.issued_by) : null;
-      // 'auto' rows are the coupons issued by a registration, not by a person.
+      const src = describeTokenSource(c);
+      // 'auto' rows are written by the system (a registration, the 48h cab
+      // sweep, a cab approval) — whoever approved it, if anyone, is still named.
       const auto = c.source === "auto";
       return {
         id: c.id,
@@ -93,8 +132,15 @@ export default async function BusinessOperatorsPage({
         amount,
         valueBased,
         note: c.note ?? "",
-        by: auto ? "Registration" : (issuer?.full_name ?? "—"),
+        by: issuer?.full_name ?? (auto ? "System" : "—"),
         auto,
+        origin: src.origin,
+        originLabel: src.originLabel,
+        reference: src.reference,
+        plot: src.plot,
+        customer: src.customer,
+        bookingId: src.bookingId,
+        registrationId: src.registrationId,
       };
     });
 
@@ -104,6 +150,7 @@ export default async function BusinessOperatorsPage({
       code: u.partner_code ?? null,
       role: u.role as Role,
       balances: balancesByUser.get(u.id) ?? {},
+      bookings: bookingsByUser.get(u.id) ?? [],
     }));
 
     const stats = [

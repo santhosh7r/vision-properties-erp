@@ -16,8 +16,8 @@ import type { Customer } from "@/lib/types";
 // State and Country. The lookup is a convenience, never a gate: all three stay
 // editable, and if the service is unreachable the fields are simply typed in by
 // hand — nothing about saving the form depends on it.
-// Everything here is mandatory except the anniversary and the spouse pair —
-// see the comments at those fields for why.
+// Everything here is mandatory except the email, the anniversary and the spouse
+// pair — see the comments at those fields for why.
 export default function CustomerFields({
   c,
 }: {
@@ -83,8 +83,13 @@ export default function CustomerFields({
         <input name="mobile" className="input" defaultValue={c?.mobile ?? ""} required />
       </div>
       <div>
-        <label className="label">3. Email *</label>
-        <input name="email" type="email" className="input" defaultValue={c?.email ?? ""} placeholder="name@example.com" required />
+        {/* Optional: plenty of customers have no email, and the bill must still
+            be raised for them — the receipt simply leaves the Email box blank.
+            type="email" still checks the format when one IS entered. */}
+        <label className="label">
+          3. Email <span className="font-normal text-[var(--muted)]">(optional)</span>
+        </label>
+        <input name="email" type="email" className="input" defaultValue={c?.email ?? ""} placeholder="name@example.com" />
       </div>
       <div>
         <label className="label">4. D.O.B *</label>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { NavItem } from "@/lib/nav";
 import { Icons } from "@/components/icons";
+import { NAV_BADGE_EVENT } from "./CabRequestNotifier";
 
 const GROUP_ORDER: NavItem["group"][] = [
   "Overview",
@@ -31,6 +32,17 @@ export default function SideNav({ items }: { items: NavItem[] }) {
   // Hover tooltip for the collapsed rail. Rendered as a fixed element so it is
   // not clipped by the scrolling nav's overflow.
   const [tip, setTip] = useState<{ label: string; top: number } | null>(null);
+  // Live counts on menu items (href → count), pushed by CabRequestNotifier.
+  const [badges, setBadges] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const onBadge = (e: Event) => {
+      const { href, count } = (e as CustomEvent<{ href: string; count: number }>).detail;
+      setBadges((prev) => (prev[href] === count ? prev : { ...prev, [href]: count }));
+    };
+    window.addEventListener(NAV_BADGE_EVENT, onBadge);
+    return () => window.removeEventListener(NAV_BADGE_EVENT, onBadge);
+  }, []);
 
   // Highlight the SINGLE best-matching item for the current URL, so query-param
   // entry points (e.g. /bookings?new=blocking vs /bookings) light up the right
@@ -110,6 +122,7 @@ export default function SideNav({ items }: { items: NavItem[] }) {
   function renderItem(item: NavItem) {
     const active = item.href === activeHref && bestScore >= 0;
     const Icon = Icons[item.icon];
+    const badge = badges[item.href] ?? 0;
     return (
       <Link
         key={item.href}
@@ -146,6 +159,22 @@ export default function SideNav({ items }: { items: NavItem[] }) {
             {item.label}
           </span>
         )}
+        {badge > 0 &&
+          (collapsed ? (
+            <span
+              className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full"
+              style={{ background: "var(--brand-red)" }}
+              aria-label={`${badge} waiting`}
+            />
+          ) : (
+            <span
+              className="ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white"
+              style={{ background: "var(--brand-red)" }}
+              aria-label={`${badge} waiting`}
+            >
+              {badge > 99 ? "99+" : badge}
+            </span>
+          ))}
       </Link>
     );
   }
@@ -202,6 +231,9 @@ export default function SideNav({ items }: { items: NavItem[] }) {
             {sections.map((group) => {
               const open = openGroups.has(group.name);
               const hasActive = group.name === activeGroup;
+              // A folded section still shows what waits inside it — otherwise
+              // the Approvals count is invisible until someone opens Operations.
+              const sectionBadge = open ? 0 : group.items.reduce((n, i) => n + (badges[i.href] ?? 0), 0);
               return (
                 <div key={group.name} className="mb-1.5 last:mb-0">
                   <button
@@ -212,6 +244,15 @@ export default function SideNav({ items }: { items: NavItem[] }) {
                     style={{ color: hasActive ? "var(--accent)" : "var(--text)" }}
                   >
                     <span className="whitespace-nowrap">{group.name}</span>
+                    {sectionBadge > 0 && (
+                      <span
+                        className="ml-auto mr-2 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white"
+                        style={{ background: "var(--brand-red)" }}
+                        aria-label={`${sectionBadge} waiting`}
+                      >
+                        {sectionBadge > 99 ? "99+" : sectionBadge}
+                      </span>
+                    )}
                     <svg
                       width="18"
                       height="18"

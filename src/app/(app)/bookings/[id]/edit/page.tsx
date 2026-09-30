@@ -98,7 +98,7 @@ export default async function EditBookingPage({
         <div className="mb-6 max-w-3xl rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-500">
           Nothing was saved — <b>{CASH_LIMIT_LABEL}</b> is the most that may be taken in cash on a
           plot. More than that has already been collected on this booking, so its mode of payment
-          cannot be Cash. Choose cheque, bank transfer, UPI or loan.
+          cannot be Cash. Choose cheque, bank transfer, net banking, UPI (GPay / PhonePe / Paytm) or loan.
         </div>
       )}
 

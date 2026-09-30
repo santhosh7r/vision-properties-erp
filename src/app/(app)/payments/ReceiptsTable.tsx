@@ -13,6 +13,8 @@ export interface ReceiptRow {
   customer: string;
   value: number;
   paid: number;
+  // lib/bill: details await Admin verification — link to the booking instead.
+  billOnHold?: boolean;
 }
 
 export default function ReceiptsTable({ rows }: { rows: ReceiptRow[] }) {
@@ -26,16 +28,21 @@ export default function ReceiptsTable({ rows }: { rows: ReceiptRow[] }) {
       id: "action",
       header: "",
       align: "right",
-      cell: (r) => (
-        <Link
-          href={`/receipts/${r.id}`}
-          onClick={(e) => e.stopPropagation()}
-          className="btn-ghost"
-          style={{ padding: "5px 12px", fontSize: 12 }}
-        >
-          Receipt
-        </Link>
-      ),
+      cell: (r) =>
+        r.billOnHold ? (
+          <span className="text-xs text-amber-600" title="Bill available once Admin verifies the customer and plot details.">
+            Bill on hold
+          </span>
+        ) : (
+          <Link
+            href={`/receipts/${r.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="btn-ghost"
+            style={{ padding: "5px 12px", fontSize: 12 }}
+          >
+            Receipt
+          </Link>
+        ),
     },
   ];
 
@@ -43,7 +50,7 @@ export default function ReceiptsTable({ rows }: { rows: ReceiptRow[] }) {
     <DataTable
       rows={rows}
       columns={columns}
-      getRowHref={(r) => `/receipts/${r.id}`}
+      getRowHref={(r) => (r.billOnHold ? `/bookings/${r.id}` : `/receipts/${r.id}`)}
       search={(r) => `${r.project} ${r.plot} ${r.customer}`}
       searchPlaceholder="Search customer, project, plot…"
       emptyMessage="No fully-paid bookings yet."

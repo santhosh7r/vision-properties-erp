@@ -174,6 +174,25 @@ export async function toggleMemberActive(formData: FormData): Promise<void> {
   revalidatePath("/users");
 }
 
+// The optional "For plot" on the Issue / Redeem forms: the booking's plot and
+// project, stamped onto the ledger row so the history shows what it was for.
+// Only a booking the holder is on the sales chain of is accepted.
+async function bookingLink(
+  sb: SupabaseClient,
+  holderId: string,
+  bookingId: string,
+): Promise<{ booking_id: string | null; plot_id: string | null; project_id: string | null }> {
+  const none = { booking_id: null, plot_id: null, project_id: null };
+  if (!bookingId) return none;
+  const { data } = await sb
+    .from("bookings")
+    .select("id, plot_id, project_id, partner_id, director_id, senior_director_id")
+    .eq("id", bookingId)
+    .maybeSingle();
+  if (!data || ![data.partner_id, data.director_id, data.senior_director_id].includes(holderId)) return none;
+  return { booking_id: data.id, plot_id: data.plot_id, project_id: data.project_id };
+}
+
 // Issue extra coupons/tokens to a salesperson — Admin and the Pre-Sales desk
 // (`issue_token`). Records one ledger row; balances are summed for display.
 // The handover happens offline, so there is no approval step: this IS the record.
@@ -187,6 +206,7 @@ export async function issueCoupon(formData: FormData): Promise<void> {
   const value = Math.max(0, Number(formData.get("value") || 0));
   const note = String(formData.get("note") || "").trim() || null;
   if (!user_id || !type || (quantity <= 0 && value <= 0)) return;
+  const link = await bookingLink(sb, user_id, String(formData.get("booking_id") || ""));
 
   const { error } = await sb.from("coupons").insert({
     user_id,
@@ -196,6 +216,7 @@ export async function issueCoupon(formData: FormData): Promise<void> {
     source: "admin",
     note,
     issued_by: actor.id,
+    ...link,
   });
   if (error) return;
 
@@ -235,6 +256,7 @@ export async function redeemCoupon(formData: FormData): Promise<void> {
     ? Math.max(0, Number(formData.get("amount") || 0))
     : Math.max(0, Math.floor(Number(formData.get("quantity") || 0)));
   if (amount <= 0 || amount > balance) return; // can't redeem zero or more than held
+  const link = await bookingLink(sb, user_id, String(formData.get("booking_id") || ""));
 
   const { error } = await sb.from("coupons").insert({
     user_id,
@@ -244,6 +266,7 @@ export async function redeemCoupon(formData: FormData): Promise<void> {
     source: "redeem",
     note,
     issued_by: actor.id,
+    ...link,
   });
   if (error) return;
 

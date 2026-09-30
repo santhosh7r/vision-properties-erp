@@ -1,10 +1,10 @@
 import { requireUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { getDownlineIds } from "@/lib/hierarchy";
-import { getDistrictScope } from "@/lib/scope";
+import { getDistrictScope, withRequestScope } from "@/lib/scope";
 import { ownBookedCustomerIds, ownCustomerOrFilter } from "@/lib/customers";
 import { can, hasFullAccess } from "@/lib/roles";
-import { canActOnStage, isRequestComplete, type RequestStage } from "@/lib/requests";
+import { REQUEST_TYPES, canActOnStage, isRequestComplete, type RequestStage, type ServiceRequestType } from "@/lib/requests";
 import { PageHeader } from "@/components/ui";
 import type { ServiceRequest, Customer } from "@/lib/types";
 import RequestsWorkspace, {
@@ -62,8 +62,17 @@ function toRow(r: RawRequest): RequestRow {
   };
 }
 
-export default async function RequestsPage() {
+export default async function RequestsPage({
+  searchParams,
+}: {
+  // ?view=action → "Needs my action"; ?type=cab (any request type) → that type.
+  // Linked from the dashboard cab panel and the new-request notice.
+  searchParams: Promise<{ view?: string; type?: string }>;
+}) {
   const user = await requireUser();
+  const sp = await searchParams;
+  const initialFilter =
+    sp.view === "action" ? "action" : REQUEST_TYPES.some((t) => t.key === sp.type) ? (sp.type as ServiceRequestType) : "all";
   const sb = getSupabase();
   const isAdmin = hasFullAccess(user.role);
   // A branch General Manager holds the Admin's view of this page but only over
@@ -91,19 +100,9 @@ export default async function RequestsPage() {
       .select(SELECT)
       .neq("status", "draft")
       .order("created_at", { ascending: false });
-    // Branch GM: only requests against their own projects. `project_id.is.null`
-    // is kept in deliberately — a request with no project (an older row, before
-    // the field was required) belongs to no branch, and dropping it would make
-    // it invisible to every scoped approver rather than merely to the wrong one.
-    if (scope) {
-      q = scope.projectIds.length
-        ? q.or(`project_id.in.(${scope.projectIds.join(",")}),project_id.is.null`)
-        : // No district on the account, or a branch with no projects yet: fail
-          // closed to the unplaced rows only, never to the whole company.
-          scope.district
-          ? q.is("project_id", null)
-          : q.in("id", []);
-    }
+    // Branch GM: only requests against their own projects (plus unplaced older
+    // rows — see withRequestScope).
+    q = withRequestScope(q, scope);
     const { data, error } = await q;
     if (error) migrationMissing = true;
     for (const r of (data ?? []) as RawRequest[]) byId.set(r.id, r);
@@ -140,6 +139,25 @@ export default async function RequestsPage() {
         .neq("type", "cab")
         .order("created_at", { ascending: false });
       for (const r of (inboxRes.data ?? []) as RawRequest[]) byId.set(r.id, r);
+    }
+
+    // 3) Cab requests for the Pre-Sales desk — kept out of the inbox above so a
+    // Senior Director only ever sees their own branch's, but the desk that gives
+    // the final approval must see them. Every cab request on the desk's branch,
+    // from the moment a Director raises it: the ones at the Pre-sales stage are
+    // actionable, the ones still with the Senior Director are shown read-only so
+    // the desk can plan the cab ahead, and decided ones stay as history.
+    if (canActOnStage(user.role, "presales")) {
+      const cabRes = await withRequestScope(
+        sb
+          .from("service_requests")
+          .select(SELECT)
+          .eq("type", "cab")
+          .neq("status", "draft"),
+        scope,
+      ).order("created_at", { ascending: false });
+      if (cabRes.error) migrationMissing = true;
+      for (const r of (cabRes.data ?? []) as RawRequest[]) byId.set(r.id, r);
     }
   }
 
@@ -228,7 +246,8 @@ export default async function RequestsPage() {
   return (
     <>
       <PageHeader
-        title={isAdmin ? "Approvals" : "Requests"}
+        // The Pre-Sales desk reaches this page as "Approvals" in its menu.
+        title={isAdmin || canActOnStage(user.role, "presales") ? "Approvals" : "Requests"}
         subtitle="Raise and track site-visit, legal, draft, registration and cancellation requests through their approval chain."
       />
       <RequestsWorkspace
@@ -238,6 +257,7 @@ export default async function RequestsPage() {
         projects={projects}
         allProjects={allProjects}
         userRole={user.role}
+        initialFilter={initialFilter}
         canCreate={canCreate}
         migrationMissing={migrationMissing}
       />

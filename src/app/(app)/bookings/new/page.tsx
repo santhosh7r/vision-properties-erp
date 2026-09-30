@@ -128,7 +128,7 @@ export default async function NewBookingPage({
       {!blocked && sp.err === "cash_limit" && (
         <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-500">
           Nothing was saved — <b>{CASH_LIMIT_LABEL}</b> is the most that may be taken in cash on a
-          plot. Reduce the amount paid now, or pay by cheque, bank transfer, UPI or loan.
+          plot. Reduce the amount paid now, or pay by cheque, bank transfer, net banking, UPI (GPay / PhonePe / Paytm) or loan.
         </div>
       )}
       {!blocked && sp.err === "incomplete" && (

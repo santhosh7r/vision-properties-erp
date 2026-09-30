@@ -4,6 +4,8 @@ import { can, isSalesRole } from "@/lib/roles";
 import { getSupabase } from "@/lib/supabase";
 import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
 import { inr } from "@/lib/format";
+import { COUPON_SOURCE_SELECT, describeTokenSource, type CouponSourceFields } from "@/lib/token-source";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { PageHeader } from "@/components/ui";
 import { CreditCard, Cog, Grid, Sparkle } from "@/components/icons";
 import TokenHistory, { type HistoryRow } from "./TokenHistory";
@@ -30,20 +32,19 @@ export default async function TokensPage() {
   const sb = getSupabase();
 
   // Coupons may not be migrated yet — fall back to empty.
-  const { data: couponData } = await sb
-    .from("coupons")
-    .select("id, type, quantity, value, source, note, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
-  const coupons = (couponData ?? []) as {
+  const coupons = (await fetchAllRows((from, to) =>
+    sb
+      .from("coupons")
+      .select(`id, type, quantity, value, source, note, created_at, ${COUPON_SOURCE_SELECT}`)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .order("id")
+      .range(from, to),
+  )) as (CouponSourceFields & {
     id: string;
-    type: string;
-    quantity: number;
     value: number;
-    source: string;
-    note: string | null;
     created_at: string;
-  }[];
+  })[];
 
   // Balance per type = sum of the ledger (redemptions are negative rows). Value
   // coupons (tools) sum their ₹ value; the rest count whole tokens.
@@ -57,6 +58,7 @@ export default async function TokensPage() {
     const valueBased = isValueCoupon(c.type);
     const amount = valueBased ? Number(c.value || 0) : Number(c.quantity || 0);
     const redeemed = c.source === "redeem" || amount < 0;
+    const src = describeTokenSource(c);
     return {
       id: c.id,
       date: c.created_at,
@@ -65,6 +67,11 @@ export default async function TokensPage() {
       amount,
       valueBased,
       note: c.note ?? "",
+      origin: src.origin,
+      originLabel: src.originLabel,
+      reference: src.reference,
+      plot: src.plot,
+      customer: src.customer,
     };
   });
 

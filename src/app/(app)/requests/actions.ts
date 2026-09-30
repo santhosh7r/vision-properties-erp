@@ -357,7 +357,7 @@ export async function advanceServiceRequest(formData: FormData): Promise<void> {
 
   const { data: req } = await sb
     .from("service_requests")
-    .select("id, type, stage, status, booking_id, requested_by, customer_name, customer_phone, visit_date, visit_time")
+    .select("id, type, stage, status, booking_id, project_id, requested_by, customer_name, customer_phone, visit_date, visit_time")
     .eq("id", id)
     .maybeSingle();
   if (!req || req.status !== "pending") return;
@@ -404,6 +404,11 @@ export async function advanceServiceRequest(formData: FormData): Promise<void> {
       .eq("id", req.requested_by)
       .maybeSingle();
     if ((reqUser?.role as string | undefined) === "director") {
+      // A site visit for an existing booking names its plot; a walk-in visit
+      // carries only the project.
+      const { data: bk } = req.booking_id
+        ? await sb.from("bookings").select("plot_id, project_id").eq("id", req.booking_id).maybeSingle()
+        : { data: null };
       await sb.from("coupons").insert({
         user_id: req.requested_by,
         type: "cab",
@@ -412,6 +417,10 @@ export async function advanceServiceRequest(formData: FormData): Promise<void> {
         source: "auto",
         note: "Cab request approved",
         issued_by: actor.id,
+        service_request_id: req.id,
+        booking_id: req.booking_id,
+        plot_id: bk?.plot_id ?? null,
+        project_id: req.project_id ?? bk?.project_id ?? null,
       });
     }
   }

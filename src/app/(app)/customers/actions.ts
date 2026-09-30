@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { requireCapability } from "@/lib/auth";
+import { needsBillVerification } from "@/lib/bill";
+import { withdrawBillVerification } from "@/lib/bill-server";
+import type { Role } from "@/lib/roles";
 import { logAudit } from "@/lib/audit";
 
 export async function createCustomer(formData: FormData): Promise<void> {
@@ -123,6 +126,11 @@ export async function updateCustomer(formData: FormData): Promise<void> {
   const { error } = await sb.from("customers").update(payload).eq("id", id);
   if (error) return;
   await logAudit(actor, "customer", id, "update", name);
+  // The customer's details print on every bill of theirs: a sales role editing
+  // them sends each live deal back to Admin for verification (lib/bill).
+  if (needsBillVerification(actor.role as Role)) {
+    await withdrawBillVerification(actor, { customerId: id }, "customer details edited");
+  }
   revalidatePath(`/customers/${id}`);
   revalidatePath("/customers");
   redirect(`/customers/${id}`);

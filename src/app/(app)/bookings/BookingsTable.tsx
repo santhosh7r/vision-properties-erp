@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/DataTable";
+import { useUrlTableState } from "@/components/useUrlTableState";
 import { Badge, BookingStatusBadge, PaymentBadge } from "@/components/ui";
 import { fmtDate, inr, shortRef } from "@/lib/format";
 import Countdown from "@/components/Countdown";
@@ -14,6 +15,7 @@ export interface BookingRow {
   id: string;
   sno: number;
   project: string;
+  projectId: string;
   plot: string;
   sqft: number | null;
   customer: string;
@@ -34,6 +36,7 @@ export interface BookingRow {
   cancel_requested_at: string | null; // a pending cancellation request (non-admin sales)
   created_at: string;
   registered: boolean; // a registration record already exists for this booking
+  billVerified: boolean; // lib/bill: Admin has verified the details, the bill can print
 }
 
 // When a booking is cancelled the plot goes back to the company, so the deal is
@@ -54,8 +57,11 @@ export default function BookingsTable({
   canRegister = false,
   canConvert = false,
   showSalesperson = false,
+  projects = [],
 }: {
   rows: BookingRow[];
+  // The Project dropdown: active projects (plus any with records here), by name.
+  projects?: { value: string; label: string }[];
   canConfirm: boolean;
   canCancel: boolean;
   canRequestCancel?: boolean;
@@ -63,6 +69,11 @@ export default function BookingsTable({
   canConvert?: boolean;
   showSalesperson?: boolean;
 }) {
+  // Filters, search and page live in the URL, so opening a plot and coming back
+  // returns to the same project and view. `mode` is the page's own param
+  // (My Blockings / My Bookings), so the Mode filter goes by `type`.
+  const urlState = useUrlTableState({ project: "project", status: "status", mode: "type", payment: "payment", bill: "bill" });
+
   const columns: Column<BookingRow>[] = [
     { id: "sno", header: "#", sort: (r) => r.sno, cell: (r) => <span className="tabular-nums text-[var(--muted)]">{r.sno}</span> },
     { id: "ref", header: "Ref", sort: (r) => r.id, cell: (r) => <span className="font-mono text-xs text-[var(--muted)]">{shortRef(r.id)}</span> },
@@ -167,6 +178,7 @@ export default function BookingsTable({
       search={(r) => `${shortRef(r.id)} ${r.project} ${r.plot} ${r.customer} ${r.mobile} ${r.salesperson}`}
       searchPlaceholder="Search ref, customer, project, plot…"
       filters={[
+        { id: "project", label: "Project", options: projects, match: (r, v) => r.projectId === v },
         { id: "status", label: "Status", options: [
           { value: "pending", label: "Pending" },
           { value: "confirmed", label: "Confirmed" },
@@ -180,8 +192,16 @@ export default function BookingsTable({
           { value: "pending", label: "Pending" },
           { value: "completed", label: "Paid" },
         ], match: (r, v) => r.payment_status === v },
+        // Deals whose customer/plot details still need Admin verification before
+        // a bill can print (lib/bill). Cancelled deals are never "awaiting".
+        { id: "bill", label: "Bill", options: [
+          { value: "pending", label: "Awaiting verification" },
+          { value: "verified", label: "Verified" },
+        ], match: (r, v) => (v === "pending" ? !r.billVerified && r.status !== "cancelled" : r.billVerified) },
       ]}
       emptyMessage="No bookings found."
+      initialState={urlState.initialState}
+      onStateChange={urlState.onStateChange}
     />
   );
 }

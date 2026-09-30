@@ -87,7 +87,7 @@ export async function sweepCabTokens(): Promise<number> {
 
   const { data: due } = await sb
     .from("bookings")
-    .select("id, director_id, book_mode")
+    .select("id, director_id, book_mode, plot_id, project_id")
     .in("status", ["pending", "confirmed"])
     .eq("cab_tokens_issued", false)
     .not("director_id", "is", null)
@@ -117,6 +117,9 @@ export async function sweepCabTokens(): Promise<number> {
         source: "auto",
         note: `Cab tokens · ${b.book_mode} held > 48h`,
         issued_by: null,
+        booking_id: b.id,
+        plot_id: b.plot_id,
+        project_id: b.project_id,
       });
       issued += 1;
     }),

@@ -9,9 +9,14 @@ import { logAudit, notify } from "@/lib/audit";
 import { bookingInScope, plotInScope } from "@/lib/scope";
 import { isFlaggedExpired } from "@/lib/holds";
 import { totalPlotValue, exact } from "@/lib/format";
-import { cashAllowed } from "@/lib/options";
+import { PAYMENT_MODES, cashAllowed, paymentModeFields } from "@/lib/options";
+import { paymentReceiptNo } from "@/app/receipts/data";
 import { computeAdvanceRequired, computeRefund, addWorkingDays } from "@/lib/sop";
 import type { BookMode, LoanTokenBy } from "@/lib/types";
+import type { SessionUser } from "@/lib/session";
+import { istToday } from "@/lib/reports/period";
+import { needsBillVerification } from "@/lib/bill";
+import { withdrawBillVerification } from "@/lib/bill-server";
 
 function s(v: FormDataEntryValue | null): string {
   return String(v || "").trim();
@@ -22,8 +27,8 @@ function nullable(v: FormDataEntryValue | null): string | null {
 }
 
 // Every captured field on a blocking/booking is mandatory. The exceptions are
-// the customer's anniversary date and spouse details, which are deliberately
-// optional — see CustomerFields, and note they are absent from
+// the customer's email, anniversary date and spouse details, which are
+// deliberately optional — see CustomerFields, and note they are absent from
 // CUSTOMER_REQUIRED below.
 // The forms mark them `required`, but a stale tab or a hand-rolled POST does not
 // run HTML validation — so the same list is enforced here, and a record can
@@ -41,7 +46,6 @@ const BOOKING_REQUIRED = [
 const CUSTOMER_REQUIRED = [
   "name",
   "mobile",
-  "email",
   "dob",
   "father_name",
   "father_mobile",
@@ -345,7 +349,9 @@ export async function createBooking(formData: FormData): Promise<void> {
       // is both how this money arrived and the booking's mode of payment.
       mode_of_payment: paymentMode,
       loan_token_by: (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null,
-      booked_date: nullable(formData.get("booked_date")) ?? new Date().toISOString().slice(0, 10),
+      // Today in IST, not UTC — before 05:30 IST the UTC date is still yesterday,
+      // which would file the deal under the wrong day (and month, on the 1st).
+      booked_date: nullable(formData.get("booked_date")) ?? istToday(),
       remarks: nullable(formData.get("remarks")),
       book_mode: mode,
       blocking_amount: mode === "blocking" ? blocking_amount : 0,
@@ -355,6 +361,12 @@ export async function createBooking(formData: FormData): Promise<void> {
       payment_status: "pending",
       expires_at,
       created_by: actor.id,
+      // Bill verification (lib/bill): staff enter and check the details
+      // themselves; a deal raised by a sales role waits for Admin before any
+      // bill prints. The money below is still collected and recorded either way.
+      ...(needsBillVerification(actor.role as Role)
+        ? {}
+        : { bill_verified_at: new Date().toISOString(), bill_verified_by: actor.id }),
     })
     .select("id")
     .single();
@@ -476,6 +488,204 @@ export async function recordPayment(formData: FormData): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// CORRECT A PAYMENT — fix the details of a payment entered wrongly, or delete
+// one that should never have been recorded (e.g. entered twice).
+//
+// Same people as Record Payment (`record_payment`: Admin, GM, Post-Sales,
+// Finance), same branch scope. The corrected details obey every rule a new
+// payment does (cash ceiling, the instrument details its mode needs).
+//
+// Deliberately NOT allowed:
+//   • changing the AMOUNT — the amount is the transaction itself and is never
+//     edited, ever. Only its details (kind, mode, reference, bank, instrument
+//     date) can be corrected. A wrong amount is fixed by deleting the entry,
+//     with a reason, and recording the right one — two audited events, never a
+//     silent overwrite. updatePayment does not even read an amount;
+//   • anything on a cancelled booking — its refund was computed from what had
+//     been paid, so changing the payments afterwards would desync the refund;
+//   • changing the payment date — it is the date money was recorded, and the
+//     monthly reports count by it.
+// The receipt number stays with the payment (an edited payment reprints under
+// the same number) and a deleted payment's number is never reused: the counter
+// behind it only goes up, so a bill already handed over can't be duplicated.
+// Every correction is written to the Activity Log with the before and after.
+// ---------------------------------------------------------------------------
+const PAYMENT_KINDS = ["blocking", "advance", "installment", "final"] as const;
+
+interface PaymentRow {
+  id: string;
+  booking_id: string;
+  amount: number;
+  kind: string;
+  mode: string | null;
+  reference: string | null;
+  bank_name: string | null;
+  instrument_date: string | null;
+  receipt_no: string | null;
+  paid_at: string;
+}
+
+// Loads a payment the actor may correct, with its booking — or redirects back
+// with the reason it can't be. Null only when the payment does not exist or is
+// outside the actor's reach (nothing to say to them about it).
+async function correctablePayment(
+  actor: Pick<SessionUser, "id" | "role">,
+  paymentId: string,
+): Promise<{ payment: PaymentRow; booking: { id: string; receipt_no: string | null } } | null> {
+  const sb = getSupabase();
+  const { data: payment } = await sb
+    .from("payments")
+    .select("id, booking_id, amount, kind, mode, reference, bank_name, instrument_date, receipt_no, paid_at")
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (!payment) return null;
+  const p = payment as PaymentRow;
+  if (!(await bookingInScope(sb, actor, p.booking_id))) return null;
+  if (await hiddenFromActor(sb, actor, p.booking_id)) return null;
+
+  const { data: booking } = await sb
+    .from("bookings")
+    .select("id, status, receipt_no")
+    .eq("id", p.booking_id)
+    .maybeSingle();
+  if (!booking) return null;
+  if (booking.status === "cancelled") redirect(`/bookings/${p.booking_id}?error=pay_locked`);
+  return {
+    payment: p,
+    booking: { id: booking.id, receipt_no: booking.receipt_no },
+  };
+}
+
+// "₹10,000 · Advance · UPI (ref 1234)" — the audit line for one payment.
+function describePayment(p: Pick<PaymentRow, "amount" | "kind" | "mode" | "reference" | "bank_name" | "instrument_date">): string {
+  const detail = [p.reference, p.bank_name, p.instrument_date].filter(Boolean).join(", ");
+  return `₹${exact(Number(p.amount)).toLocaleString("en-IN")} · ${p.kind} · ${p.mode ?? "no mode"}${detail ? ` (${detail})` : ""}`;
+}
+
+// The booking's Mode of Payment mirrors its latest payment (recordPayment sets
+// it). Called only when the correction touched that latest payment, so a mode
+// someone set by hand on the booking is not overwritten by fixing an old row.
+async function syncModeFromLatestPayment(bookingId: string): Promise<void> {
+  const sb = getSupabase();
+  const { data } = await sb
+    .from("payments")
+    .select("mode")
+    .eq("booking_id", bookingId)
+    .order("paid_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (data?.mode) await sb.from("bookings").update({ mode_of_payment: data.mode }).eq("id", bookingId);
+}
+
+async function latestPaymentId(bookingId: string): Promise<string | null> {
+  const { data } = await getSupabase()
+    .from("payments")
+    .select("id")
+    .eq("booking_id", bookingId)
+    .order("paid_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}
+
+function revalidatePaymentViews(bookingId: string): void {
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/bookings");
+  revalidatePath("/payments");
+  revalidatePath("/post-sales");
+  revalidatePath("/dashboard");
+}
+
+export async function updatePayment(formData: FormData): Promise<void> {
+  const actor = await requireCapability("record_payment");
+  const sb = getSupabase();
+  const found = await correctablePayment(actor, s(formData.get("payment_id")));
+  if (!found) return;
+  const { payment: before, booking } = found;
+  const back = (error: string) => redirect(`/bookings/${booking.id}?error=${error}&edit=${before.id}`);
+
+  // The amount is the recorded one, full stop — never taken from the form.
+  const amount = exact(Number(before.amount));
+  const kind = s(formData.get("kind"));
+  const mode = nullable(formData.get("mode"));
+  const reason = nullable(formData.get("reason"));
+  if (!PAYMENT_KINDS.includes(kind as (typeof PAYMENT_KINDS)[number])) back("pay_invalid");
+  if (!mode || !PAYMENT_MODES.includes(mode)) back("pay_invalid");
+  if (mode === "Cash" && !cashAllowed(amount)) back("cash_limit");
+
+  // Only the instrument details this mode uses are kept — switching UPI → Cash
+  // must not leave the old UPI transaction id on a cash payment.
+  const fields = paymentModeFields(mode);
+  const pick = (name: "reference" | "bank_name" | "instrument_date") =>
+    fields.some((f) => f.name === name) ? nullable(formData.get(name)) : null;
+  const after = {
+    kind,
+    mode,
+    reference: pick("reference"),
+    bank_name: pick("bank_name"),
+    instrument_date: pick("instrument_date"),
+  };
+  if (fields.some((f) => f.required && !after[f.name])) back("pay_details");
+
+  const unchanged =
+    kind === before.kind &&
+    mode === before.mode &&
+    after.reference === before.reference &&
+    after.bank_name === before.bank_name &&
+    after.instrument_date === (before.instrument_date ? String(before.instrument_date).slice(0, 10) : null);
+  if (unchanged) redirect(`/bookings/${booking.id}`);
+
+  const wasLatest = (await latestPaymentId(booking.id)) === before.id;
+  // `after` has no amount field, so this update cannot touch it.
+  const { error } = await sb.from("payments").update(after).eq("id", before.id);
+  if (error) back("pay_failed");
+
+  // The paid total cannot have moved (the amount is untouched); only the
+  // booking's mode may need to follow its latest payment.
+  if (wasLatest) await syncModeFromLatestPayment(booking.id);
+  await logAudit(
+    actor,
+    "payment",
+    booking.id,
+    "edit",
+    `${paymentReceiptNo(booking, before)}: ${describePayment(before)} → ${describePayment({ ...after, amount })}${reason ? ` · reason: ${reason}` : ""}`,
+  );
+  revalidatePaymentViews(booking.id);
+  redirect(`/bookings/${booking.id}?notice=payment_updated`);
+}
+
+export async function deletePayment(formData: FormData): Promise<void> {
+  const actor = await requireCapability("record_payment");
+  const sb = getSupabase();
+  const found = await correctablePayment(actor, s(formData.get("payment_id")));
+  if (!found) return;
+  const { payment, booking } = found;
+
+  // Removing money from the ledger always says why — it is the one change that
+  // leaves nothing behind on the booking itself.
+  const reason = nullable(formData.get("reason"));
+  if (!reason || reason.length < 3) redirect(`/bookings/${booking.id}?error=pay_reason&delete=${payment.id}`);
+
+  const wasLatest = (await latestPaymentId(booking.id)) === payment.id;
+  const { error } = await sb.from("payments").delete().eq("id", payment.id);
+  if (error) redirect(`/bookings/${booking.id}?error=pay_failed`);
+
+  await recomputePayment(booking.id);
+  if (wasLatest) await syncModeFromLatestPayment(booking.id);
+  await logAudit(
+    actor,
+    "payment",
+    booking.id,
+    "delete",
+    `${paymentReceiptNo(booking, payment)}: ${describePayment(payment)} · reason: ${reason}`,
+  );
+  revalidatePaymentViews(booking.id);
+  redirect(`/bookings/${booking.id}?notice=payment_deleted`);
+}
+
+// ---------------------------------------------------------------------------
 // EDIT DETAILS — update the captured (non-financial) fields of a booking, plus
 // the customer they were captured against. Plot, amounts and status are managed
 // through their own flows (Transfer, Record Payment, Confirm/Cancel); everything
@@ -500,7 +710,7 @@ export async function updateBooking(formData: FormData): Promise<void> {
 
   // Every edited field is mandatory — a partial save is what left older records
   // showing "—" everywhere. Bounce back to the form rather than writing blanks.
-  // Anniversary is the sole exception and is absent from CUSTOMER_REQUIRED.
+  // Email, anniversary and spouse are the exceptions — absent from CUSTOMER_REQUIRED.
   const missing =
     (!nullable(formData.get("mode_of_payment")) ? "mode_of_payment" : null) ??
     firstMissing(formData, BOOKING_REQUIRED) ??
@@ -605,6 +815,12 @@ export async function updateBooking(formData: FormData): Promise<void> {
     .eq("id", id);
 
   await logAudit(actor, "booking", id, "edit", "details updated");
+  // A sales role changed details Admin may already have verified: the bill
+  // waits for Admin to check them again. (The customer is shared, so every
+  // live deal of theirs is affected, not only this one.)
+  if (needsBillVerification(actor.role as Role)) {
+    await withdrawBillVerification(actor, { bookingIds: [id], customerId }, "booking details edited");
+  }
   revalidatePath(`/bookings/${id}`);
   revalidatePath("/bookings");
   // The customer block is shown on their own pages too, and those are cached.
@@ -643,6 +859,12 @@ export async function confirmBooking(formData: FormData): Promise<void> {
   // Keep expires_at so the hold's deadline keeps running through 'confirmed'
   // right up until the plot is registered (registration clears it).
   await sb.from("bookings").update({ status: "confirmed" }).eq("id", id);
+  // Confirming IS verifying the customer and plot details — the bill is ready.
+  await sb
+    .from("bookings")
+    .update({ bill_verified_at: new Date().toISOString(), bill_verified_by: actor.id })
+    .eq("id", id)
+    .is("bill_verified_at", null);
   // NOW the plot leaves inventory — as 'blocked' or 'booked' to match what was
   // actually approved. A blocking still has to be converted (convertToBooking)
   // and re-confirmed before it reads as 'booked'.
@@ -662,6 +884,34 @@ export async function confirmBooking(formData: FormData): Promise<void> {
   );
   revalidatePath(`/bookings/${id}`);
   revalidatePath("/bookings");
+}
+
+// ---------------------------------------------------------------------------
+// BILL VERIFICATION (lib/bill) — Admin, or a desk acting for Admin
+// (`confirm_booking`), confirms the customer and plot details are right, which
+// releases the bill. Needed on its own when the booking is already confirmed but
+// a sales role has since changed what was verified.
+// ---------------------------------------------------------------------------
+export async function verifyBookingDetails(formData: FormData): Promise<void> {
+  const actor = await requireCapability("confirm_booking");
+  const sb = getSupabase();
+  const id = s(formData.get("id"));
+  if (!id) return;
+  if (!(await bookingInScope(sb, actor, id))) return;
+  const { data: bk } = await sb.from("bookings").select("status").eq("id", id).maybeSingle();
+  if (!bk || bk.status === "cancelled") return;
+
+  const { data: done } = await sb
+    .from("bookings")
+    .update({ bill_verified_at: new Date().toISOString(), bill_verified_by: actor.id })
+    .eq("id", id)
+    .is("bill_verified_at", null)
+    .select("id")
+    .maybeSingle();
+  if (done) await logAudit(actor, "booking", id, "verify", "customer & plot details verified — bill released");
+  revalidatePath(`/bookings/${id}`);
+  revalidatePath("/bookings");
+  redirect(`/bookings/${id}?notice=bill_verified`);
 }
 
 export async function cancelBooking(formData: FormData): Promise<void> {
@@ -954,6 +1204,10 @@ export async function transferBooking(formData: FormData): Promise<void> {
 
   await recomputePayment(id);
   await logAudit(actor, "booking", id, "transfer", `${kind} → plot ${toPlot.plot_no}${charge ? ` (charge ₹${charge})` : ""}`);
+  // The plot on the bill changed: if a sales role moved it, Admin verifies again.
+  if (needsBillVerification(actor.role as Role)) {
+    await withdrawBillVerification(actor, { bookingIds: [id] }, `plot transferred to ${toPlot.plot_no}`);
+  }
   await notify(
     id,
     "sms",
@@ -991,7 +1245,7 @@ export async function convertToBooking(formData: FormData): Promise<void> {
   const expires_at = new Date(now + days * 86_400_000).toISOString();
   // The hold becomes a booking NOW — stamp the booking date to today and reset
   // the deal to 'pending' so it must be confirmed afresh as a booking.
-  const booked_date = new Date(now).toISOString().slice(0, 10);
+  const booked_date = istToday(now); // IST day, not UTC — see createBooking
 
   const mode = nullable(formData.get("mode"));
   const loan_token_by = (nullable(formData.get("loan_token_by")) as LoanTokenBy | null) ?? null;

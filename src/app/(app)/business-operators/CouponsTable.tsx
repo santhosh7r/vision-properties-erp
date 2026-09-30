@@ -9,12 +9,38 @@ import { COUPON_TYPES, isValueCoupon } from "@/lib/options";
 import { inr } from "@/lib/format";
 import { issueCoupon, redeemCoupon } from "./actions";
 
+export interface BookingOption {
+  id: string;
+  label: string; // "Project · Block A · Plot 12 — Customer — VPO123"
+}
+
 export interface CouponRow {
   id: string;
   name: string;
   code: string | null;
   role: Role;
   balances: Record<string, number>; // type -> quantity
+  // Live bookings this person is on the sales chain of.
+  bookings: BookingOption[];
+}
+
+// Optional: which of the holder's plots this issue / redeem is for. Recorded on
+// the ledger row so the token history can show it.
+function ForPlotField({ bookings }: { bookings: BookingOption[] }) {
+  return (
+    <div>
+      <label className="label">For Plot (optional)</label>
+      <select name="booking_id" className="select" defaultValue="">
+        <option value="">— Not for a specific plot —</option>
+        {bookings.map((b) => (
+          <option key={b.id} value={b.id}>{b.label}</option>
+        ))}
+      </select>
+      {bookings.length === 0 && (
+        <p className="mt-1 text-xs text-[var(--muted)]">No live bookings under this person.</p>
+      )}
+    </div>
+  );
 }
 
 const ROLE_TONE: Record<string, "blue" | "green" | "gray"> = {
@@ -127,6 +153,7 @@ function IssueModal({ row, onClose }: { row: CouponRow; onClose: () => void }) {
               </div>
             </div>
           )}
+          <ForPlotField bookings={row.bookings} />
           <div>
             <label className="label">Note (optional)</label>
             <input name="note" className="input" placeholder="e.g. Performance reward" />
@@ -177,6 +204,7 @@ function RedeemModal({ row, onClose }: { row: CouponRow; onClose: () => void }) 
               <p className="mt-1 text-xs text-[var(--muted)]">Available: {available}</p>
             </div>
           )}
+          <ForPlotField bookings={row.bookings} />
           <div>
             <label className="label">Note (optional)</label>
             <input name="note" className="input" placeholder="e.g. Redeemed for cab ride" />

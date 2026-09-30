@@ -62,6 +62,7 @@ export const PAGES: PageDef[] = [
   { key: "users", label: "Business Partners", group: "Business Partners", paths: ["/users"] },
 
   { key: "reports", label: "Reports", group: "Reports", paths: ["/reports"] },
+  { key: "monthly_reports", label: "Monthly Reports (Excel export)", group: "Reports", paths: ["/monthly-reports"] },
 
   { key: "in_house", label: "My Team (In-House)", group: "Administration", paths: ["/in-house"] },
   { key: "activity", label: "Activity Logs", group: "Administration", paths: ["/activity"] },

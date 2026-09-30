@@ -144,6 +144,22 @@ export function withProjectScope<T>(query: T, scope: DistrictScope | null, colum
   return (query as { in: (c: string, v: string[]) => T }).in(column, scope.projectIds);
 }
 
+/**
+ * Scope a `service_requests` query to a branch. Unlike withProjectScope, a
+ * request with NO project is kept: an older row (before the field was required)
+ * belongs to no branch, and dropping it would hide it from every scoped
+ * approver rather than merely from the wrong one. This matches requestInScope
+ * in requests/actions, which lets a scoped approver act on such a row.
+ */
+export function withRequestScope<T>(query: T, scope: DistrictScope | null): T {
+  if (!scope) return query;
+  const q = query as { or: (f: string) => T; is: (c: string, v: null) => T; in: (c: string, v: string[]) => T };
+  if (scope.projectIds.length) return q.or(`project_id.in.(${scope.projectIds.join(",")}),project_id.is.null`);
+  // No district on the account, or a branch with no projects yet: fail closed to
+  // the unplaced rows only, never to the whole company.
+  return scope.district ? q.is("project_id", null) : q.in("id", []);
+}
+
 /** Does this scope allow touching `projectId`? Unscoped roles always pass. */
 export function projectInScope(scope: DistrictScope | null, projectId: string | null | undefined): boolean {
   if (!scope) return true;

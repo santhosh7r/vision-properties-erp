@@ -3,6 +3,7 @@
 import DataTable, { type Column } from "@/components/DataTable";
 import { Badge } from "@/components/ui";
 import { fmtDate, inr } from "@/lib/format";
+import { TOKEN_ORIGIN_LABELS, type TokenOrigin } from "@/lib/token-source";
 
 export interface HistoryRow {
   id: string;
@@ -12,6 +13,12 @@ export interface HistoryRow {
   amount: number;
   valueBased: boolean;
   note: string;
+  // Where it came from and which plot it was for (lib/token-source).
+  origin: TokenOrigin;
+  originLabel: string;
+  reference: string;
+  plot: string;
+  customer: string;
 }
 
 function amountLabel(r: HistoryRow): string {
@@ -35,15 +42,37 @@ export default function TokenHistory({ rows }: { rows: HistoryRow[] }) {
         </span>
       ),
     },
-    { id: "note", header: "Note", hideBelow: "md", cell: (r) => <span className="text-[var(--muted)]">{r.note || "—"}</span> },
+    {
+      id: "source",
+      header: "Source",
+      sort: (r) => r.originLabel,
+      cell: (r) => (
+        <div>
+          <div className="whitespace-nowrap text-[var(--text)]">{r.originLabel}</div>
+          {r.reference && <div className="font-mono text-xs text-[var(--muted)]">{r.reference}</div>}
+        </div>
+      ),
+    },
+    {
+      id: "plot",
+      header: "For Plot",
+      sort: (r) => r.plot.toLowerCase(),
+      cell: (r) => (
+        <div>
+          <div className={r.plot ? "font-medium text-[var(--text)]" : "text-[var(--muted)]"}>{r.plot || "—"}</div>
+          {r.customer && <div className="text-xs text-[var(--muted)]">{r.customer}</div>}
+        </div>
+      ),
+    },
+    { id: "note", header: "Note", hideBelow: "lg", cell: (r) => <span className="text-[var(--muted)]">{r.note || "—"}</span> },
   ];
 
   return (
     <DataTable
       rows={rows}
       columns={columns}
-      search={(r) => `${r.type} ${r.action} ${r.note}`}
-      searchPlaceholder="Search token, note…"
+      search={(r) => `${r.type} ${r.action} ${r.originLabel} ${r.reference} ${r.plot} ${r.customer} ${r.note}`}
+      searchPlaceholder="Search token, plot, customer, reg. no…"
       filters={[
         {
           id: "action",
@@ -53,6 +82,12 @@ export default function TokenHistory({ rows }: { rows: HistoryRow[] }) {
             { value: "Redeemed", label: "Redeemed" },
           ],
           match: (r, v) => r.action === v,
+        },
+        {
+          id: "source",
+          label: "Source",
+          options: (Object.keys(TOKEN_ORIGIN_LABELS) as TokenOrigin[]).map((o) => ({ value: o, label: TOKEN_ORIGIN_LABELS[o] })),
+          match: (r, v) => r.origin === v,
         },
       ]}
       emptyMessage="No token activity yet."

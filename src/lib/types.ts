@@ -202,6 +202,10 @@ export interface Booking {
   cancel_request_reason: string | null;
   created_by: string | null;
   created_at: string;
+  // Bill verification (lib/bill, migration booking_bill_verification): no bill
+  // prints until set. Null = awaiting Admin verification.
+  bill_verified_at: string | null;
+  bill_verified_by: string | null;
 }
 
 export interface Payment {

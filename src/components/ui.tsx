@@ -1,4 +1,5 @@
 import Link from "next/link";
+import RememberedBackLink from "./RememberedBackLink";
 
 export function PageHeader({
   title,
@@ -10,12 +11,15 @@ export function PageHeader({
   subtitle?: string;
   action?: React.ReactNode;
   // Left-aligned back / cancel link rendered above the title. `label` is shown
-  // verbatim (include "←" yourself for nav links).
-  back?: { href: string; label: string };
+  // verbatim (include "←" yourself for nav links). `remember` returns to the
+  // list at `href` as the viewer left it (filters, search, page) — for lists
+  // that keep their state with useUrlTableState.
+  back?: { href: string; label: string; remember?: boolean };
 }) {
   return (
     <div className="mb-7">
-      {back && (
+      {back?.remember && <RememberedBackLink listPath={back.href} label={back.label} />}
+      {back && !back.remember && (
         <Link
           href={back.href}
           className="btn-ghost mb-3 inline-flex"

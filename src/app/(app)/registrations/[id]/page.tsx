@@ -7,6 +7,7 @@ import { inr, fmtDate, fmtDateTime, shortRef } from "@/lib/format";
 import { isValueCoupon, loanTokenByLabel } from "@/lib/options";
 import { PageHeader, Badge, EmptyState, PlotStatusBadge } from "@/components/ui";
 import PrintReceiptButton from "@/components/PrintReceiptButton";
+import { billReady } from "@/lib/bill";
 import type { Booking, Customer, Payment, Plot, Project, Registration } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -69,17 +70,14 @@ export default async function RegistrationDetailPage({
     r.created_by
       ? sb.from("users").select("full_name, role").eq("id", r.created_by).maybeSingle()
       : Promise.resolve({ data: null }),
-    // Coupons auto-issued BY this registration. createRegistration stamps the
-    // register number into each coupon's note ("Gold coupon · registration
-    // 3048/2026"), which is the only link between the two tables — there is no
-    // registration_id on coupons. Matching on that suffix is therefore the
-    // honest lookup, and it simply finds nothing for older rows or if the note
-    // format ever changes.
+    // Coupons auto-issued BY this registration — stamped with its id by
+    // createRegistration (older rows were back-filled from their note). The
+    // `!user_id` hint picks the holder: coupons has a second FK to users
+    // (issued_by), so a bare users(...) embed is ambiguous.
     sb
       .from("coupons")
-      .select("*, users(full_name, partner_code, role)")
-      .eq("source", "auto")
-      .ilike("note", `%registration ${r.register_number}`)
+      .select("*, users!user_id(full_name, partner_code, role)")
+      .eq("registration_id", r.id)
       .order("type"),
   ]);
   const payments = (payRes.data ?? []) as Payment[];
@@ -107,7 +105,8 @@ export default async function RegistrationDetailPage({
         title={`Registration — ${r.register_number}`}
         subtitle={`${r.projects?.name ?? "—"} · Plot ${r.plots?.plot_no ?? "—"} · ${r.name_of_registrant}`}
         back={{ href: "/registrations", label: "← Registrations" }}
-        action={r.booking_id ? <PrintReceiptButton id={r.booking_id} /> : undefined}
+        // No bill until Admin has verified the booking's details (lib/bill).
+        action={r.booking_id && b && billReady(b) ? <PrintReceiptButton id={r.booking_id} /> : undefined}
       />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -254,12 +253,16 @@ export default async function RegistrationDetailPage({
                         <td className="td font-mono text-xs">{p.receipt_no ?? "—"}</td>
                         <td className="td">{inr(p.amount)}</td>
                         <td className="td">
-                          <PrintReceiptButton
-                            href={`/receipts/payment/${p.id}`}
-                            label="Print"
-                            className="btn-ghost"
-                            style={{ padding: "4px 10px", fontSize: 12 }}
-                          />
+                          {b && billReady(b) ? (
+                            <PrintReceiptButton
+                              href={`/receipts/payment/${p.id}`}
+                              label="Print"
+                              className="btn-ghost"
+                              style={{ padding: "4px 10px", fontSize: 12 }}
+                            />
+                          ) : (
+                            <span className="text-xs text-amber-600">Bill on hold</span>
+                          )}
                         </td>
                       </tr>
                     ))}

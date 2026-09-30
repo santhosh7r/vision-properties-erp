@@ -21,6 +21,7 @@ const PROTECTED_PREFIXES = [
   "/business-operators",
   "/tokens",
   "/reports",
+  "/monthly-reports",
   "/requests",
   "/feedback",
   "/in-house",

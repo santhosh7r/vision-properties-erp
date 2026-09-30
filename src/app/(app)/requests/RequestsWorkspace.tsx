@@ -118,6 +118,7 @@ export default function RequestsWorkspace({
   projects,
   allProjects,
   userRole,
+  initialFilter = "all",
   canCreate,
   migrationMissing,
 }: {
@@ -127,10 +128,12 @@ export default function RequestsWorkspace({
   projects: MiniProject[];
   allProjects: SimpleProject[];
   userRole: Role;
+  initialFilter?: ServiceRequestType | "all" | "action";
   canCreate: boolean;
   migrationMissing: boolean;
 }) {
-  const [filter, setFilter] = useState<ServiceRequestType | "all">("all");
+  // "action" = only the requests waiting on THIS user's decision.
+  const [filter, setFilter] = useState<ServiceRequestType | "all" | "action">(initialFilter);
   const [formType, setFormType] = useState<ServiceRequestType | null>(null);
   const [editing, setEditing] = useState<RequestRow | null>(null);
   const [declineId, setDeclineId] = useState<string | null>(null);
@@ -148,13 +151,21 @@ export default function RequestsWorkspace({
     setFormType(row.type);
   }
 
+  const isActionable = (r: RequestRow) => r.status === "pending" && canActOnStage(userRole, r.stage);
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: rows.length };
+    const c: Record<string, number> = { all: rows.length, action: rows.filter(isActionable).length };
     for (const t of REQUEST_TYPES) c[t.key] = rows.filter((r) => r.type === t.key).length;
     return c;
-  }, [rows]);
+  }, [rows, userRole]);
 
-  const visible = filter === "all" ? rows : rows.filter((r) => r.type === filter);
+  // Whatever waits on this user comes first; the rest keep their newest-first
+  // order (Array.prototype.sort is stable).
+  const visible = (
+    filter === "all" ? rows : filter === "action" ? rows.filter(isActionable) : rows.filter((r) => r.type === filter)
+  )
+    .slice()
+    .sort((a, b) => Number(isActionable(b)) - Number(isActionable(a)));
 
   // Types THIS role may raise. Only Legal Query is raisable today, and only by
   // Senior Director / Director — the menu is hidden entirely when the list is
@@ -174,6 +185,13 @@ export default function RequestsWorkspace({
     <div className="space-y-5">
       {/* Type filter + new request */}
       <div className="flex flex-wrap items-center gap-2">
+        {(counts.action > 0 || filter === "action") && (
+          <FilterChip
+            label={`Needs my action (${counts.action})`}
+            active={filter === "action"}
+            onClick={() => setFilter("action")}
+          />
+        )}
         <FilterChip label={`All (${counts.all})`} active={filter === "all"} onClick={() => setFilter("all")} />
         {REQUEST_TYPES.map((t) => (
           <FilterChip
@@ -232,7 +250,7 @@ export default function RequestsWorkspace({
       {/* List */}
       {visible.length === 0 ? (
         <EmptyState
-          message="No requests here yet."
+          message={filter === "action" ? "Nothing is waiting on you right now." : "No requests here yet."}
           hint={
             canCreate && canRaise.length > 0
               ? `Use “New ${canRaise[0].label} Request” to raise one.`
@@ -814,6 +832,12 @@ function RequestCard({
   const isDraft = row.status === "draft";
   const canAct = row.status === "pending" && canActOnStage(userRole, row.stage);
   const needsResponse = row.type === "legal_query" && row.stage === "legal";
+  // Pending, not yours yet, but a later stage of its chain is: say so, so a
+  // desk looking at a Director's fresh cab request knows why it can't act.
+  const comesToYou =
+    row.status === "pending" &&
+    !canAct &&
+    REQUEST_CHAIN[row.type].slice(REQUEST_CHAIN[row.type].indexOf(row.stage) + 1).some((st) => canActOnStage(userRole, st));
 
   return (
     <div className="card">
@@ -879,6 +903,12 @@ function RequestCard({
         {row.response && <Field label="Legal response" value={row.response} span />}
         {row.decline_reason && <Field label="Decline reason" value={row.decline_reason} span />}
       </div>
+
+      {comesToYou && (
+        <p className="mt-3 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-2)", color: "var(--muted)" }}>
+          Waiting on the {STAGE_LABEL[row.stage]}. It comes to you for approval once they approve it.
+        </p>
+      )}
 
       {/* Draft actions — edit, submit (only when complete), or discard. */}
       {isDraft && (

@@ -133,6 +133,10 @@ export const NAV: NavItem[] = [
   { href: "/tokens", label: "Tokens", icon: "creditCard", roles: SALES_TIERS, group: "Tokens" },
   { href: "/business-operators", label: "My Team", icon: "briefcase", roles: ["senior_director", "director", "business_manager"], group: "Business Partners" },
   { href: "/reports", label: "Reports", icon: "barChart", roles: [...ADMIN_STAFF, "senior_director", "director", "business_manager", "finance", "legal"], group: "Reports" },
+  // Department-wise monthly Excel exports. Which reports each role gets is
+  // decided by capability in lib/reports/catalog — this list only decides who
+  // sees the menu item. Sales roles are out: exports are not downline-scoped.
+  { href: "/monthly-reports", label: "Monthly Reports", icon: "fileText", roles: [...ADMIN_STAFF, "finance", "legal", ...EITHER_DESK], group: "Reports" },
   // --- Partners (all backed by the existing /users page + users/actions) ---
   // Add New Partner is open to every role WITH a downline — Admin plus Senior
   // Director / Director / Business Manager (a Business Partner has nobody

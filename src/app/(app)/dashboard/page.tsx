@@ -6,6 +6,8 @@ import { getSupabase, supabaseConfigured } from "@/lib/supabase";
 import { getDistrictScope } from "@/lib/scope";
 import { getDashboard, getAdminInsights, getSalesDashboard, getSeniorOverview } from "@/lib/queries";
 import { sweepExpiredBookings } from "@/lib/lifecycle";
+import { watchesCabQueue } from "@/lib/cab-queue";
+import CabQueuePanel from "./CabQueuePanel";
 import { inr, inrCompact, sqft, sqftCompact, timeAgo } from "@/lib/format";
 import { EmptyState, BookingStatusBadge, PaymentBadge, Badge } from "@/components/ui";
 import { KpiCard, Panel, Donut, Funnel, STATUS_COLOR } from "@/components/dashboard";
@@ -125,6 +127,13 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Pre-Sales desk: cab requests waiting on it, before anything else. */}
+      {watchesCabQueue(user.role) && (
+        <div className="mb-4">
+          <CabQueuePanel user={user} />
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

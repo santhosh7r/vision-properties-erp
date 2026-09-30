@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export interface Column<T> {
@@ -20,6 +20,18 @@ export interface FilterDef<T> {
   match: (row: T, value: string) => boolean;
 }
 
+// Everything the viewer has set on the table. Opt-in persistence: a page that
+// passes `initialState` + `onStateChange` (see useUrlTableState) keeps it across
+// opening a record and coming back; every other table behaves as before.
+export interface TableState {
+  q: string;
+  filters: Record<string, string>; // filter id → selected value
+  sortId: string | null;
+  sortDir: "asc" | "desc";
+  page: number; // 0-based
+  pageSize: number;
+}
+
 interface Props<T> {
   rows: T[];
   columns: Column<T>[];
@@ -31,6 +43,8 @@ interface Props<T> {
   initialPageSize?: number;
   emptyMessage?: string;
   emptyHint?: string;
+  initialState?: Partial<TableState>;
+  onStateChange?: (state: TableState) => void;
 }
 
 const HIDE_CLASS: Record<string, string> = {
@@ -79,6 +93,8 @@ export default function DataTable<T>({
   initialPageSize = 10,
   emptyMessage = "No records found.",
   emptyHint,
+  initialState,
+  onStateChange,
 }: Props<T>) {
   const router = useRouter();
   const prefetched = useRef<Set<string>>(new Set());
@@ -87,12 +103,33 @@ export default function DataTable<T>({
     prefetched.current.add(href);
     router.prefetch(href);
   };
-  const [query, setQuery] = useState("");
-  const [filterVals, setFilterVals] = useState<Record<string, string>>({});
-  const [sortId, setSortId] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [pageSize, setPageSize] = useState(initialPageSize);
-  const [page, setPage] = useState(0);
+  const [query, setQuery] = useState(initialState?.q ?? "");
+  // A restored value that is no longer an option (a project since removed, a
+  // hand-edited link) is dropped: a filter the dropdown can't show would hide
+  // rows with no visible reason.
+  const [filterVals, setFilterVals] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(initialState?.filters ?? {}).filter(([id, v]) =>
+        filters.find((f) => f.id === id)?.options.some((o) => o.value === v),
+      ),
+    ),
+  );
+  const [sortId, setSortId] = useState<string | null>(() =>
+    initialState?.sortId && columns.some((c) => c.id === initialState.sortId && c.sort) ? initialState.sortId : null,
+  );
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(initialState?.sortDir === "desc" ? "desc" : "asc");
+  const [pageSize, setPageSize] = useState(
+    initialState?.pageSize && pageSizes.includes(initialState.pageSize) ? initialState.pageSize : initialPageSize,
+  );
+  const [page, setPage] = useState(Math.max(0, initialState?.page ?? 0));
+
+  // Report every change to the page that asked (it mirrors them into the URL).
+  // A ref, so a new callback identity on re-render doesn't re-fire the effect.
+  const onChangeRef = useRef(onStateChange);
+  onChangeRef.current = onStateChange;
+  useEffect(() => {
+    onChangeRef.current?.({ q: query, filters: filterVals, sortId, sortDir, page, pageSize });
+  }, [query, filterVals, sortId, sortDir, page, pageSize]);
 
   const filtered = useMemo(() => {
     let out = rows;
