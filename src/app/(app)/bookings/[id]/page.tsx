@@ -63,6 +63,8 @@ const BOOKING_ERRORS: Record<string, string> = {
   pay_details: "Nothing was saved — fill in the payment details the chosen mode needs (e.g. cheque number, UPI transaction ID).",
   pay_reason: "Nothing was deleted — give a reason for deleting the payment.",
   pay_failed: "The payment couldn't be saved. Please try again.",
+  verify_failed:
+    "The verification couldn't be saved, so the bill is still on hold. Please try again — if it keeps failing, the database update for bill verification has not been applied yet.",
 };
 
 const BOOKING_NOTICES: Record<string, string> = {

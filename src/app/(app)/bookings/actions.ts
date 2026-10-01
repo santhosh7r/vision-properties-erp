@@ -860,11 +860,12 @@ export async function confirmBooking(formData: FormData): Promise<void> {
   // right up until the plot is registered (registration clears it).
   await sb.from("bookings").update({ status: "confirmed" }).eq("id", id);
   // Confirming IS verifying the customer and plot details — the bill is ready.
-  await sb
+  const { error: verifyErr } = await sb
     .from("bookings")
     .update({ bill_verified_at: new Date().toISOString(), bill_verified_by: actor.id })
     .eq("id", id)
     .is("bill_verified_at", null);
+  if (verifyErr) redirect(`/bookings/${id}?error=verify_failed`);
   // NOW the plot leaves inventory — as 'blocked' or 'booked' to match what was
   // actually approved. A blocking still has to be converted (convertToBooking)
   // and re-confirmed before it reads as 'booked'.
@@ -901,13 +902,16 @@ export async function verifyBookingDetails(formData: FormData): Promise<void> {
   const { data: bk } = await sb.from("bookings").select("status").eq("id", id).maybeSingle();
   if (!bk || bk.status === "cancelled") return;
 
-  const { data: done } = await sb
+  const { data: done, error } = await sb
     .from("bookings")
     .update({ bill_verified_at: new Date().toISOString(), bill_verified_by: actor.id })
     .eq("id", id)
     .is("bill_verified_at", null)
     .select("id")
     .maybeSingle();
+  // Never report success for a save that did not happen (e.g. the
+  // booking_bill_verification migration not yet applied to this database).
+  if (error) redirect(`/bookings/${id}?error=verify_failed`);
   if (done) await logAudit(actor, "booking", id, "verify", "customer & plot details verified — bill released");
   revalidatePath(`/bookings/${id}`);
   revalidatePath("/bookings");
